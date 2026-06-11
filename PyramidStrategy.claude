@@ -1,0 +1,105 @@
+PE STRATEGY (Resistance Levels)
+===============================
+Instrument: NIFTY
+Base NIFTY Levels by user input:
+R1 = 24100
+R2 = 24200
+R3 = 24300
+Strategy Logic: For PE
+Case 1:
+When NIFTY hits R1 (24100):
+ Entry = YES
+ Buy 1 lot of the ATM+50 PE from the NIFTY option chain with the same expiry.
+  Target for all one lot = 20 points.
+ If Target 1 (T1) is achieved, exit the trade.
+ Stop Loss = No.
+ Remark: If T1 is achieved, no further entry will be taken at R1.
+Case 2:
+If T1 is not achieved:
+ Wait for R2.
+
+Case 3:
+When NIFTY hits R2 (24200):
+ Entry = YES
+ Add 1 more lots of the same PE previously bought.
+ Target for all two lot = 20 points.
+ If Target 2 (T2) is achieved, exit the trade.
+ Stop Loss = No.
+ Remark: If T2 is achieved, no further entry will be taken at R2.
+
+Case 4:
+If T2 is not achieved:
+Wait for R3.
+
+Case 5:
+When NIFTY hits R3 (24300):
+ Entry = YES
+ Add 1 more lots of the same PE previously bought.
+ Target for all three lot = 20 points.
+ Stop Loss = 10 points.
+ Exit when Target 3 (T3) is achieved.
+ Remark: If T3 is achieved or the Stop Loss is hit, no further entry will be taken at R3.
+
+========================================
+CE STRATEGY (Support Levels)
+============================
+Instrument: NIFTY
+Base NIFTY Levels:
+S1 = 23900
+S2 = 23800
+S3 = 23700
+Strategy Logic: For CE
+
+Case 1:
+When NIFTY hits S1 (23900):
+ Entry = YES
+ Buy 1 lot of the ATM-50 CE from the NIFTY option chain with the same expiry.
+ Target for all one lot = 20 points.
+ If Target 1 (T1) is achieved, exit the trade.
+ Stop Loss = No.
+ Remark: If T1 is achieved, no further entry will be taken at S1.
+
+Case 2:
+If T1 is not achieved:
+Wait for S2.
+
+Case 3:
+When NIFTY hits S2 (23800):
+ Entry = YES
+ Add 1 more lots of the same CE previously bought.
+  Target for all two lot = 20 points.
+ If Target 2 (T2) is achieved, exit the trade.
+ Stop Loss = No.
+ Remark: If T2 is achieved, no further entry will be taken at S2.
+
+Case 4:
+If T2 is not achieved:
+Wait for S3.
+
+Case 5:
+ When NIFTY hits S3 (23700):
+ Entry = YES
+ Add 1 more lots of the same CE previously bought.
+ Target for all three lot = 20 points.
+ Stop Loss = 10 points.
+ Exit when Target 3 (T3) is achieved.
+ Remark: If T3 is achieved or the Stop Loss is hit, no further entry will be taken at S3.
+
+========================================
+GENERAL RULES
+=============
+1. Same-day expiry ATM+50 for PE or ATM-50 for CE option should be used for all entries.
+2. The strike selected at the first entry (R1/S1) should remain unchanged for all additional entries at R2/R3 or S2/S3.
+3. Position sizing:
+    Level 1: 1 Lot
+    Level 2: Add 1 Lots
+    Level 3: Add 1 Lots
+    Total Maximum Position: 3 Lots
+4. Once a target is achieved at any level, the entire position must be exited.
+5. After a target is achieved at a particular level, no re-entry is allowed from that level on the same day.
+6. Stop Loss is applicable only at Level 3 (R3/S3) and is fixed at 10 points.
+7. All open positions must be squared off by 11:30 AM, regardless of whether the target or stop loss has been reached.
+8. No fresh entries shall be allowed after 11:15 AM for same-day expiry trades.
+9. On Tuesdays, all CE and PE entries shall be taken in the next weekly expiry contract instead of the same-day expiry contract.
+10.If a target is achieved at any level (R1, R2, R3, S1, S2, or S3), no further entry will be taken at that level on the same day. 
+   If NIFTY subsequently reaches the next level, a new trading cycle shall start with 1 lot and follow the same entry, target, and position-sizing rules.
