@@ -5,10 +5,10 @@ Automated NIFTY options trading system for the intraday pyramid strategy.
 ## Snapshot
 
 ### Frontend
-![Frontend snapshot](PyramidStrategy.jpeg)
+![Frontend dashboard](docs/screenshots/frontend-dashboard.png)
 
 ### Settings
-![Settings snapshot](PyramidStrategy.jpeg)
+![Settings modal](docs/screenshots/settings-modal.png)
 
 ## What’s here
 - **Backend:** FastAPI + SQLAlchemy + APScheduler
