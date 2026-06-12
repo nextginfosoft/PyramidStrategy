@@ -4,7 +4,7 @@ Automated NIFTY options trading system for the intraday pyramid strategy.
 
 ## Snapshot
 
-### Frontend
+### Frontend Dashboard
 ![Frontend dashboard](docs/screenshots/frontend-dashboard.png)
 
 ### Settings
