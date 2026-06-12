@@ -3,19 +3,25 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useStrategyStore } from '../../store/strategyStore'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { strategyApi, configApi, tradesApi } from '../../services/api'
+import { strategyApi, configApi, tradesApi, sessionApi } from '../../services/api'
 import { LevelPanel } from '../LevelPanel/LevelPanel'
 import { TradeLog } from '../TradeLog/TradeLog'
 import { PnLChart } from '../PnLChart/PnLChart'
 import { AIObserver } from '../AIObserver/AIObserver'
 import { Settings } from '../Settings/Settings'
+import KiteStatus from '../KiteStatus/KiteStatus'
 
-export function Dashboard() {
+export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
   const qc = useQueryClient()
   const { status, wsConnected } = useStrategyStore()
   const [showSettings, setShowSettings] = useState(false)
   const [simPrice, setSimPrice] = useState('')
+
+  const handleLogout = () => {
+    sessionApi.logout()
+    onLogout?.()
+  }
 
   const { data: config } = useQuery({
     queryKey: ['strategy-config'],
@@ -98,6 +104,10 @@ export function Dashboard() {
           <button onClick={() => setShowSettings(true)}
             className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
             ⚙ Settings
+          </button>
+          <button onClick={handleLogout}
+            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400">
+            ⇥ Logout
           </button>
         </div>
       </header>
@@ -208,6 +218,9 @@ export function Dashboard() {
               <div className="text-gray-600 text-xs text-center py-2">No open positions</div>
             )}
           </div>
+
+          {/* Kite Connection Status */}
+          <KiteStatus />
 
           {/* AI Observer */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.db.database import get_db
 from app.models.models import StrategyConfig
 from app.core.strategy_engine import engine
@@ -25,20 +26,47 @@ async def start_strategy(background_tasks: BackgroundTasks, db: Session = Depend
     if not cfg:
         raise HTTPException(status_code=400, detail="No active strategy config found. Set levels first.")
 
-    engine.load_config({
+    config_dict = {
         "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
         "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
         "lot_size": cfg.lot_size,
         "target_points": float(cfg.target_points),
         "sl_points": float(cfg.sl_points),
-    })
+    }
+
+    # Run safety checks before starting (especially important for live mode)
+    from app.core.safety_checks import run_safety_checks
+    from app.services.kite_service import kite_service
+
+    passed, errors, warnings = run_safety_checks(
+        paper_trade=settings.PAPER_TRADE,
+        kite_service=kite_service,
+        strategy_config=config_dict,
+    )
+
+    if not passed:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Safety checks failed — cannot start strategy", "errors": errors},
+        )
+
+    # Wire KiteService into OrderManager for live trading
+    if not settings.PAPER_TRADE:
+        engine.order_manager.kite = kite_service
+        engine.order_manager.paper_trade = False
+
+    engine.load_config(config_dict)
     engine.start()
 
-    # Start mock feed in background (paper trade mode)
+    # Start mock feed in background (paper trade mode only)
     if settings.PAPER_TRADE:
         background_tasks.add_task(_run_mock_feed)
 
-    return {"status": "started", "paper_trade": settings.PAPER_TRADE}
+    return {
+        "status": "started",
+        "paper_trade": settings.PAPER_TRADE,
+        "warnings": warnings,
+    }
 
 
 @router.post("/stop")
@@ -64,6 +92,29 @@ async def simulate_tick(nifty_price: float):
     from decimal import Decimal
     await engine.on_nifty_tick(Decimal(str(nifty_price)))
     return {"status": "tick_processed", "nifty_price": nifty_price, **engine.get_full_status()}
+
+
+@router.get("/safety-check")
+def safety_check():
+    """Run safety checks without starting. Returns errors and warnings."""
+    from app.core.safety_checks import run_safety_checks
+    from app.services.kite_service import kite_service
+
+    cfg_dict = None
+    if engine.config:
+        cfg_dict = engine.config
+
+    passed, errors, warnings = run_safety_checks(
+        paper_trade=settings.PAPER_TRADE,
+        kite_service=kite_service,
+        strategy_config=cfg_dict,
+    )
+    return {
+        "passed": passed,
+        "errors": errors,
+        "warnings": warnings,
+        "paper_trade": settings.PAPER_TRADE,
+    }
 
 
 async def _run_mock_feed():

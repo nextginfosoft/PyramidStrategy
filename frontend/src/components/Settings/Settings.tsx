@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { configApi } from '../../services/api'
+import { configApi, aiApi, notificationApi } from '../../services/api'
+
+type StatusMsg = { text: string; ok: boolean }
 
 export function Settings({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
@@ -16,22 +18,71 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '' })
   const [ai, setAi] = useState({ provider: 'openai', api_key: '' })
-  const [saved, setSaved] = useState(false)
+  const [telegram, setTelegram] = useState({ bot_token: '', chat_id: '' })
+  const [paperTrade, setPaperTrade] = useState<boolean | null>(null)
+
+  const [status, setStatus] = useState<StatusMsg | null>(null)
+
+  const showStatus = (text: string, ok: boolean) => {
+    setStatus({ text, ok })
+    setTimeout(() => setStatus(null), 3000)
+  }
 
   const saveLevels = useMutation({
     mutationFn: configApi.saveStrategy,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['strategy-config'] })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      showStatus('✓ Strategy levels saved', true)
     },
+    onError: () => showStatus('✗ Failed to save levels', false),
   })
 
-  const saveKey = useMutation({ mutationFn: configApi.saveApiKey })
+  const saveKey = useMutation({
+    mutationFn: configApi.saveApiKey,
+    onSuccess: (_, vars) => showStatus(`✓ ${vars.provider} key saved`, true),
+    onError: (_, vars) => showStatus(`✗ Failed to save ${vars.provider} key`, false),
+  })
 
   const handleSaveLevels = (e: React.FormEvent) => {
     e.preventDefault()
     saveLevels.mutate(levels)
+  }
+
+  const handleSaveZerodha = () => {
+    if (!zerodha.api_key && !zerodha.api_secret) return
+    saveKey.mutate({ provider: 'zerodha', api_key: zerodha.api_key, api_secret: zerodha.api_secret })
+  }
+
+  const handleSaveAi = () => {
+    if (!ai.api_key) return
+    saveKey.mutate({ provider: ai.provider, api_key: ai.api_key })
+  }
+
+  const handleSaveTelegram = () => {
+    if (!telegram.bot_token || !telegram.chat_id) return
+    saveKey.mutate({
+      provider: 'telegram',
+      api_key: telegram.bot_token,
+      extra_config: { chat_id: telegram.chat_id },
+    })
+  }
+
+  const handleTestAi = async () => {
+    try {
+      const res = await aiApi.testConnection()
+      showStatus(res.success ? `✓ AI connected (${res.provider})` : `✗ ${res.message}`, res.success)
+    } catch {
+      showStatus('✗ AI test failed', false)
+    }
+  }
+
+  const handleTestTelegram = async () => {
+    try {
+      const res = await notificationApi.test()
+      showStatus(res.success ? '✓ Test message sent to Telegram' : `✗ ${res.message}`, res.success)
+    } catch {
+      showStatus('✗ Telegram test failed', false)
+    }
   }
 
   return (
@@ -42,14 +93,57 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
         </div>
 
+        {/* Status bar */}
+        {status && (
+          <div className={`mx-4 mt-4 px-3 py-2 rounded text-sm font-medium ${status.ok ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+            {status.text}
+          </div>
+        )}
+
         <div className="p-4 space-y-6">
-          {/* Strategy Levels */}
+          {/* ── Paper/Live Mode ─────────────────────────────────────── */}
+          <div>
+            <h3 className="text-sm font-bold text-yellow-400 mb-3">⚡ Execution Mode</h3>
+            <div className="flex items-center gap-4 bg-gray-800 border border-gray-700 rounded p-3">
+              <button
+                onClick={() => setPaperTrade(true)}
+                className={`flex-1 py-2 rounded text-sm font-bold transition-colors ${
+                  paperTrade === true || paperTrade === null
+                    ? 'bg-yellow-700 text-yellow-100'
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
+              >
+                📝 Paper Trade
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm('⚠️ Switch to LIVE mode? Real orders will be placed!')) {
+                    setPaperTrade(false)
+                  }
+                }}
+                className={`flex-1 py-2 rounded text-sm font-bold transition-colors ${
+                  paperTrade === false
+                    ? 'bg-red-700 text-red-100'
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                }`}
+              >
+                ⚡ Live Trade
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {paperTrade === false
+                ? '⚠️ LIVE mode — real orders will be placed via Kite Connect'
+                : 'Paper mode — simulated orders, no real execution'}
+            </p>
+          </div>
+
+          {/* ── Strategy Levels ──────────────────────────────────────── */}
           <form onSubmit={handleSaveLevels}>
             <h3 className="text-sm font-bold text-orange-400 mb-3">📊 Strategy Levels</h3>
             <div className="grid grid-cols-3 gap-3">
               {(['r1','r2','r3'] as const).map(k => (
                 <label key={k} className="block">
-                  <span className="text-xs text-red-400 uppercase">{k}</span>
+                  <span className="text-xs text-red-400 uppercase">{k} (PE trigger)</span>
                   <input
                     type="number"
                     className="w-full mt-1 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-orange-500"
@@ -60,7 +154,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
               ))}
               {(['s1','s2','s3'] as const).map(k => (
                 <label key={k} className="block">
-                  <span className="text-xs text-green-400 uppercase">{k}</span>
+                  <span className="text-xs text-green-400 uppercase">{k} (CE trigger)</span>
                   <input
                     type="number"
                     className="w-full mt-1 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-orange-500"
@@ -70,20 +164,30 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 </label>
               ))}
             </div>
-            <div className="mt-3 flex gap-3">
+            <div className="mt-3 flex gap-3 items-end">
               <label className="block">
                 <span className="text-xs text-gray-400">Lot Size</span>
                 <input type="number" className="w-24 mt-1 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm text-white"
                   value={levels.lot_size} onChange={e => setLevels(p => ({...p, lot_size: +e.target.value}))} />
               </label>
+              <label className="block">
+                <span className="text-xs text-gray-400">Target Pts</span>
+                <input type="number" className="w-20 mt-1 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm text-white"
+                  value={levels.target_points} onChange={e => setLevels(p => ({...p, target_points: +e.target.value}))} />
+              </label>
+              <label className="block">
+                <span className="text-xs text-gray-400">SL Pts (L3)</span>
+                <input type="number" className="w-20 mt-1 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm text-white"
+                  value={levels.sl_points} onChange={e => setLevels(p => ({...p, sl_points: +e.target.value}))} />
+              </label>
             </div>
             <button type="submit"
               className="mt-3 px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded text-sm font-bold text-white">
-              {saved ? '✓ Saved!' : 'Save Levels'}
+              Save Levels
             </button>
           </form>
 
-          {/* Zerodha */}
+          {/* ── Zerodha ──────────────────────────────────────────────── */}
           <div>
             <h3 className="text-sm font-bold text-blue-400 mb-3">🔗 Zerodha Kite Connect</h3>
             <div className="space-y-2">
@@ -93,32 +197,69 @@ export function Settings({ onClose }: { onClose: () => void }) {
               <input type="password" placeholder="API Secret"
                 className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
                 value={zerodha.api_secret} onChange={e => setZerodha(p => ({...p, api_secret: e.target.value}))} />
-              <button onClick={() => saveKey.mutate({ provider: 'zerodha', ...zerodha })}
+              <button onClick={handleSaveZerodha}
                 className="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded text-sm font-bold text-white">
                 Save Zerodha Keys
               </button>
             </div>
           </div>
 
-          {/* AI */}
+          {/* ── AI Observer ──────────────────────────────────────────── */}
           <div>
             <h3 className="text-sm font-bold text-purple-400 mb-3">🤖 AI Observer</h3>
             <div className="space-y-2">
               <select className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
                 value={ai.provider} onChange={e => setAi(p => ({...p, provider: e.target.value}))}>
                 <option value="openai">OpenAI (GPT-4o)</option>
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="gemini">Google (Gemini)</option>
+                <option value="anthropic">Anthropic (Claude 3.5 Sonnet)</option>
+                <option value="gemini">Google (Gemini 1.5 Pro)</option>
               </select>
               <input type="password" placeholder="AI API Key"
                 className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
                 value={ai.api_key} onChange={e => setAi(p => ({...p, api_key: e.target.value}))} />
-              <button onClick={() => saveKey.mutate({ provider: ai.provider, api_key: ai.api_key })}
-                className="px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded text-sm font-bold text-white">
-                Save AI Key
-              </button>
+              <div className="flex gap-2">
+                <button onClick={handleSaveAi}
+                  className="px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded text-sm font-bold text-white">
+                  Save AI Key
+                </button>
+                <button onClick={handleTestAi}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold text-white">
+                  Test Connection
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* ── Telegram ─────────────────────────────────────────────── */}
+          <div>
+            <h3 className="text-sm font-bold text-sky-400 mb-3">📱 Telegram Notifications</h3>
+            <p className="text-xs text-gray-500 mb-2">
+              Get instant alerts for entries, targets, SL hits and squareoffs.
+              Create a bot via @BotFather and get your Chat ID via @userinfobot.
+            </p>
+            <div className="space-y-2">
+              <input type="password" placeholder="Bot Token (from @BotFather)"
+                className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
+                value={telegram.bot_token} onChange={e => setTelegram(p => ({...p, bot_token: e.target.value}))} />
+              <input type="text" placeholder="Chat ID (from @userinfobot)"
+                className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
+                value={telegram.chat_id} onChange={e => setTelegram(p => ({...p, chat_id: e.target.value}))} />
+              <div className="flex gap-2">
+                <button onClick={handleSaveTelegram}
+                  className="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded text-sm font-bold text-white">
+                  Save Telegram
+                </button>
+                <button onClick={handleTestTelegram}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold text-white">
+                  Send Test Message
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-700 text-xs text-gray-500">
+          All API keys are AES-256 encrypted before storage.
         </div>
       </div>
     </div>

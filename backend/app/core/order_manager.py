@@ -12,19 +12,33 @@ CLAUDE.md Rules:
   - Max 3 lots per side (enforced by state machine, double-checked here)
 """
 
+import time
 from decimal import Decimal
 from datetime import date, datetime
+from typing import Optional
 from sqlalchemy.orm import Session
 from loguru import logger
 from app.config import settings
 from app.models.models import Trade, AuditLog
 from app.core.time_rules import today_ist
 
+# Retry configuration for live orders
+_MAX_RETRIES = 3
+_RETRY_DELAY = 0.5   # seconds between retries
+_FILL_POLL_SECS = 15  # seconds to wait for fill confirmation
+
+
+class OrderError(Exception):
+    """Raised when a live order fails (rejected, timeout, etc.)."""
+    pass
+
 
 class OrderManager:
     def __init__(self, kite_service=None):
         self.kite = kite_service  # None in paper trade mode
         self.paper_trade = settings.PAPER_TRADE
+
+    # ── Public API ────────────────────────────────────────────────────────────
 
     def place_buy_order(
         self,
@@ -37,16 +51,16 @@ class OrderManager:
         lots: int,
         lot_size: int,
         trigger_nifty: Decimal,
-        mock_ltp: Decimal | None = None,
+        mock_ltp: Optional[Decimal] = None,
     ) -> dict:
         """
         Place a BUY (entry) order.
-        Returns fill details: {order_id, fill_price, qty, status}
+        Returns fill details: {trade_id, order_id, fill_price, qty, status}
         """
         qty = lots * lot_size
 
         if self.paper_trade:
-            fill_price = mock_ltp or Decimal("100.00")  # Mock fill at LTP
+            fill_price = mock_ltp or Decimal("100.00")
             order_id = f"PAPER-{side}-{level}-{datetime.now().strftime('%H%M%S%f')}"
             status = "COMPLETE"
             logger.info(
@@ -54,13 +68,13 @@ class OrderManager:
                 f"lots={lots} | level={level} | trigger_nifty={trigger_nifty}"
             )
         else:
-            # Live Kite order
             if not self.kite:
-                raise RuntimeError("Kite service not initialized for live trading")
-            order_id, fill_price, status = self._place_kite_order(
+                raise OrderError("Kite service not initialized for live trading")
+            order_id, fill_price, status = self._place_kite_order_with_retry(
                 instrument=instrument,
                 transaction_type="BUY",
                 qty=qty,
+                context=f"{side} {level} BUY",
             )
 
         # Persist to DB
@@ -81,7 +95,7 @@ class OrderManager:
             is_paper_trade=self.paper_trade,
         )
         db.add(trade)
-        db.flush()  # get trade.id without committing
+        db.flush()
 
         self._log_audit(db, "ORDER_PLACED", side, level, trigger_nifty, {
             "trade_id": trade.id,
@@ -110,34 +124,40 @@ class OrderManager:
         qty: int,
         reason: str,
         entry_avg_price: Decimal,
-        mock_ltp: Decimal | None = None,
-        trigger_nifty: Decimal | None = None,
+        mock_ltp: Optional[Decimal] = None,
+        trigger_nifty: Optional[Decimal] = None,
+        lot_size: int = 75,
     ) -> dict:
         """
         Place a MARKET EXIT (sell) order for the FULL position.
         reason: "TARGET" | "SL" | "SQUAREOFF" | "MANUAL"
+
+        IMPORTANT: Always MARKET order — speed over price for exits.
         """
         if self.paper_trade:
             exit_price = mock_ltp or Decimal("120.00")
             order_id = f"PAPER-EXIT-{side}-{datetime.now().strftime('%H%M%S%f')}"
             status = "COMPLETE"
-            logger.info(
-                f"[PAPER] EXIT {qty} {instrument} @ {exit_price} | reason={reason}"
-            )
+            logger.info(f"[PAPER] EXIT {qty} {instrument} @ {exit_price} | reason={reason}")
         else:
             if not self.kite:
-                raise RuntimeError("Kite service not initialized")
-            order_id, exit_price, status = self._place_kite_order(
+                raise OrderError("Kite service not initialized")
+            # For exits, we use no retries on SQUAREOFF to avoid double-selling.
+            # For TARGET/SL we retry once only.
+            max_retries = 2 if reason == "SQUAREOFF" else _MAX_RETRIES
+            order_id, exit_price, status = self._place_kite_order_with_retry(
                 instrument=instrument,
                 transaction_type="SELL",
                 qty=qty,
+                context=f"{side} {reason} EXIT",
+                max_retries=max_retries,
             )
 
         pnl_pts = exit_price - entry_avg_price
         pnl_rupees = pnl_pts * qty
 
-        # Update trade record in DB
-        trade = (
+        # Update original OPEN trade record
+        open_trade = (
             db.query(Trade)
             .filter(
                 Trade.instrument == instrument,
@@ -149,20 +169,21 @@ class OrderManager:
             .first()
         )
 
-        if trade:
-            trade.status = reason  # TARGET / SL / SQUAREOFF
-            trade.pnl = pnl_rupees
+        expiry_date = open_trade.expiry if open_trade else today_ist()
+        if open_trade:
+            open_trade.status = reason
+            open_trade.pnl = pnl_rupees
 
-        # Log the EXIT as a separate trade record
+        # Log the EXIT as a separate record
         exit_trade = Trade(
             trade_date=today_ist(),
             side=side,
             level="EXIT",
             instrument=instrument,
             strike=strike,
-            expiry=trade.expiry if trade else today_ist(),
+            expiry=expiry_date,
             action="EXIT",
-            lots=qty // 75,
+            lots=qty // lot_size,
             qty=qty,
             avg_price=exit_price,
             trigger_nifty_level=trigger_nifty,
@@ -191,36 +212,131 @@ class OrderManager:
             "status": status,
         }
 
+    # ── Live Order Placement ──────────────────────────────────────────────────
+
+    def _place_kite_order_with_retry(
+        self,
+        instrument: str,
+        transaction_type: str,
+        qty: int,
+        context: str,
+        max_retries: int = _MAX_RETRIES,
+    ) -> tuple:
+        """
+        Place a live Kite MARKET order with retry logic.
+        Returns (order_id, fill_price, status).
+        Raises OrderError on final failure.
+        """
+        last_error = None
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                result = self._place_kite_order(instrument, transaction_type, qty)
+                if attempt > 1:
+                    logger.info(f"Order succeeded on attempt {attempt}: {context}")
+                return result
+
+            except TimeoutError as e:
+                last_error = e
+                logger.warning(f"Order poll timeout (attempt {attempt}/{max_retries}): {context} — {e}")
+                # Don't retry timeouts for exits (position might be filled but we missed it)
+                if transaction_type == "SELL":
+                    logger.error(f"EXIT order timeout — NOT retrying to avoid double-sell: {context}")
+                    try:
+                        filled = self._check_recent_fill(instrument, transaction_type, qty)
+                        if filled:
+                            return filled
+                    except Exception:
+                        pass
+                    raise OrderError(f"EXIT order timeout for {context} — check Kite positions manually") from e
+
+            except OrderError as e:
+                last_error = e
+                logger.error(f"Order rejected (attempt {attempt}/{max_retries}): {context} — {e}")
+                self._alert_order_failure(context, str(e))
+                raise
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Order error (attempt {attempt}/{max_retries}): {context} — {e}")
+
+            if attempt < max_retries:
+                time.sleep(_RETRY_DELAY * attempt)  # exponential backoff
+
+        self._alert_order_failure(context, str(last_error))
+        raise OrderError(f"Order failed after {max_retries} attempts: {context}") from last_error
+
     def _place_kite_order(self, instrument: str, transaction_type: str, qty: int) -> tuple:
         """Place live order via Kite Connect. Returns (order_id, fill_price, status)."""
-        import time
-        order_id = self.kite.place_order(
+        # Use string constants directly — avoids importing kiteconnect at call time
+        order_id = self.kite.kite.place_order(
             variety="regular",
             exchange="NFO",
             tradingsymbol=instrument,
             transaction_type=transaction_type,
             quantity=qty,
             order_type="MARKET",
-            product="MIS",  # Intraday
+            product="MIS",  # Intraday — crucial
         )
-        logger.info(f"Kite order placed: {order_id}")
+        logger.info(f"[LIVE] Kite order placed: {order_id} | {transaction_type} {qty} {instrument}")
 
-        # Poll for fill (max 10 seconds)
-        for _ in range(10):
+        for i in range(_FILL_POLL_SECS):
             time.sleep(1)
-            orders = self.kite.orders()
+            orders = self.kite.kite.orders()
             for o in orders:
-                if o["order_id"] == order_id:
-                    if o["status"] == "COMPLETE":
-                        fill_price = Decimal(str(o["average_price"]))
+                if str(o.get("order_id")) == str(order_id):
+                    kite_status = o.get("status", "")
+                    if kite_status == "COMPLETE":
+                        fill_price = Decimal(str(o.get("average_price", "0")))
+                        logger.info(f"[LIVE] Order filled: {order_id} @ {fill_price}")
                         return order_id, fill_price, "COMPLETE"
-                    elif o["status"] == "REJECTED":
-                        raise RuntimeError(f"Order rejected: {o.get('status_message')}")
+                    elif kite_status in ("REJECTED", "CANCELLED"):
+                        msg = o.get("status_message") or o.get("status_message_raw", "Unknown reason")
+                        raise OrderError(f"Order {kite_status}: {msg}")
+            if i % 5 == 4:
+                logger.debug(f"Still waiting for fill: {order_id} ({i+1}s)")
 
-        raise TimeoutError(f"Order {order_id} not filled within 10 seconds")
+        raise TimeoutError(f"Order {order_id} not filled within {_FILL_POLL_SECS}s")
 
-    def _log_audit(self, db: Session, event: str, side: str | None, level: str | None,
-                   nifty: Decimal | None, details: dict):
+    def _check_recent_fill(self, instrument: str, transaction_type: str, qty: int):
+        """Check Kite order book for a recently filled order matching our instrument."""
+        try:
+            orders = self.kite.kite.orders()
+            for o in reversed(orders):
+                if (o.get("tradingsymbol") == instrument
+                        and o.get("transaction_type") == transaction_type
+                        and o.get("quantity") == qty
+                        and o.get("status") == "COMPLETE"):
+                    fill_price = Decimal(str(o.get("average_price", "0")))
+                    logger.info(f"Found fill in order book: {o['order_id']} @ {fill_price}")
+                    return o["order_id"], fill_price, "COMPLETE"
+        except Exception as e:
+            logger.warning(f"Could not check order book: {e}")
+        return None
+
+    def _alert_order_failure(self, context: str, error_msg: str):
+        """Send Telegram alert for order failure (non-blocking, best-effort)."""
+        try:
+            import asyncio
+            from app.services.notification import notification_service
+            if notification_service.is_enabled():
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(
+                            notification_service._send(
+                                f"❌ *ORDER FAILED* — {context}\n`{error_msg[:200]}`"
+                            )
+                        )
+                except Exception:
+                    pass
+        except Exception:
+            pass  # Never let notification failure propagate
+
+    # ── Audit Logging ─────────────────────────────────────────────────────────
+
+    def _log_audit(self, db: Session, event: str, side: Optional[str], level: Optional[str],
+                   nifty: Optional[Decimal], details: dict):
         log = AuditLog(
             event_type=event,
             side=side,

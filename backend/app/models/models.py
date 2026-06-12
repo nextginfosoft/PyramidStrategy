@@ -70,6 +70,20 @@ class ApiConfig(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
 
+class AISuggestion(Base):
+    __tablename__ = "ai_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trade_date = Column(Date, nullable=False, index=True)
+    event = Column(String(20), nullable=False)      # ENTRY / EXIT / SL / SQUAREOFF
+    side = Column(String(2))                         # CE / PE
+    level = Column(String(10))
+    nifty_ltp = Column(Numeric(10, 2))
+    provider = Column(String(20))                    # openai / anthropic / gemini
+    suggestion = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

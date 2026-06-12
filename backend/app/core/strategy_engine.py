@@ -86,17 +86,39 @@ class StrategyEngine:
     def start(self):
         self.is_running = True
         logger.info("Strategy engine STARTED")
+        try:
+            from app.services.notification import notification_service
+            notification_service.notify_engine_started(settings.PAPER_TRADE)
+        except Exception:
+            pass
 
     def stop(self):
         self.is_running = False
         logger.info("Strategy engine STOPPED")
+        try:
+            from app.services.notification import notification_service
+            notification_service.notify_engine_stopped()
+        except Exception:
+            pass
 
     def update_option_ltp(self, symbol: str, ltp: Decimal):
         """Called by market data feed when option price updates."""
         self._option_ltp[symbol] = ltp
 
     def get_option_ltp(self, symbol: str) -> Optional[Decimal]:
+        # Prefer live Kite tick if available
+        if not symbol:
+            return None
+        if not settings.PAPER_TRADE:
+            from app.services.kite_service import kite_service
+            kite_ltp = kite_service.get_option_ltp(symbol)
+            if kite_ltp:
+                return kite_ltp
         return self._option_ltp.get(symbol)
+
+    async def on_option_tick(self, symbol: str, ltp: Decimal):
+        """Callback from KiteTicker for option price updates."""
+        self._option_ltp[symbol] = ltp
 
     # ── Main Tick Processor ──────────────────────────────────────────────────
 
@@ -228,8 +250,21 @@ class StrategyEngine:
                 )
                 sm.enter_level3(order["fill_price"])
 
+        # Subscribe to option tick stream (Phase 2: live prices for target/SL)
+        self._subscribe_option(sm.locked_instrument)
+
         # Broadcast trade event to frontend
         await self._broadcast_trade_event(side, level, "ENTRY", sm.get_status())
+
+        # Telegram notification — fire-and-forget
+        try:
+            from app.services.notification import notification_service
+            notification_service.notify_trade_entry(
+                side=side, level=level, instrument=sm.locked_instrument,
+                lots=sm.lots, fill_price=sm.entry_avg_price, nifty_ltp=nifty_ltp,
+            )
+        except Exception:
+            pass
 
         # Fire AI analysis AFTER order — non-blocking
         asyncio.create_task(self._notify_ai("ENTRY", side, level, nifty_ltp))
@@ -264,8 +299,33 @@ class StrategyEngine:
                 trigger_nifty=nifty_ltp,
             )
 
+        # Unsubscribe from option ticks — position closed
+        self._unsubscribe_option(sm.locked_instrument)
+
         exit_result = sm.exit_position(exit_price, reason)
         await self._broadcast_trade_event(sm.side, "EXIT", reason, exit_result)
+
+        # Telegram notification — fire-and-forget
+        try:
+            from app.services.notification import notification_service
+            pnl = exit_result.get("pnl_rupees", 0)
+            if reason == "TARGET":
+                notification_service.notify_target_hit(
+                    side=sm.side, instrument=sm.locked_instrument or "",
+                    lots=sm.lots, exit_price=exit_price,
+                    entry_avg=sm.entry_avg_price or exit_price,
+                    pnl_rupees=Decimal(str(pnl)),
+                )
+            elif reason == "SL":
+                notification_service.notify_sl_hit(
+                    side=sm.side, instrument=sm.locked_instrument or "",
+                    lots=sm.lots, exit_price=exit_price,
+                    entry_avg=sm.entry_avg_price or exit_price,
+                    pnl_rupees=Decimal(str(pnl)),
+                )
+        except Exception:
+            pass
+
         asyncio.create_task(self._notify_ai("EXIT", sm.side, reason, nifty_ltp))
 
     async def _force_squareoff(self):
@@ -277,6 +337,30 @@ class StrategyEngine:
                 await self._execute_exit(sm, option_ltp, "SQUAREOFF", Decimal("0"))
 
         self.stop()
+
+    # ── Kite Option Subscription ─────────────────────────────────────────────
+
+    def _subscribe_option(self, symbol: Optional[str]):
+        """Subscribe to live option ticks after entry (Phase 2)."""
+        if not symbol:
+            return
+        try:
+            from app.services.kite_service import kite_service
+            if kite_service.is_authenticated() and kite_service._ticker_running:
+                kite_service.subscribe_option(symbol)
+        except Exception as e:
+            logger.warning(f"Option subscribe failed (non-critical): {e}")
+
+    def _unsubscribe_option(self, symbol: Optional[str]):
+        """Unsubscribe from option ticks after exit (Phase 2)."""
+        if not symbol:
+            return
+        try:
+            from app.services.kite_service import kite_service
+            if kite_service.is_authenticated():
+                kite_service.unsubscribe_option(symbol)
+        except Exception as e:
+            logger.warning(f"Option unsubscribe failed (non-critical): {e}")
 
     # ── Mock Option LTP ──────────────────────────────────────────────────────
 

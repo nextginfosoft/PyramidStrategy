@@ -19,7 +19,12 @@ export const configApi = {
   saveStrategy: (cfg: Omit<StrategyConfig, 'id' | 'is_active'>) =>
     api.post('/config/strategy', cfg).then(r => r.data),
   getApiKeys: () => api.get('/config/api-keys').then(r => r.data),
-  saveApiKey: (payload: { provider: string; api_key?: string; api_secret?: string }) =>
+  saveApiKey: (payload: {
+    provider: string
+    api_key?: string
+    api_secret?: string
+    extra_config?: Record<string, unknown>
+  }) =>
     api.post('/config/api-keys', payload).then(r => r.data),
 }
 
@@ -34,3 +39,53 @@ export const tradesApi = {
 export const healthApi = {
   check: () => api.get('/health').then(r => r.data),
 }
+
+export const kiteApi = {
+  getLoginUrl: () => api.get('/auth/kite/login').then(r => r.data),
+  getStatus: () => api.get('/auth/kite/status').then(r => r.data),
+  startFeed: () => api.post('/auth/kite/start-feed').then(r => r.data),
+  stopFeed: () => api.post('/auth/kite/stop-feed').then(r => r.data),
+  validateToken: () => api.post('/auth/kite/validate').then(r => r.data),
+  loadInstruments: () => api.post('/auth/kite/load-instruments').then(r => r.data),
+  logout: () => api.post('/auth/kite/logout').then(r => r.data),
+}
+
+export const aiApi = {
+  getSuggestions: (limit = 20) =>
+    api.get(`/ai/suggestions?limit=${limit}`).then(r => r.data),
+  getHistory: (days = 7) =>
+    api.get(`/ai/suggestions/history?days=${days}`).then(r => r.data),
+  testConnection: () => api.post('/ai/test').then(r => r.data),
+  reload: () => api.post('/ai/reload').then(r => r.data),
+  getStatus: () => api.get('/ai/status').then(r => r.data),
+}
+
+export const sessionApi = {
+  login: (username: string, password: string) =>
+    api.post('/session/login', { username, password }).then(r => r.data),
+  logout: () => api.post('/session/logout').then(r => r.data),
+  me: () => api.get('/session/me').then(r => r.data),
+  check: () => api.get('/session/check').then(r => r.data),
+  setToken: (token: string) => {
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    localStorage.setItem('pyramid_token', token)
+  },
+  clearToken: () => {
+    delete api.defaults.headers.common['Authorization']
+    localStorage.removeItem('pyramid_token')
+  },
+  restoreToken: () => {
+    const t = localStorage.getItem('pyramid_token')
+    if (t) api.defaults.headers.common['Authorization'] = `Bearer ${t}`
+    return t
+  },
+}
+
+export const notificationApi = {
+  test: () => api.post('/notifications/test').then(r => r.data),
+  getStatus: () => api.get('/notifications/status').then(r => r.data),
+  reload: () => api.post('/notifications/reload').then(r => r.data),
+}
+
+// Restore token on module load
+sessionApi.restoreToken()

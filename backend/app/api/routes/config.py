@@ -83,6 +83,18 @@ def save_api_key(payload: ApiConfigUpdate, db: Session = Depends(get_db)):
 
     db.commit()
     logger.info(f"API key saved for provider: {payload.provider}")
+
+    # Hot-reload AI/Telegram service if relevant provider updated
+    if payload.provider in ("openai", "anthropic", "gemini"):
+        from app.services.ai_service import ai_service
+        ai_service.load_from_db()
+    elif payload.provider == "telegram":
+        from app.services.notification import notification_service
+        notification_service.load_from_db()
+    elif payload.provider == "zerodha":
+        from app.api.routes.auth import _load_kite_credentials_from_db
+        _load_kite_credentials_from_db()
+
     return {"status": "saved", "provider": payload.provider}
 
 
