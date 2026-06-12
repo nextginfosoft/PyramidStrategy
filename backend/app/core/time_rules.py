@@ -24,7 +24,17 @@ MARKET_OPEN = time(9, 15)     # NSE opens at 9:15 AM IST
 
 def now_ist() -> datetime:
     """Current datetime in IST."""
-    return datetime.now(IST)
+    import os
+    dt = datetime.now(IST)
+    mock_time_str = os.getenv("MOCK_TIME")
+    if mock_time_str:
+        try:
+            # Format: "HH:MM"
+            h, m = map(int, mock_time_str.split(":"))
+            dt = dt.replace(hour=h, minute=m, second=0, microsecond=0)
+        except Exception:
+            pass
+    return dt
 
 
 def today_ist() -> date:
