@@ -6,15 +6,15 @@ from decimal import Decimal
 
 # ── Strategy Config ───────────────────────────────────────────────────────────
 class StrategyConfigBase(BaseModel):
-    r1: Decimal
-    r2: Decimal
-    r3: Decimal
-    s1: Decimal
-    s2: Decimal
-    s3: Decimal
+    r1: float
+    r2: float
+    r3: float
+    s1: float
+    s2: float
+    s3: float
     lot_size: int = 75
-    target_points: Decimal = Decimal("20")
-    sl_points: Decimal = Decimal("10")
+    target_points: float = 20.0
+    sl_points: float = 10.0
 
     @model_validator(mode="after")
     def validate_levels(self):
@@ -52,11 +52,11 @@ class TradeResponse(BaseModel):
     action: str
     lots: int
     qty: int
-    avg_price: Optional[Decimal]
-    trigger_nifty_level: Optional[Decimal]
+    avg_price: Optional[float]
+    trigger_nifty_level: Optional[float]
     kite_order_id: Optional[str]
     status: str
-    pnl: Optional[Decimal]
+    pnl: Optional[float]
     is_paper_trade: bool
     created_at: datetime
 
@@ -66,12 +66,12 @@ class TradeResponse(BaseModel):
 # ── Daily P&L ─────────────────────────────────────────────────────────────────
 class DailyPnLResponse(BaseModel):
     trade_date: date
-    gross_pnl: Decimal
-    net_pnl: Decimal
+    gross_pnl: float
+    net_pnl: float
     total_trades: int
     winning_trades: int
-    ce_pnl: Decimal
-    pe_pnl: Decimal
+    ce_pnl: float
+    pe_pnl: float
 
     model_config = {"from_attributes": True}
 
@@ -82,21 +82,22 @@ class SideStatus(BaseModel):
     lots: int = 0
     locked_strike: Optional[int] = None
     locked_instrument: Optional[str] = None
-    entry_avg_price: Optional[Decimal] = None
-    current_ltp: Optional[Decimal] = None
-    unrealized_pnl: Optional[Decimal] = None
+    entry_avg_price: Optional[float] = None
+    current_ltp: Optional[float] = None
+    unrealized_pnl: Optional[float] = None
     blocked_levels: list[str] = []
 
 
 class StrategyStatus(BaseModel):
     is_running: bool
     paper_trade: bool
-    nifty_ltp: Optional[Decimal]
+    nifty_ltp: Optional[float]
     ce: SideStatus
     pe: SideStatus
-    today_pnl: Decimal = Decimal("0")
+    today_pnl: float = 0.0
     entries_allowed: bool             # False after 11:15 AM
     squareoff_triggered: bool         # True at/after 11:30 AM
+
 
 
 # ── API Config (Settings UI) ──────────────────────────────────────────────────

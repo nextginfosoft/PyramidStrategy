@@ -348,3 +348,7 @@ class KiteService:
             except Exception:
                 pass
         self.stop_ticker()
+
+
+# Global singleton instance
+kite_service = KiteService()
