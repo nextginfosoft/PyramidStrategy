@@ -60,10 +60,10 @@ async function run() {
       await page.screenshot({ path: screenshotPath2 });
       console.log(`Saved screenshot after starting to: ${screenshotPath2}`);
 
-      // Verify button status (should show PAUSE now)
-      const pauseButton = page.locator('button', { hasText: '⏸ PAUSE' });
-      const isPauseVisible = await pauseButton.isVisible();
-      console.log(`PAUSE button visibility after click: ${isPauseVisible}`);
+      // Verify button status (should show STOP now)
+      const stopButton = page.locator('button', { hasText: '⏹ STOP' });
+      const isStopVisible = await stopButton.isVisible();
+      console.log(`STOP button visibility after click: ${isStopVisible}`);
     } else {
       console.log('Cannot click START button (either invisible or disabled).');
     }

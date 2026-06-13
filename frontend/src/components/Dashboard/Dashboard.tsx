@@ -92,7 +92,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           {isRunning ? (
             <button onClick={() => stopMut.mutate()}
               className="px-3 py-1 bg-red-800 hover:bg-red-700 rounded text-xs font-bold">
-              ⏸ PAUSE
+              ⏹ STOP
             </button>
           ) : (
             <button onClick={() => startMut.mutate()}
