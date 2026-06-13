@@ -1,43 +1,41 @@
-"""
-Notification Routes — Phase 3
-POST /notifications/test   — send a test Telegram message
-GET  /notifications/status — Telegram service status
-POST /notifications/reload — reload Telegram config from DB
-"""
-
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from loguru import logger
 
-from app.services.notification import notification_service
+from app.models.models import User
+from app.api.routes.session import require_auth
+from app.services.notification import get_user_notification_service
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 @router.post("/test")
-async def test_telegram():
+async def test_telegram(user: User = Depends(require_auth)):
     """Send a test Telegram message to verify bot token + chat ID."""
-    if not notification_service.is_enabled():
+    ns = get_user_notification_service(user.id)
+    if not ns.is_enabled():
         return {
             "success": False,
             "message": "Telegram not configured — save Bot Token and Chat ID in Settings first",
         }
-    success, message = await notification_service.test_connection()
+    success, message = await ns.test_connection()
     return {"success": success, "message": message}
 
 
 @router.get("/status")
-def notification_status():
+def notification_status(user: User = Depends(require_auth)):
     """Return current notification service status."""
+    ns = get_user_notification_service(user.id)
     return {
-        "telegram_enabled": notification_service.is_enabled(),
+        "telegram_enabled": ns.is_enabled(),
     }
 
 
 @router.post("/reload")
-def reload_notifications():
+def reload_notifications(user: User = Depends(require_auth)):
     """Reload Telegram config from DB."""
-    notification_service.load_from_db()
+    ns = get_user_notification_service(user.id)
+    ns.load_from_db()
     return {
         "status": "reloaded",
-        "enabled": notification_service.is_enabled(),
+        "enabled": ns.is_enabled(),
     }

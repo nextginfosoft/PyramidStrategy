@@ -1,28 +1,39 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from decimal import Decimal
+
 from app.db.database import get_db
-from app.models.models import StrategyConfig
-from app.core.strategy_engine import engine
-from app.services.mock_feed import mock_feed
+from app.models.models import StrategyConfig, User
+from app.core.engine_manager import engine_manager
+from app.services.kite_service import get_user_kite_service
+from app.api.routes.session import require_auth
 from app.config import settings
-import asyncio
 
 router = APIRouter(prefix="/strategy", tags=["strategy"])
 
 
 @router.get("/status")
-def get_status():
-    return engine.get_full_status()
+def get_status(user: User = Depends(require_auth)):
+    user_engine = engine_manager.get_engine(user.id)
+    return user_engine.get_full_status()
 
 
 @router.post("/start")
-async def start_strategy(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if engine.is_running:
+async def start_strategy(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth)
+):
+    user_engine = engine_manager.get_engine(user.id)
+    if user_engine.is_running:
         raise HTTPException(status_code=400, detail="Strategy is already running")
 
-    # Load config from DB
-    cfg = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).first()
+    # Load config from DB for this user
+    cfg = db.query(StrategyConfig).filter(
+        StrategyConfig.user_id == user.id,
+        StrategyConfig.is_active == True
+    ).first()
     if not cfg:
         raise HTTPException(status_code=400, detail="No active strategy config found. Set levels first.")
 
@@ -36,11 +47,11 @@ async def start_strategy(background_tasks: BackgroundTasks, db: Session = Depend
 
     # Run safety checks before starting (especially important for live mode)
     from app.core.safety_checks import run_safety_checks
-    from app.services.kite_service import kite_service
+    user_kite = get_user_kite_service(user.id)
 
     passed, errors, warnings = run_safety_checks(
         paper_trade=settings.PAPER_TRADE,
-        kite_service=kite_service,
+        kite_service=user_kite,
         strategy_config=config_dict,
     )
 
@@ -52,15 +63,15 @@ async def start_strategy(background_tasks: BackgroundTasks, db: Session = Depend
 
     # Wire KiteService into OrderManager for live trading
     if not settings.PAPER_TRADE:
-        engine.order_manager.kite = kite_service
-        engine.order_manager.paper_trade = False
+        user_engine.order_manager.kite = user_kite
+        user_engine.order_manager.paper_trade = False
 
-    engine.load_config(config_dict)
-    engine.start()
+    user_engine.load_config(config_dict)
+    user_engine.start()
 
     # Start mock feed in background (paper trade mode only)
     if settings.PAPER_TRADE:
-        background_tasks.add_task(_run_mock_feed)
+        background_tasks.add_task(_run_mock_feed, user.id)
 
     return {
         "status": "started",
@@ -70,43 +81,45 @@ async def start_strategy(background_tasks: BackgroundTasks, db: Session = Depend
 
 
 @router.post("/stop")
-def stop_strategy():
-    engine.stop()
-    mock_feed.stop()
+def stop_strategy(user: User = Depends(require_auth)):
+    user_engine = engine_manager.get_engine(user.id)
+    user_engine.stop()
+    user_engine.mock_feed.stop()
     return {"status": "stopped"}
 
 
 @router.post("/reset-daily")
-def daily_reset():
-    """Manual daily reset (also runs automatically at 9:00 AM via scheduler)."""
-    engine.daily_reset()
+def daily_reset(user: User = Depends(require_auth)):
+    """Manual daily reset."""
+    user_engine = engine_manager.get_engine(user.id)
+    user_engine.daily_reset()
     return {"status": "reset", "message": "Both CE and PE state machines reset for new day"}
 
 
 @router.post("/simulate-tick")
-async def simulate_tick(nifty_price: float):
+async def simulate_tick(nifty_price: float, user: User = Depends(require_auth)):
     """
-    Manually push a NIFTY price tick through the strategy engine.
-    Useful for testing without the mock feed running.
+    Manually push a NIFTY price tick through the user's strategy engine.
     """
-    from decimal import Decimal
-    await engine.on_nifty_tick(Decimal(str(nifty_price)))
-    return {"status": "tick_processed", "nifty_price": nifty_price, **engine.get_full_status()}
+    user_engine = engine_manager.get_engine(user.id)
+    await user_engine.on_nifty_tick(Decimal(str(nifty_price)))
+    return {"status": "tick_processed", "nifty_price": nifty_price, **user_engine.get_full_status()}
 
 
 @router.get("/safety-check")
-def safety_check():
+def safety_check(user: User = Depends(require_auth)):
     """Run safety checks without starting. Returns errors and warnings."""
     from app.core.safety_checks import run_safety_checks
-    from app.services.kite_service import kite_service
+    user_engine = engine_manager.get_engine(user.id)
+    user_kite = get_user_kite_service(user.id)
 
     cfg_dict = None
-    if engine.config:
-        cfg_dict = engine.config
+    if user_engine.config:
+        cfg_dict = user_engine.config
 
     passed, errors, warnings = run_safety_checks(
         paper_trade=settings.PAPER_TRADE,
-        kite_service=kite_service,
+        kite_service=user_kite,
         strategy_config=cfg_dict,
     )
     return {
@@ -117,5 +130,6 @@ def safety_check():
     }
 
 
-async def _run_mock_feed():
-    await mock_feed.start()
+async def _run_mock_feed(user_id: int):
+    user_engine = engine_manager.get_engine(user_id)
+    await user_engine.mock_feed.start()

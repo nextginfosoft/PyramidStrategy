@@ -1,31 +1,36 @@
 """
-Kite Authentication Routes — Phase 2
+Kite Authentication Routes — Phase 2 Multi-User
 OAuth flow: login URL → Kite login page → callback with request_token → access_token
 """
 
 import asyncio
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from loguru import logger
+from sqlalchemy.orm import Session
 
-from app.db.database import SessionLocal
-from app.models.models import ApiConfig
+from app.db.database import SessionLocal, get_db
+from app.models.models import ApiConfig, User
 from app.services.encryption import encrypt, decrypt
-from app.services.kite_service import kite_service
+from app.services.kite_service import get_user_kite_service
+from app.api.routes.session import require_auth
+from app.core.engine_manager import engine_manager
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _load_kite_credentials_from_db() -> bool:
+def _load_kite_credentials_from_db(user_id: int) -> bool:
     """
-    Load API key/secret from DB and configure KiteService.
-    Also restores existing access token if present.
+    Load API key/secret from DB and configure user's KiteService.
     Returns True if credentials found and configured.
     """
     with SessionLocal() as db:
         row = db.query(ApiConfig).filter(
+            ApiConfig.user_id == user_id,
             ApiConfig.provider == "zerodha",
             ApiConfig.is_active == True,
         ).first()
+
+        user_kite = get_user_kite_service(user_id)
 
         if not row or not row.api_key_encrypted:
             return False
@@ -33,52 +38,53 @@ def _load_kite_credentials_from_db() -> bool:
         try:
             api_key = decrypt(row.api_key_encrypted)
             api_secret = decrypt(row.api_secret_encrypted)
-            kite_service.configure(api_key, api_secret)
+            user_kite.configure(api_key, api_secret)
 
             # Restore access token if previously stored
             extra = row.extra_config or {}
             access_token_enc = extra.get("access_token_encrypted")
             if access_token_enc:
                 access_token = decrypt(access_token_enc)
-                kite_service.set_access_token(access_token)
+                user_kite.set_access_token(access_token)
 
             return True
         except Exception as e:
-            logger.error(f"Failed to load Kite credentials from DB: {e}")
+            logger.error(f"User {user_id}: Failed to load Kite credentials from DB: {e}")
             return False
 
 
 @router.get("/kite/login")
-def kite_login():
+def kite_login(user: User = Depends(require_auth)):
     """
-    Step 1 — Get Kite OAuth login URL.
-    Frontend opens this URL in browser tab.
-    After Kite login, user is redirected to /auth/kite/callback?request_token=...
+    Step 1 — Get Kite OAuth login URL for the logged-in user.
     """
-    if not _load_kite_credentials_from_db():
+    if not _load_kite_credentials_from_db(user.id):
         raise HTTPException(
             status_code=400,
             detail="Zerodha API key/secret not configured. Go to Settings and save them first.",
         )
     try:
-        login_url = kite_service.get_login_url()
+        user_kite = get_user_kite_service(user.id)
+        login_url = user_kite.get_login_url()
         return {"login_url": login_url}
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/kite/callback")
-def kite_callback(request_token: str = Query(...)):
+def kite_callback(request_token: str = Query(...), user_id: int = Query(...)):
     """
-    Step 2 — OAuth callback. Kite redirects here after login.
-    Exchange request_token for access_token and store encrypted.
+    Step 2 — OAuth callback. Handled via redirect query.
+    Note: We must pass user_id in the redirect URI to associate it back to the correct user.
     """
     try:
-        access_token = kite_service.exchange_token(request_token)
+        user_kite = get_user_kite_service(user_id)
+        access_token = user_kite.exchange_token(request_token)
 
         # Store access token encrypted in DB
         with SessionLocal() as db:
             row = db.query(ApiConfig).filter(
+                ApiConfig.user_id == user_id,
                 ApiConfig.provider == "zerodha",
                 ApiConfig.is_active == True,
             ).first()
@@ -87,7 +93,7 @@ def kite_callback(request_token: str = Query(...)):
                 extra["access_token_encrypted"] = encrypt(access_token)
                 row.extra_config = extra
                 db.commit()
-                logger.info("Kite access_token stored (encrypted) in DB")
+                logger.info(f"User {user_id}: Kite access_token stored (encrypted) in DB")
 
         return {
             "status": "authenticated",
@@ -95,22 +101,24 @@ def kite_callback(request_token: str = Query(...)):
         }
 
     except Exception as e:
-        logger.error(f"Kite OAuth callback failed: {e}")
+        logger.error(f"User {user_id}: Kite OAuth callback failed: {e}")
         raise HTTPException(status_code=400, detail=f"Authentication failed: {str(e)}")
 
 
 @router.get("/kite/status")
-def kite_status():
+def kite_status(user: User = Depends(require_auth)):
     """Return current Kite connection status for the Settings UI."""
-    return kite_service.get_status()
+    user_kite = get_user_kite_service(user.id)
+    return user_kite.get_status()
 
 
 @router.post("/kite/validate")
-def validate_kite_token():
-    """Test if the stored access token is still valid (expires at ~6 AM each day)."""
-    if not _load_kite_credentials_from_db():
+def validate_kite_token(user: User = Depends(require_auth)):
+    """Test if the stored access token is still valid."""
+    if not _load_kite_credentials_from_db(user.id):
         return {"valid": False, "message": "Kite credentials not configured"}
-    valid = kite_service.validate_token()
+    user_kite = get_user_kite_service(user.id)
+    valid = user_kite.validate_token()
     return {
         "valid": valid,
         "message": "Token valid ✅" if valid else "Token expired — please re-login to Kite",
@@ -118,74 +126,74 @@ def validate_kite_token():
 
 
 @router.post("/kite/start-feed")
-async def start_live_feed():
+async def start_live_feed(user: User = Depends(require_auth)):
     """
-    Start KiteTicker WebSocket for live NIFTY market data.
-    Call this after successful Kite login.
-    Paper trade orders still simulated — only prices become real.
+    Start KiteTicker WebSocket for live NIFTY market data for this user.
     """
-    from app.core.strategy_engine import engine
+    user_engine = engine_manager.get_engine(user.id)
+    user_kite = get_user_kite_service(user.id)
 
-    if not _load_kite_credentials_from_db():
+    if not _load_kite_credentials_from_db(user.id):
         raise HTTPException(status_code=400, detail="Kite not configured")
 
-    if not kite_service.is_authenticated():
+    if not user_kite.is_authenticated():
         raise HTTPException(
             status_code=401,
             detail="Not authenticated — complete Kite OAuth login first",
         )
 
-    if kite_service._ticker_running:
+    if user_kite._ticker_running:
         return {"status": "already_running", "message": "Live feed already active"}
 
     try:
         loop = asyncio.get_event_loop()
-        kite_service.start_ticker(
-            on_nifty_tick=engine.on_nifty_tick,
-            on_option_tick=engine.on_option_tick,
+        user_kite.start_ticker(
+            on_nifty_tick=user_engine.on_nifty_tick,
+            on_option_tick=user_engine.on_option_tick,
             loop=loop,
         )
-        logger.info("Live NIFTY feed started via API request")
+        logger.info(f"User {user.id}: Live NIFTY feed started via API request")
         return {
             "status": "started",
             "message": "Live NIFTY feed started. Strategy engine will use real prices.",
         }
     except Exception as e:
-        logger.error(f"Failed to start live feed: {e}")
+        logger.error(f"User {user.id}: Failed to start live feed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/kite/stop-feed")
-def stop_live_feed():
-    """Stop KiteTicker (switch back to paper/mock mode)."""
-    kite_service.stop_ticker()
+def stop_live_feed(user: User = Depends(require_auth)):
+    """Stop KiteTicker."""
+    user_kite = get_user_kite_service(user.id)
+    user_kite.stop_ticker()
     return {"status": "stopped", "message": "Live feed stopped"}
 
 
 @router.post("/kite/load-instruments")
-def load_instruments():
-    """
-    Manually trigger NFO instrument cache reload.
-    Normally runs automatically at 9:00 AM.
-    """
-    if not kite_service.is_authenticated():
+def load_instruments(user: User = Depends(require_auth)):
+    """Manually trigger NFO instrument cache reload."""
+    user_kite = get_user_kite_service(user.id)
+    if not user_kite.is_authenticated():
         raise HTTPException(status_code=401, detail="Not authenticated")
-    kite_service.load_instruments()
+    user_kite.load_instruments()
     return {
         "status": "loaded",
-        "instruments_loaded": kite_service._instruments_loaded,
+        "instruments_loaded": user_kite._instruments_loaded,
         "message": "NFO instrument cache refreshed",
     }
 
 
 @router.post("/kite/logout")
-def kite_logout():
+def kite_logout(user: User = Depends(require_auth)):
     """Clear access token and stop live feed."""
-    kite_service.clear_credentials()
+    user_kite = get_user_kite_service(user.id)
+    user_kite.clear_credentials()
 
     # Remove access token from DB
     with SessionLocal() as db:
         row = db.query(ApiConfig).filter(
+            ApiConfig.user_id == user.id,
             ApiConfig.provider == "zerodha",
             ApiConfig.is_active == True,
         ).first()
@@ -195,5 +203,5 @@ def kite_logout():
             row.extra_config = extra
             db.commit()
 
-    logger.info("Kite logged out — access token cleared")
+    logger.info(f"User {user.username}: Kite logged out — access token cleared")
     return {"status": "logged_out"}

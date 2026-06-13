@@ -1,12 +1,22 @@
-from sqlalchemy import Column, Integer, String, Numeric, Boolean, Date, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, Numeric, Boolean, Date, DateTime, Text, JSON, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 from app.db.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class StrategyConfig(Base):
     __tablename__ = "strategy_config"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     r1 = Column(Numeric(10, 2), nullable=False)
     r2 = Column(Numeric(10, 2), nullable=False)
     r3 = Column(Numeric(10, 2), nullable=False)
@@ -25,6 +35,7 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     trade_date = Column(Date, nullable=False, index=True)
     side = Column(String(2), nullable=False)          # CE or PE
     level = Column(String(2), nullable=False)          # R1,R2,R3,S1,S2,S3
@@ -47,7 +58,8 @@ class DailyPnL(Base):
     __tablename__ = "daily_pnl"
 
     id = Column(Integer, primary_key=True, index=True)
-    trade_date = Column(Date, unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    trade_date = Column(Date, nullable=False, index=True)
     gross_pnl = Column(Numeric(12, 2), default=0)
     brokerage = Column(Numeric(12, 2), default=0)
     net_pnl = Column(Numeric(12, 2), default=0)
@@ -57,23 +69,33 @@ class DailyPnL(Base):
     pe_pnl = Column(Numeric(12, 2), default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    __table_args__ = (
+        UniqueConstraint("user_id", "trade_date", name="uq_user_trade_date"),
+    )
+
 
 class ApiConfig(Base):
     __tablename__ = "api_config"
 
     id = Column(Integer, primary_key=True, index=True)
-    provider = Column(String(30), nullable=False, unique=True)  # zerodha/openai/anthropic/telegram
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    provider = Column(String(30), nullable=False)  # zerodha/openai/anthropic/telegram
     api_key_encrypted = Column(Text)
     api_secret_encrypted = Column(Text)
     extra_config = Column(JSON)
     is_active = Column(Boolean, default=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_user_provider"),
+    )
+
 
 class AISuggestion(Base):
     __tablename__ = "ai_suggestions"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     trade_date = Column(Date, nullable=False, index=True)
     event = Column(String(20), nullable=False)      # ENTRY / EXIT / SL / SQUAREOFF
     side = Column(String(2))                         # CE / PE
@@ -88,6 +110,7 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     event_type = Column(String(50), nullable=False)   # LEVEL_TRIGGERED/ORDER_PLACED/TARGET_HIT/etc
     side = Column(String(2))
     level = Column(String(2))

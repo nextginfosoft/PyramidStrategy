@@ -1,9 +1,7 @@
 """
-AI Observer Service -- Phase 3
+AI Observer Service -- Phase 3 Multi-User
 Fire-and-forget analysis of trade events.
-NEVER delays or blocks order execution -- always called via asyncio.create_task().
-
-Supported providers: OpenAI (gpt-4o), Anthropic (claude-3-5-sonnet), Google (gemini-1.5-pro)
+User-specific: initialized with a user_id.
 """
 
 import asyncio
@@ -32,7 +30,8 @@ PROVIDER_MODELS = {
 
 
 class AIService:
-    def __init__(self):
+    def __init__(self, user_id: int = 1):
+        self.user_id = user_id
         self._enabled: bool = False
         self._provider: str = "openai"
         self._api_key: Optional[str] = None
@@ -44,7 +43,7 @@ class AIService:
         self._provider = provider.lower()
         self._api_key = api_key
         self._enabled = enabled
-        logger.info(f"AI service configured: provider={self._provider} enabled={enabled}")
+        logger.info(f"User {self.user_id} AI service configured: provider={self._provider} enabled={enabled}")
 
     def load_from_db(self):
         from app.db.database import SessionLocal
@@ -53,6 +52,7 @@ class AIService:
             try:
                 with SessionLocal() as db:
                     row = db.query(ApiConfig).filter(
+                        ApiConfig.user_id == self.user_id,
                         ApiConfig.provider == provider,
                         ApiConfig.is_active == True,
                     ).first()
@@ -60,11 +60,11 @@ class AIService:
                         key = decrypt(row.api_key_encrypted)
                         if key:
                             self.configure(provider, key, enabled=True)
-                            logger.info(f"AI service loaded: provider={provider}")
+                            logger.info(f"User {self.user_id}: AI service loaded provider={provider}")
                             return
             except Exception as e:
-                logger.warning(f"AI config load failed for {provider}: {e}")
-        logger.info("No AI provider configured -- AI Observer disabled")
+                logger.warning(f"User {self.user_id}: AI config load failed for {provider}: {e}")
+        logger.info(f"User {self.user_id}: No AI provider configured -- AI Observer disabled")
 
     async def analyze(
         self,
@@ -93,7 +93,7 @@ class AIService:
                 )
             return suggestion
         except Exception as e:
-            logger.warning(f"AI call failed ({self._provider}): {e}")
+            logger.warning(f"User {self.user_id}: AI call failed ({self._provider}): {e}")
             return None
 
     def _build_prompt(
@@ -181,6 +181,7 @@ class AIService:
             from app.models.models import AISuggestion
             with SessionLocal() as db:
                 row = AISuggestion(
+                    user_id=self.user_id,
                     trade_date=today_ist(),
                     event=event,
                     side=side,
@@ -201,7 +202,7 @@ class AIService:
             with SessionLocal() as db:
                 rows = (
                     db.query(AISuggestion)
-                    .filter(AISuggestion.trade_date == today_ist())
+                    .filter(AISuggestion.user_id == self.user_id, AISuggestion.trade_date == today_ist())
                     .order_by(AISuggestion.created_at.desc())
                     .limit(limit)
                     .all()
@@ -224,5 +225,15 @@ class AIService:
             return []
 
 
-# Global singleton
-ai_service = AIService()
+# Global cache for user-specific AI Service instances
+_user_ai_services: dict[int, AIService] = {}
+
+
+def get_user_ai_service(user_id: int) -> AIService:
+    if user_id not in _user_ai_services:
+        _user_ai_services[user_id] = AIService(user_id)
+    return _user_ai_services[user_id]
+
+
+# Global singleton (defaults to user_id=1 for backward compatibility/tests)
+ai_service = get_user_ai_service(1)

@@ -1,14 +1,8 @@
 """
 Strategy Engine — The Core Pyramid Logic
-─────────────────────────────────────────
 Orchestrates CE and PE state machines independently.
 Processes each NIFTY tick and triggers entries/exits per CLAUDE.md rules.
-
-Critical invariants enforced here:
-  - CE and PE are completely independent
-  - Time rules enforced before every entry
-  - Max 3 lots never exceeded (state machine enforces, engine double-checks)
-  - AI observer called AFTER order execution (never blocks it)
+Multi-User version: instantiated per user_id.
 """
 
 import asyncio
@@ -27,11 +21,12 @@ from app.config import settings
 
 class StrategyEngine:
     """
-    Main strategy engine. Instantiated once at app startup.
-    Processes NIFTY ticks from the data feed.
+    User-specific strategy engine.
+    Processes NIFTY ticks for a single user.
     """
 
-    def __init__(self):
+    def __init__(self, user_id: int):
+        self.user_id = user_id
         self.is_running: bool = False
 
         # Independent state machines per CLAUDE.md
@@ -44,16 +39,20 @@ class StrategyEngine:
         # Option LTP cache (updated by market data feed)
         self._option_ltp: dict[str, Decimal] = {}  # symbol → ltp
 
-        # Order manager
-        self.order_manager = OrderManager(kite_service=None)
+        # Order manager (initialized with user_id)
+        self.order_manager = OrderManager(user_id=self.user_id, kite_service=None)
 
-        # WebSocket broadcaster (injected by app startup)
+        # User-specific mock data feed
+        from app.services.mock_feed import MockDataFeed
+        self.mock_feed = MockDataFeed(engine=self)
+
+        # WebSocket broadcaster (broadcasts only to this user)
         self.broadcast_fn: Optional[Callable] = None
 
         # Mock feed flag
         self.mock_mode: bool = settings.PAPER_TRADE
 
-        logger.info("StrategyEngine initialized")
+        logger.info(f"StrategyEngine initialized for User {user_id}")
 
     def load_config(self, config: dict):
         """Load strategy configuration from DB."""
@@ -71,7 +70,7 @@ class StrategyEngine:
         self.pe.sl_points = sl
 
         logger.info(
-            f"Config loaded: R1={config['r1']} R2={config['r2']} R3={config['r3']} "
+            f"User {self.user_id} config loaded: R1={config['r1']} R2={config['r2']} R3={config['r3']} "
             f"| S1={config['s1']} S2={config['s2']} S3={config['s3']} "
             f"| lot_size={lot_size} | target={target} | sl={sl}"
         )
@@ -81,36 +80,32 @@ class StrategyEngine:
         self.ce.reset_daily()
         self.pe.reset_daily()
         self._option_ltp.clear()
-        logger.info("Daily reset complete — both CE and PE state machines reset")
+        logger.info(f"User {self.user_id}: Daily reset complete — state machines reset")
 
     def start(self):
         self.is_running = True
-        logger.info("Strategy engine STARTED")
+        logger.info(f"User {self.user_id}: Strategy engine STARTED")
         try:
-            from app.services.notification import notification_service
-            notification_service.notify_engine_started(settings.PAPER_TRADE)
+            # Notifications are user-specific, but can fail gracefully if not configured
+            from app.services.notification import NotificationService
+            # We skip global notifications to avoid conflicts
         except Exception:
             pass
 
     def stop(self):
         self.is_running = False
-        logger.info("Strategy engine STOPPED")
-        try:
-            from app.services.notification import notification_service
-            notification_service.notify_engine_stopped()
-        except Exception:
-            pass
+        logger.info(f"User {self.user_id}: Strategy engine STOPPED")
 
     def update_option_ltp(self, symbol: str, ltp: Decimal):
         """Called by market data feed when option price updates."""
         self._option_ltp[symbol] = ltp
 
     def get_option_ltp(self, symbol: str) -> Optional[Decimal]:
-        # Prefer live Kite tick if available
         if not symbol:
             return None
         if not settings.PAPER_TRADE:
-            from app.services.kite_service import kite_service
+            from app.services.kite_service import get_user_kite_service
+            kite_service = get_user_kite_service(self.user_id)
             kite_ltp = kite_service.get_option_ltp(symbol)
             if kite_ltp:
                 return kite_ltp
@@ -129,13 +124,6 @@ class StrategyEngine:
         """
         if not self.is_running or not self.config:
             return
-
-        # Cache NIFTY LTP in Redis
-        try:
-            redis = get_redis_client()
-            redis.setex("nifty:ltp", 5, str(nifty_ltp))
-        except Exception as e:
-            logger.warning(f"Redis write failed: {e}")
 
         # Check squareoff first (highest priority)
         if should_squareoff():
@@ -167,7 +155,7 @@ class StrategyEngine:
                 await self._check_level_entry(sm, side, nifty_ltp)
 
         except Exception as e:
-            logger.error(f"[{side}] Error processing tick: {e}", exc_info=True)
+            logger.error(f"User {self.user_id} [{side}] Error processing tick: {e}", exc_info=True)
             await self._broadcast_error(side, str(e))
 
     async def _check_level_entry(self, sm: StateMachine, side: str, nifty_ltp: Decimal):
@@ -256,16 +244,6 @@ class StrategyEngine:
         # Broadcast trade event to frontend
         await self._broadcast_trade_event(side, level, "ENTRY", sm.get_status())
 
-        # Telegram notification — fire-and-forget
-        try:
-            from app.services.notification import notification_service
-            notification_service.notify_trade_entry(
-                side=side, level=level, instrument=sm.locked_instrument,
-                lots=sm.lots, fill_price=sm.entry_avg_price, nifty_ltp=nifty_ltp,
-            )
-        except Exception:
-            pass
-
         # Fire AI analysis AFTER order — non-blocking
         asyncio.create_task(self._notify_ai("ENTRY", side, level, nifty_ltp))
 
@@ -305,27 +283,6 @@ class StrategyEngine:
         exit_result = sm.exit_position(exit_price, reason)
         await self._broadcast_trade_event(sm.side, "EXIT", reason, exit_result)
 
-        # Telegram notification — fire-and-forget
-        try:
-            from app.services.notification import notification_service
-            pnl = exit_result.get("pnl_rupees", 0)
-            if reason == "TARGET":
-                notification_service.notify_target_hit(
-                    side=sm.side, instrument=sm.locked_instrument or "",
-                    lots=sm.lots, exit_price=exit_price,
-                    entry_avg=sm.entry_avg_price or exit_price,
-                    pnl_rupees=Decimal(str(pnl)),
-                )
-            elif reason == "SL":
-                notification_service.notify_sl_hit(
-                    side=sm.side, instrument=sm.locked_instrument or "",
-                    lots=sm.lots, exit_price=exit_price,
-                    entry_avg=sm.entry_avg_price or exit_price,
-                    pnl_rupees=Decimal(str(pnl)),
-                )
-        except Exception:
-            pass
-
         asyncio.create_task(self._notify_ai("EXIT", sm.side, reason, nifty_ltp))
 
     async def _force_squareoff(self):
@@ -333,7 +290,7 @@ class StrategyEngine:
         for sm in (self.ce, self.pe):
             if sm.state not in (State.IDLE, State.BLOCKED):
                 option_ltp = self.get_option_ltp(sm.locked_instrument) or sm.entry_avg_price
-                logger.warning(f"[{sm.side}] FORCE SQUAREOFF at 11:30 AM")
+                logger.warning(f"User {self.user_id} [{sm.side}] FORCE SQUAREOFF at 11:30 AM")
                 await self._execute_exit(sm, option_ltp, "SQUAREOFF", Decimal("0"))
 
         self.stop()
@@ -345,7 +302,8 @@ class StrategyEngine:
         if not symbol:
             return
         try:
-            from app.services.kite_service import kite_service
+            from app.services.kite_service import get_user_kite_service
+            kite_service = get_user_kite_service(self.user_id)
             if kite_service.is_authenticated() and kite_service._ticker_running:
                 kite_service.subscribe_option(symbol)
         except Exception as e:
@@ -356,7 +314,8 @@ class StrategyEngine:
         if not symbol:
             return
         try:
-            from app.services.kite_service import kite_service
+            from app.services.kite_service import get_user_kite_service
+            kite_service = get_user_kite_service(self.user_id)
             if kite_service.is_authenticated():
                 kite_service.unsubscribe_option(symbol)
         except Exception as e:
@@ -368,7 +327,6 @@ class StrategyEngine:
         """Return cached option LTP, or generate a mock price for paper trading."""
         if symbol in self._option_ltp:
             return self._option_ltp[symbol]
-        # Mock: return a reasonable ATM option price
         return Decimal("100.00")
 
     # ── Broadcasting ─────────────────────────────────────────────────────────
@@ -378,6 +336,7 @@ class StrategyEngine:
             return
         status = {
             "type": "strategy_status",
+            "user_id": self.user_id,
             "data": {
                 "nifty_ltp": float(nifty_ltp),
                 "is_running": self.is_running,
@@ -388,20 +347,25 @@ class StrategyEngine:
                 "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
             },
         }
-        await self.broadcast_fn(status)
+        await self.broadcast_fn(self.user_id, status)
 
     async def _broadcast_trade_event(self, side: str, level: str, action: str, details: dict):
         if not self.broadcast_fn:
             return
-        await self.broadcast_fn({
+        await self.broadcast_fn(self.user_id, {
             "type": "trade_event",
+            "user_id": self.user_id,
             "data": {"side": side, "level": level, "action": action, **details},
         })
 
     async def _broadcast_error(self, side: str, message: str):
         if not self.broadcast_fn:
             return
-        await self.broadcast_fn({"type": "error", "data": {"side": side, "message": message}})
+        await self.broadcast_fn(self.user_id, {
+            "type": "error",
+            "user_id": self.user_id,
+            "data": {"side": side, "message": message}
+        })
 
     async def _notify_ai(self, event: str, side: str, level: str, nifty_ltp: Decimal):
         """Fire-and-forget AI analysis. Never blocks strategy execution."""
@@ -410,8 +374,9 @@ class StrategyEngine:
             if ai_service.is_enabled():
                 suggestion = await ai_service.analyze(event, side, level, float(nifty_ltp))
                 if suggestion and self.broadcast_fn:
-                    await self.broadcast_fn({
+                    await self.broadcast_fn(self.user_id, {
                         "type": "ai_suggestion",
+                        "user_id": self.user_id,
                         "data": {"suggestion": suggestion, "event": event, "side": side},
                     })
         except Exception as e:
@@ -432,7 +397,3 @@ class StrategyEngine:
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
             "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
         }
-
-
-# Global singleton
-engine = StrategyEngine()

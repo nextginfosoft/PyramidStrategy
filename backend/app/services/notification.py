@@ -26,7 +26,8 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 class NotificationService:
-    def __init__(self):
+    def __init__(self, user_id: int = 1):
+        self.user_id = user_id
         self._bot_token: Optional[str] = None
         self._chat_id: Optional[str] = None
         self._enabled: bool = False
@@ -44,7 +45,7 @@ class NotificationService:
         self._bot_token = bot_token
         self._chat_id = chat_id
         self._enabled = bool(bot_token and chat_id)
-        logger.info(f"NotificationService configured: enabled={self._enabled}")
+        logger.info(f"NotificationService configured for User {self.user_id}: enabled={self._enabled}")
 
     def load_from_db(self):
         """Load Telegram credentials from DB (called on startup and after Settings save)."""
@@ -55,6 +56,7 @@ class NotificationService:
 
             with SessionLocal() as db:
                 row = db.query(ApiConfig).filter(
+                    ApiConfig.user_id == self.user_id,
                     ApiConfig.provider == "telegram",
                     ApiConfig.is_active == True,
                 ).first()
@@ -65,9 +67,10 @@ class NotificationService:
                     if token and chat_id:
                         self.configure(token, chat_id)
                         return
-            logger.info("Telegram not configured — notifications disabled")
+            logger.info(f"User {self.user_id}: Telegram not configured — notifications disabled")
+            self._enabled = False
         except Exception as e:
-            logger.warning(f"Telegram config load failed: {e}")
+            logger.warning(f"User {self.user_id}: Telegram config load failed: {e}")
 
     def is_enabled(self) -> bool:
         return self._enabled
@@ -205,13 +208,24 @@ class NotificationService:
                     "parse_mode": "Markdown",
                 })
                 if resp.status_code != 200:
-                    logger.warning(f"Telegram send failed: {resp.status_code} {resp.text[:100]}")
+                    logger.warning(f"User {self.user_id}: Telegram send failed: {resp.status_code} {resp.text[:100]}")
         except Exception as e:
-            logger.warning(f"Telegram notification failed (non-critical): {e}")
+            logger.warning(f"User {self.user_id}: Telegram notification failed (non-critical): {e}")
 
     def _now_str(self) -> str:
         return datetime.now(IST).strftime("%I:%M %p IST")
 
 
-# Global singleton
-notification_service = NotificationService()
+# Global user instance cache
+_user_instances: dict[int, NotificationService] = {}
+
+
+def get_user_notification_service(user_id: int) -> NotificationService:
+    """Get or create NotificationService instance for a specific user."""
+    if user_id not in _user_instances:
+        _user_instances[user_id] = NotificationService(user_id)
+    return _user_instances[user_id]
+
+
+# Global singleton (defaults to user_id=1 for backward compatibility/tests)
+notification_service = NotificationService(1)

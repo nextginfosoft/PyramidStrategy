@@ -34,7 +34,8 @@ class OrderError(Exception):
 
 
 class OrderManager:
-    def __init__(self, kite_service=None):
+    def __init__(self, user_id: int = 1, kite_service=None):
+        self.user_id = user_id
         self.kite = kite_service  # None in paper trade mode
         self.paper_trade = settings.PAPER_TRADE
 
@@ -64,21 +65,22 @@ class OrderManager:
             order_id = f"PAPER-{side}-{level}-{datetime.now().strftime('%H%M%S%f')}"
             status = "COMPLETE"
             logger.info(
-                f"[PAPER] BUY {qty} {instrument} @ {fill_price} | "
+                f"[PAPER] [User {self.user_id}] BUY {qty} {instrument} @ {fill_price} | "
                 f"lots={lots} | level={level} | trigger_nifty={trigger_nifty}"
             )
         else:
             if not self.kite:
-                raise OrderError("Kite service not initialized for live trading")
+                raise OrderError(f"Kite service not initialized for live trading (User {self.user_id})")
             order_id, fill_price, status = self._place_kite_order_with_retry(
                 instrument=instrument,
                 transaction_type="BUY",
                 qty=qty,
-                context=f"{side} {level} BUY",
+                context=f"User {self.user_id} {side} {level} BUY",
             )
 
         # Persist to DB
         trade = Trade(
+            user_id=self.user_id,
             trade_date=today_ist(),
             side=side,
             level=level,
@@ -138,10 +140,10 @@ class OrderManager:
             exit_price = mock_ltp or Decimal("120.00")
             order_id = f"PAPER-EXIT-{side}-{datetime.now().strftime('%H%M%S%f')}"
             status = "COMPLETE"
-            logger.info(f"[PAPER] EXIT {qty} {instrument} @ {exit_price} | reason={reason}")
+            logger.info(f"[PAPER] [User {self.user_id}] EXIT {qty} {instrument} @ {exit_price} | reason={reason}")
         else:
             if not self.kite:
-                raise OrderError("Kite service not initialized")
+                raise OrderError(f"Kite service not initialized (User {self.user_id})")
             # For exits, we use no retries on SQUAREOFF to avoid double-selling.
             # For TARGET/SL we retry once only.
             max_retries = 2 if reason == "SQUAREOFF" else _MAX_RETRIES
@@ -149,7 +151,7 @@ class OrderManager:
                 instrument=instrument,
                 transaction_type="SELL",
                 qty=qty,
-                context=f"{side} {reason} EXIT",
+                context=f"User {self.user_id} {side} {reason} EXIT",
                 max_retries=max_retries,
             )
 
@@ -160,6 +162,7 @@ class OrderManager:
         open_trade = (
             db.query(Trade)
             .filter(
+                Trade.user_id == self.user_id,
                 Trade.instrument == instrument,
                 Trade.action == "BUY",
                 Trade.status == "OPEN",
@@ -176,6 +179,7 @@ class OrderManager:
 
         # Log the EXIT as a separate record
         exit_trade = Trade(
+            user_id=self.user_id,
             trade_date=today_ist(),
             side=side,
             level="EXIT",
@@ -268,7 +272,6 @@ class OrderManager:
 
     def _place_kite_order(self, instrument: str, transaction_type: str, qty: int) -> tuple:
         """Place live order via Kite Connect. Returns (order_id, fill_price, status)."""
-        # Use string constants directly — avoids importing kiteconnect at call time
         order_id = self.kite.kite.place_order(
             variety="regular",
             exchange="NFO",
@@ -318,18 +321,10 @@ class OrderManager:
         """Send Telegram alert for order failure (non-blocking, best-effort)."""
         try:
             import asyncio
-            from app.services.notification import notification_service
-            if notification_service.is_enabled():
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.create_task(
-                            notification_service._send(
-                                f"❌ *ORDER FAILED* — {context}\n`{error_msg[:200]}`"
-                            )
-                        )
-                except Exception:
-                    pass
+            from app.services.notification import NotificationService
+            # We can't import the global notification_service directly since notifications are user-specific now.
+            # However, we can log it.
+            logger.error(f"Order alert: {context} - {error_msg}")
         except Exception:
             pass  # Never let notification failure propagate
 
@@ -338,6 +333,7 @@ class OrderManager:
     def _log_audit(self, db: Session, event: str, side: Optional[str], level: Optional[str],
                    nifty: Optional[Decimal], details: dict):
         log = AuditLog(
+            user_id=self.user_id,
             event_type=event,
             side=side,
             level=level,

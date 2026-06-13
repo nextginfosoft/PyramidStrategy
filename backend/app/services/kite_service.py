@@ -2,12 +2,7 @@
 KiteService — Zerodha Kite Connect Wrapper
 Phase 2: Live market data + Paper trade at real prices
 
-Responsibilities:
-  - OAuth token management (login URL, request_token exchange)
-  - KiteTicker WebSocket: live NIFTY spot + option LTP streaming
-  - NFO instrument cache (symbol → token mapping)
-  - Option subscription/unsubscription after entry/exit
-  - REST LTP fallback when ticker not yet streaming
+Multi-User version: cached per user_id.
 """
 
 import asyncio
@@ -27,10 +22,11 @@ NIFTY_SPOT_TOKEN = 256265
 class KiteService:
     """
     Wraps kiteconnect SDK for PyramidStrategy.
-    One global instance shared across the app.
+    Instantiated per user.
     """
 
-    def __init__(self):
+    def __init__(self, user_id: int = 1):
+        self.user_id = user_id
         self._kite = None           # KiteConnect REST client
         self._ticker = None         # KiteTicker WebSocket client
         self._api_key: Optional[str] = None
@@ -44,7 +40,7 @@ class KiteService:
         self._on_nifty_tick: Optional[Callable] = None   # async (ltp: Decimal)
         self._on_option_tick: Optional[Callable] = None  # async (symbol: str, ltp: Decimal)
 
-        # Instrument cache
+        # Instrument cache (symbol ↔ token)
         self._token_to_symbol: dict[int, str] = {}
         self._symbol_to_token: dict[str, int] = {}
         self._instruments_loaded: bool = False
@@ -52,7 +48,7 @@ class KiteService:
         # Option tokens currently subscribed (restored on reconnect)
         self._subscribed_option_tokens: set[int] = set()
 
-        logger.info("KiteService initialized (unauthenticated)")
+        logger.info(f"KiteService initialized for User {user_id} (unauthenticated)")
 
     # ── Configuration & Auth ─────────────────────────────────────────────────
 
@@ -62,12 +58,12 @@ class KiteService:
         self._api_key = api_key
         self._api_secret = api_secret
         self._kite = KiteConnect(api_key=api_key)
-        logger.info(f"KiteService configured — API key: {mask_key(api_key)}")
+        logger.info(f"KiteService configured for User {self.user_id} — API key: {mask_key(api_key)}")
 
     def get_login_url(self) -> str:
         """Return Kite OAuth login URL for the frontend to open."""
         if not self._kite:
-            raise RuntimeError("KiteService not configured — save API key/secret in Settings first")
+            raise RuntimeError(f"KiteService not configured for User {self.user_id} — save API credentials first")
         return self._kite.login_url()
 
     def exchange_token(self, request_token: str) -> str:
@@ -78,7 +74,7 @@ class KiteService:
         access_token = data["access_token"]
         self._kite.set_access_token(access_token)
         self._access_token = access_token
-        logger.info("Kite access_token obtained successfully")
+        logger.info(f"User {self.user_id}: Kite access_token obtained successfully")
         return access_token
 
     def set_access_token(self, access_token: str):
@@ -87,7 +83,7 @@ class KiteService:
             raise RuntimeError("KiteService not configured — call configure() first")
         self._kite.set_access_token(access_token)
         self._access_token = access_token
-        logger.info("Kite access_token restored from DB")
+        logger.info(f"User {self.user_id}: Kite access_token restored from DB")
 
     def is_authenticated(self) -> bool:
         return self._kite is not None and self._access_token is not None
@@ -100,7 +96,7 @@ class KiteService:
             self._kite.profile()
             return True
         except Exception as e:
-            logger.warning(f"Kite token validation failed: {e}")
+            logger.warning(f"User {self.user_id}: Kite token validation failed: {e}")
             self._access_token = None
             return False
 
@@ -110,13 +106,12 @@ class KiteService:
         """
         Fetch all NFO NIFTY option instruments and cache symbol→token.
         Called at 9:00 AM each morning and on startup if authenticated.
-        Downloads ~10k records from Kite (takes a few seconds).
         """
         if not self.is_authenticated():
-            logger.warning("Cannot load instruments — Kite not authenticated")
+            logger.warning(f"User {self.user_id}: Cannot load instruments — Kite not authenticated")
             return
 
-        logger.info("Loading NFO NIFTY instruments from Kite API...")
+        logger.info(f"User {self.user_id}: Loading NFO NIFTY instruments from Kite API...")
         try:
             instruments = self._kite.instruments("NFO")
             redis = get_redis_client()
@@ -135,10 +130,10 @@ class KiteService:
                     loaded += 1
 
             self._instruments_loaded = True
-            logger.info(f"Loaded {loaded} NIFTY NFO instruments into cache")
+            logger.info(f"User {self.user_id}: Loaded {loaded} NIFTY NFO instruments into cache")
 
         except Exception as e:
-            logger.error(f"Failed to load NFO instruments: {e}")
+            logger.error(f"User {self.user_id}: Failed to load NFO instruments: {e}")
 
     def get_instrument_token(self, symbol: str) -> Optional[int]:
         """Resolve option symbol → Kite instrument token (in-memory + Redis fallback)."""
@@ -168,13 +163,11 @@ class KiteService:
     ):
         """
         Start KiteTicker in a background daemon thread.
-        kiteconnect SDK is synchronous — we bridge callbacks to asyncio via
-        run_coroutine_threadsafe so the strategy engine stays async.
         """
         if not self.is_authenticated():
-            raise RuntimeError("Cannot start KiteTicker — Kite not authenticated")
+            raise RuntimeError(f"User {self.user_id}: Cannot start KiteTicker — Kite not authenticated")
         if self._ticker_running:
-            logger.info("KiteTicker already running")
+            logger.info(f"User {self.user_id}: KiteTicker already running")
             return
 
         from kiteconnect import KiteTicker
@@ -209,7 +202,7 @@ class KiteService:
                     )
 
         def on_connect(ws, response):
-            logger.info("✅ KiteTicker connected — subscribing to NIFTY 50 spot")
+            logger.info(f"✅ User {self.user_id}: KiteTicker connected — subscribing to NIFTY 50 spot")
             self._is_connected = True
             ws.subscribe([NIFTY_SPOT_TOKEN])
             ws.set_mode(ws.MODE_LTP, [NIFTY_SPOT_TOKEN])
@@ -218,20 +211,20 @@ class KiteService:
                 tokens = list(self._subscribed_option_tokens)
                 ws.subscribe(tokens)
                 ws.set_mode(ws.MODE_LTP, tokens)
-                logger.info(f"Re-subscribed {len(tokens)} option tokens on reconnect")
+                logger.info(f"User {self.user_id}: Re-subscribed {len(tokens)} option tokens on reconnect")
 
         def on_disconnect(ws, code, reason):
-            logger.warning(f"KiteTicker disconnected — code={code} reason={reason}")
+            logger.warning(f"User {self.user_id}: KiteTicker disconnected — code={code} reason={reason}")
             self._is_connected = False
 
         def on_error(ws, code, reason):
-            logger.error(f"KiteTicker error — code={code} reason={reason}")
+            logger.error(f"User {self.user_id}: KiteTicker error — code={code} reason={reason}")
 
         def on_reconnect(ws, attempts_count):
-            logger.info(f"KiteTicker reconnecting... attempt #{attempts_count}")
+            logger.info(f"User {self.user_id}: KiteTicker reconnecting... attempt #{attempts_count}")
 
         def on_noreconnect(ws):
-            logger.error("KiteTicker: max reconnect attempts reached — manual restart needed")
+            logger.error(f"User {self.user_id}: KiteTicker: max reconnect attempts reached — manual restart needed")
             self._ticker_running = False
 
         self._ticker.on_ticks = on_ticks
@@ -245,41 +238,35 @@ class KiteService:
             target=self._ticker.connect,
             kwargs={"threaded": True},
             daemon=True,
-            name="KiteTicker-Thread",
+            name=f"KiteTicker-Thread-{self.user_id}",
         )
         thread.start()
         self._ticker_running = True
-        logger.info("KiteTicker background thread started")
+        logger.info(f"User {self.user_id}: KiteTicker background thread started")
 
     def subscribe_option(self, symbol: str):
-        """
-        Subscribe to live tick stream for an option symbol.
-        Called immediately after an entry order is placed (Rule: real prices for P&L).
-        """
+        """Subscribe to live tick stream for an option symbol."""
         token = self.get_instrument_token(symbol)
         if token is None:
-            logger.warning(f"Cannot subscribe option — token not found: {symbol}")
+            logger.warning(f"User {self.user_id}: Cannot subscribe option — token not found: {symbol}")
             return
         self._subscribed_option_tokens.add(token)
         self._token_to_symbol[token] = symbol  # ensure reverse mapping
         if self._ticker and self._is_connected:
             self._ticker.subscribe([token])
             self._ticker.set_mode(self._ticker.MODE_LTP, [token])
-            logger.info(f"📊 Subscribed option tick: {symbol} (token={token})")
+            logger.info(f"📊 User {self.user_id}: Subscribed option tick: {symbol} (token={token})")
         else:
-            logger.info(f"Queued option subscription (will apply on connect): {symbol}")
+            logger.info(f"User {self.user_id}: Queued option subscription (will apply on connect): {symbol}")
 
     def unsubscribe_option(self, symbol: str):
-        """
-        Unsubscribe from option tick stream after exit.
-        Keeps Redis/memory clean.
-        """
+        """Unsubscribe from option tick stream after exit."""
         token = self.get_instrument_token(symbol)
         if token and token in self._subscribed_option_tokens:
             self._subscribed_option_tokens.discard(token)
             if self._ticker and self._is_connected:
                 self._ticker.unsubscribe([token])
-            logger.info(f"Unsubscribed option tick: {symbol}")
+            logger.info(f"User {self.user_id}: Unsubscribed option tick: {symbol}")
 
     def stop_ticker(self):
         """Stop KiteTicker WebSocket."""
@@ -287,19 +274,15 @@ class KiteService:
             try:
                 self._ticker.stop()
             except Exception as e:
-                logger.warning(f"Error stopping KiteTicker: {e}")
+                logger.warning(f"User {self.user_id}: Error stopping KiteTicker: {e}")
         self._ticker_running = False
         self._is_connected = False
-        logger.info("KiteTicker stopped")
+        logger.info(f"User {self.user_id}: KiteTicker stopped")
 
     # ── REST LTP (fallback) ──────────────────────────────────────────────────
 
     def get_ltp_rest(self, symbol: str) -> Optional[Decimal]:
-        """
-        Fetch option LTP via REST API.
-        Used as fallback before ticker streams are established.
-        Rate-limit: use sparingly (3 req/sec Kite limit).
-        """
+        """Fetch option LTP via REST API."""
         if not self.is_authenticated():
             return None
         try:
@@ -307,24 +290,19 @@ class KiteService:
             ltp = resp.get(f"NFO:{symbol}", {}).get("last_price")
             return Decimal(str(ltp)) if ltp else None
         except Exception as e:
-            logger.error(f"REST LTP fetch failed for {symbol}: {e}")
+            logger.error(f"User {self.user_id}: REST LTP fetch failed for {symbol}: {e}")
             return None
 
     def get_option_ltp(self, symbol: str) -> Optional[Decimal]:
-        """
-        Get option LTP — Redis first (from ticker), REST fallback.
-        Returns None if not available.
-        """
+        """Get option LTP — Redis first (from ticker), REST fallback."""
         try:
             redis = get_redis_client()
             val = redis.get(f"option:ltp:{symbol}")
             if val:
-                # Redis returns bytes; decode before converting to Decimal
                 val_str = val.decode() if isinstance(val, bytes) else str(val)
                 return Decimal(val_str)
         except Exception:
             pass
-        # Fallback to REST (slower, limited by rate limit)
         return self.get_ltp_rest(symbol)
 
     # ── Status ───────────────────────────────────────────────────────────────
@@ -350,5 +328,16 @@ class KiteService:
         self.stop_ticker()
 
 
-# Global singleton instance
-kite_service = KiteService()
+# Global user instance cache
+_user_instances: dict[int, KiteService] = {}
+
+
+def get_user_kite_service(user_id: int) -> KiteService:
+    """Get or create KiteService instance for a specific user."""
+    if user_id not in _user_instances:
+        _user_instances[user_id] = KiteService(user_id)
+    return _user_instances[user_id]
+
+
+# Global singleton (defaults to user_id=1 for backward compatibility/tests)
+kite_service = get_user_kite_service(1)

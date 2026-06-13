@@ -61,6 +61,8 @@ export const aiApi = {
 }
 
 export const sessionApi = {
+  register: (username: string, password: string) =>
+    api.post('/session/register', { username, password }).then(r => r.data),
   login: (username: string, password: string) =>
     api.post('/session/login', { username, password }).then(r => r.data),
   logout: () => api.post('/session/logout').then(r => r.data),

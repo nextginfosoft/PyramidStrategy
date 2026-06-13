@@ -11,8 +11,9 @@ export function useWebSocket() {
 
   const connect = () => {
     if (ws.current?.readyState === WebSocket.OPEN) return
-
-    ws.current = new WebSocket(WS_URL)
+    const token = localStorage.getItem('pyramid_token')
+    const wsUrl = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL
+    ws.current = new WebSocket(wsUrl)
 
     ws.current.onopen = () => {
       setWsConnected(true)

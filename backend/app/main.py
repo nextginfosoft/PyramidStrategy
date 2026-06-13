@@ -1,5 +1,6 @@
 """
 PyramidStrategy — FastAPI Application Entry Point
+Multi-User refactored entry point.
 """
 
 from contextlib import asynccontextmanager
@@ -12,7 +13,7 @@ from app.config import settings
 from app.db.database import init_db, get_redis_client
 from app.api.routes import config, trades, strategy, auth, ai, session, notifications
 from app.api.websocket import websocket_endpoint
-from app.core.strategy_engine import engine
+from app.core.engine_manager import engine_manager
 from app.core.time_rules import today_ist
 
 
@@ -23,28 +24,41 @@ scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 def schedule_jobs():
     # 8:00 AM — token expiry reminder + auto-validate Kite token
     async def token_check():
-        from app.services.kite_service import kite_service
-        if kite_service.is_authenticated():
-            valid = kite_service.validate_token()
-            if not valid:
-                logger.warning("⚠️  Kite access token EXPIRED — re-login required before trading")
-            else:
-                logger.info("✅ Kite token valid at 8:00 AM check")
-        else:
-            logger.info("ℹ️  Kite not connected at 8:00 AM — skipping token check")
+        from app.db.database import SessionLocal
+        from app.models.models import ApiConfig
+        from app.services.kite_service import get_user_kite_service
+        try:
+            with SessionLocal() as db:
+                configs = db.query(ApiConfig).filter(ApiConfig.provider == "zerodha", ApiConfig.is_active == True).all()
+                for cfg in configs:
+                    kite_serv = get_user_kite_service(cfg.user_id)
+                    if kite_serv.is_authenticated():
+                        valid = kite_serv.validate_token()
+                        if not valid:
+                            logger.warning(f"⚠️ User {cfg.user_id}: Kite access token EXPIRED — re-login required")
+                        else:
+                            logger.info(f"✅ User {cfg.user_id}: Kite token valid at 8:00 AM check")
+        except Exception as e:
+            logger.warning(f"Scheduler token check job failed: {e}")
 
     scheduler.add_job(token_check, "cron", hour=8, minute=0, id="token_check")
 
     # 9:00 AM — daily reset + reload NFO instruments
     async def daily_startup():
-        engine.daily_reset()
-        from app.services.kite_service import kite_service
-        if kite_service.is_authenticated():
-            import asyncio
-            # Run instrument load in thread pool (blocking I/O)
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, kite_service.load_instruments)
-            logger.info("NFO instruments reloaded at 9:00 AM")
+        from app.services.kite_service import get_user_kite_service
+        # Reset all managed user engines
+        for uid, eng in list(engine_manager._engines.items()):
+            try:
+                eng.daily_reset()
+                kite_serv = get_user_kite_service(uid)
+                if kite_serv.is_authenticated():
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    # Run instrument load in thread pool (blocking I/O)
+                    await loop.run_in_executor(None, kite_serv.load_instruments)
+                    logger.info(f"User {uid}: NFO instruments reloaded at 9:00 AM")
+            except Exception as e:
+                logger.error(f"Daily reset failed for User {uid}: {e}")
 
     scheduler.add_job(daily_startup, "cron", hour=9, minute=0, id="daily_reset")
 
@@ -56,10 +70,13 @@ def schedule_jobs():
 
     # 11:30 AM — force squareoff
     async def scheduled_squareoff():
-        from app.core.strategy_engine import engine as eng
-        if eng.is_running:
-            logger.warning("🔔 11:30 AM scheduler — triggering force squareoff")
-            await eng._force_squareoff()
+        for uid, eng in list(engine_manager._engines.items()):
+            if eng.is_running:
+                try:
+                    logger.warning(f"🔔 11:30 AM scheduler — triggering force squareoff for User {uid}")
+                    await eng._force_squareoff()
+                except Exception as e:
+                    logger.error(f"Scheduled squareoff failed for User {uid}: {e}")
 
     scheduler.add_job(scheduled_squareoff, "cron", hour=11, minute=30, id="squareoff")
 
@@ -87,25 +104,35 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info("Scheduler started")
 
-    # Load active strategy config into engine on startup
+    # Load active strategy config into engines on startup
     _load_startup_config()
 
     # Restore Kite credentials and access token from DB
     _load_kite_on_startup()
 
-    # Load AI observer config from DB
+    # Load AI observer configs from DB
     try:
-        from app.services.ai_service import ai_service
-        ai_service.load_from_db()
-        logger.info(f"AI service: enabled={ai_service.is_enabled()}, provider={ai_service._provider}")
+        from app.db.database import SessionLocal
+        from app.models.models import ApiConfig
+        from app.services.ai_service import get_user_ai_service
+        with SessionLocal() as db:
+            ai_configs = db.query(ApiConfig).filter(ApiConfig.provider.in_(["openai", "anthropic", "gemini"]), ApiConfig.is_active == True).all()
+            for cfg in ai_configs:
+                ai_serv = get_user_ai_service(cfg.user_id)
+                ai_serv.load_from_db()
     except Exception as e:
         logger.warning(f"AI service init failed (non-critical): {e}")
 
-    # Load Telegram notification config from DB
+    # Load Telegram notification configs from DB
     try:
-        from app.services.notification import notification_service
-        notification_service.load_from_db()
-        logger.info(f"Telegram notifications: enabled={notification_service.is_enabled()}")
+        from app.db.database import SessionLocal
+        from app.models.models import ApiConfig
+        from app.services.notification import get_user_notification_service
+        with SessionLocal() as db:
+            telegram_configs = db.query(ApiConfig).filter(ApiConfig.provider == "telegram", ApiConfig.is_active == True).all()
+            for cfg in telegram_configs:
+                ns = get_user_notification_service(cfg.user_id)
+                ns.load_from_db()
     except Exception as e:
         logger.warning(f"Notification service init failed (non-critical): {e}")
 
@@ -113,40 +140,48 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     scheduler.shutdown(wait=False)
+    engine_manager.stop_all()
     logger.info("PyramidStrategy Backend stopped")
 
 
 def _load_kite_on_startup():
     """
-    Restore Kite API credentials and access token from DB.
+    Restore Kite API credentials and access token from DB for all users.
     If valid, start KiteTicker immediately so live data is ready at open.
     """
+    from app.db.database import SessionLocal
+    from app.models.models import ApiConfig
     from app.api.routes.auth import _load_kite_credentials_from_db
-    from app.services.kite_service import kite_service
+    from app.services.kite_service import get_user_kite_service
 
     try:
-        configured = _load_kite_credentials_from_db()
-        if not configured:
-            logger.info("Kite credentials not configured — running in mock mode")
-            return
+        with SessionLocal() as db:
+            configs = db.query(ApiConfig).filter(ApiConfig.provider == "zerodha", ApiConfig.is_active == True).all()
+            for cfg in configs:
+                user_id = cfg.user_id
+                configured = _load_kite_credentials_from_db(user_id)
+                if not configured:
+                    continue
 
-        if kite_service.is_authenticated():
-            valid = kite_service.validate_token()
-            if valid:
-                logger.info("Kite token valid on startup — starting live feed")
-                import asyncio
-                loop = asyncio.get_event_loop()
-                kite_service.start_ticker(
-                    on_nifty_tick=engine.on_nifty_tick,
-                    on_option_tick=engine.on_option_tick,
-                    loop=loop,
-                )
-                # Load instruments in background (non-blocking)
-                asyncio.ensure_future(
-                    loop.run_in_executor(None, kite_service.load_instruments)
-                )
-            else:
-                logger.warning("Kite token expired on startup — re-login required")
+                kite_service = get_user_kite_service(user_id)
+                if kite_service.is_authenticated():
+                    valid = kite_service.validate_token()
+                    if valid:
+                        logger.info(f"User {user_id}: Kite token valid on startup — starting live feed")
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        user_engine = engine_manager.get_engine(user_id)
+                        kite_service.start_ticker(
+                            on_nifty_tick=user_engine.on_nifty_tick,
+                            on_option_tick=user_engine.on_option_tick,
+                            loop=loop,
+                        )
+                        # Load instruments in background (non-blocking)
+                        asyncio.ensure_future(
+                            loop.run_in_executor(None, kite_service.load_instruments)
+                        )
+                    else:
+                        logger.warning(f"User {user_id}: Kite token expired on startup — re-login required")
     except Exception as e:
         logger.warning(f"Kite startup init failed (non-critical): {e}")
 
@@ -158,18 +193,19 @@ def _load_startup_config():
 
     try:
         with SessionLocal() as db:
-            cfg = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).first()
-            if cfg:
-                engine.load_config({
+            configs = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).all()
+            for cfg in configs:
+                user_engine = engine_manager.get_engine(cfg.user_id)
+                user_engine.load_config({
                     "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
                     "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
                     "lot_size": cfg.lot_size,
                     "target_points": float(cfg.target_points),
                     "sl_points": float(cfg.sl_points),
                 })
-                logger.info("Strategy config loaded from DB on startup")
+                logger.info(f"User {cfg.user_id}: Strategy config loaded from DB on startup")
     except Exception as e:
-        logger.warning(f"Could not load config on startup: {e}")
+        logger.warning(f"Could not load configs on startup: {e}")
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
@@ -206,9 +242,6 @@ async def ws_route(websocket: WebSocket):
 
 @app.get("/health")
 def health():
-    from app.services.kite_service import kite_service
-    from app.services.ai_service import ai_service
-    from app.services.notification import notification_service
     redis_ok = False
     try:
         r = get_redis_client()
@@ -217,22 +250,13 @@ def health():
     except Exception:
         pass
 
+    active_engines_count = sum(1 for eng in engine_manager._engines.values() if eng.is_running)
+
     return {
         "status": "ok",
         "env": settings.APP_ENV,
         "paper_trade": settings.PAPER_TRADE,
         "redis": "ok" if redis_ok else "error",
-        "engine_running": engine.is_running,
-        "kite": {
-            "authenticated": kite_service.is_authenticated(),
-            "ticker_connected": kite_service._is_connected,
-            "instruments_loaded": kite_service._instruments_loaded,
-        },
-        "ai": {
-            "enabled": ai_service.is_enabled(),
-            "provider": ai_service._provider,
-        },
-        "telegram": {
-            "enabled": notification_service.is_enabled(),
-        },
+        "active_engines": active_engines_count,
+        "total_managed_users": len(engine_manager._engines),
     }

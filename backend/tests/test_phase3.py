@@ -206,13 +206,13 @@ class TestSessionAuth:
         from app.api.routes.session import create_token, verify_token
         from fastapi.security import HTTPAuthorizationCredentials
 
-        token = create_token("admin")
+        token = create_token("1")
         assert token  # non-empty
 
         # Wrap in credentials object
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        username = verify_token(creds)
-        assert username == "admin"
+        user_id = verify_token(creds)
+        assert user_id == 1
 
     def test_invalid_token_returns_none(self):
         from app.api.routes.session import verify_token
@@ -244,9 +244,16 @@ class TestAIRoutes:
         from fastapi.testclient import TestClient
         from fastapi import FastAPI
         from app.api.routes.ai import router
+        from app.api.routes.session import require_auth
+        from app.models.models import User
 
         app = FastAPI()
         app.include_router(router)
+        
+        # Override require_auth dependency to return a mock user
+        dummy_user = User(id=1, username="admin")
+        app.dependency_overrides[require_auth] = lambda: dummy_user
+        
         return TestClient(app)
 
     def test_get_status(self, client):
@@ -270,6 +277,16 @@ class TestAIRoutes:
 
 
 class TestSessionRoutes:
+    def setup_method(self):
+        from app.db.database import SessionLocal, init_db
+        from app.models.models import User
+        from app.api.routes.session import get_password_hash
+        init_db()
+        with SessionLocal() as db:
+            db.query(User).filter(User.username == "admin").delete()
+            db.add(User(id=1, username="admin", hashed_password=get_password_hash("pyramid123")))
+            db.commit()
+
     @pytest.fixture
     def client(self):
         from fastapi.testclient import TestClient

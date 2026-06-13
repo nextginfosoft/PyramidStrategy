@@ -3,23 +3,22 @@ Mock Market Data Feed
 ─────────────────────
 Simulates NIFTY and option price movements for paper trading / testing.
 Replaces the Kite WebSocket feed when in PAPER_TRADE mode.
+User-specific: initialized with a user's StrategyEngine instance.
 """
 
 import asyncio
 from decimal import Decimal
 from loguru import logger
-from app.core.strategy_engine import engine
+import random
 
 
 class MockDataFeed:
     """
-    Generates simulated NIFTY ticks.
-    Can be driven by:
-      1. A predefined price sequence (for testing / replay)
-      2. Random walk (for interactive paper trading)
+    Generates simulated NIFTY ticks for a specific StrategyEngine.
     """
 
-    def __init__(self):
+    def __init__(self, engine):
+        self.engine = engine
         self.is_running = False
         self._price_sequence: list[float] = []
         self._current_index = 0
@@ -29,14 +28,14 @@ class MockDataFeed:
         """Load a predefined sequence of NIFTY prices for testing."""
         self._price_sequence = prices
         self._current_index = 0
-        logger.info(f"MockFeed: loaded {len(prices)} price points")
+        logger.info(f"User {self.engine.user_id} MockFeed: loaded {len(prices)} price points")
 
     def set_tick_interval(self, seconds: float):
         self._tick_interval = seconds
 
     async def start(self):
         self.is_running = True
-        logger.info("MockDataFeed started")
+        logger.info(f"User {self.engine.user_id}: MockDataFeed started")
 
         if self._price_sequence:
             await self._replay_sequence()
@@ -45,7 +44,7 @@ class MockDataFeed:
 
     def stop(self):
         self.is_running = False
-        logger.info("MockDataFeed stopped")
+        logger.info(f"User {self.engine.user_id}: MockDataFeed stopped")
 
     async def _replay_sequence(self):
         """Replay a fixed price sequence — used for backtesting / unit tests."""
@@ -53,17 +52,15 @@ class MockDataFeed:
             price = Decimal(str(self._price_sequence[self._current_index]))
             self._current_index += 1
 
-            # Simulate option LTP (simple: option = 100 + (nifty_move × 0.5))
             await self._update_option_ltps(price)
-            await engine.on_nifty_tick(price)
+            await self.engine.on_nifty_tick(price)
             await asyncio.sleep(self._tick_interval)
 
-        logger.info("MockDataFeed: price sequence exhausted")
+        logger.info(f"User {self.engine.user_id} MockFeed: price sequence exhausted")
         self.stop()
 
     async def _random_walk(self):
         """Random walk from a starting NIFTY price — for interactive paper trading."""
-        import random
         price = Decimal("23200.00")  # default starting price
 
         while self.is_running:
@@ -72,28 +69,21 @@ class MockDataFeed:
             price = max(Decimal("15000"), price + move)  # floor at 15000
 
             await self._update_option_ltps(price)
-            await engine.on_nifty_tick(price)
+            await self.engine.on_nifty_tick(price)
             await asyncio.sleep(self._tick_interval)
 
     async def _update_option_ltps(self, nifty_ltp: Decimal):
         """
         Simulate option LTPs based on NIFTY price.
-        Simplified: option price = base + (delta × nifty_move_from_entry).
         """
-        for symbol, base_price in list(engine._option_ltp.items()) or []:
-            # Simple: fluctuate ±2 pts around current
-            import random
+        for symbol, base_price in list(self.engine._option_ltp.items()) or []:
             new_ltp = base_price + Decimal(str(random.uniform(-2, 2)))
-            engine.update_option_ltp(symbol, max(Decimal("0.05"), new_ltp))
+            self.engine.update_option_ltp(symbol, max(Decimal("0.05"), new_ltp))
 
         # Also initialize option LTP if a new instrument is being watched
-        ce_symbol = engine.ce.locked_instrument
-        pe_symbol = engine.pe.locked_instrument
+        ce_symbol = self.engine.ce.locked_instrument
+        pe_symbol = self.engine.pe.locked_instrument
 
         for symbol in [ce_symbol, pe_symbol]:
-            if symbol and symbol not in engine._option_ltp:
-                engine.update_option_ltp(symbol, Decimal("100.00"))  # Initial mock LTP
-
-
-# Global singleton
-mock_feed = MockDataFeed()
+            if symbol and symbol not in self.engine._option_ltp:
+                self.engine.update_option_ltp(symbol, Decimal("100.00"))  # Initial mock LTP
