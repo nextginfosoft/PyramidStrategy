@@ -64,6 +64,17 @@ async function run() {
       const stopButton = page.locator('button', { hasText: '⏹ STOP' });
       const isStopVisible = await stopButton.isVisible();
       console.log(`STOP button visibility after click: ${isStopVisible}`);
+
+      if (isStopVisible) {
+        console.log('Clicking the STOP button...');
+        await stopButton.click();
+
+        // Wait for state transition
+        await page.waitForTimeout(2000);
+
+        const isStartVisible = await startButton.isVisible();
+        console.log(`START button visibility after STOP click: ${isStartVisible}`);
+      }
     } else {
       console.log('Cannot click START button (either invisible or disabled).');
     }

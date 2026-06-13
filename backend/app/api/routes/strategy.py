@@ -69,6 +69,10 @@ async def start_strategy(
     user_engine.load_config(config_dict)
     user_engine.start()
 
+    # Broadcast status immediately so frontend updates state to running
+    nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
+    await user_engine._broadcast_status(nifty_price)
+
     # Start mock feed in background (paper trade mode only)
     if settings.PAPER_TRADE:
         background_tasks.add_task(_run_mock_feed, user.id)
@@ -81,10 +85,14 @@ async def start_strategy(
 
 
 @router.post("/stop")
-def stop_strategy(user: User = Depends(require_auth)):
+async def stop_strategy(user: User = Depends(require_auth)):
     user_engine = engine_manager.get_engine(user.id)
     user_engine.stop()
     user_engine.mock_feed.stop()
+
+    # Broadcast status immediately so frontend knows it is stopped
+    nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
+    await user_engine._broadcast_status(nifty_price)
     return {"status": "stopped"}
 
 

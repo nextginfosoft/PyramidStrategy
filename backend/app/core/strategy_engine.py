@@ -28,6 +28,7 @@ class StrategyEngine:
     def __init__(self, user_id: int):
         self.user_id = user_id
         self.is_running: bool = False
+        self.last_nifty_price: Optional[Decimal] = None
 
         # Independent state machines per CLAUDE.md
         self.ce = StateMachine(side="CE")
@@ -122,6 +123,7 @@ class StrategyEngine:
         Called on every NIFTY price tick.
         Processes CE and PE independently.
         """
+        self.last_nifty_price = nifty_ltp
         if not self.is_running or not self.config:
             return
 
