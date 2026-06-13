@@ -7,6 +7,11 @@ type StatusMsg = { text: string; ok: boolean }
 export function Settings({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const { data: cfg } = useQuery({ queryKey: ['strategy-config'], queryFn: configApi.getStrategy })
+  const { data: apiKeys } = useQuery({ queryKey: ['api-keys'], queryFn: configApi.getApiKeys })
+
+  const getMaskedKey = (provider: string) => {
+    return apiKeys?.find((k: any) => k.provider === provider)?.api_key_masked
+  }
 
   const [levels, setLevels] = useState({
     r1: cfg?.r1 ?? 23170, r2: cfg?.r2 ?? 23220, r3: cfg?.r3 ?? 23250,
@@ -39,7 +44,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   const saveKey = useMutation({
     mutationFn: configApi.saveApiKey,
-    onSuccess: (_, vars) => showStatus(`✓ ${vars.provider} key saved`, true),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['api-keys'] })
+      showStatus(`✓ ${vars.provider} key saved`, true)
+    },
     onError: (_, vars) => showStatus(`✗ Failed to save ${vars.provider} key`, false),
   })
 
@@ -201,6 +209,11 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 className="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded text-sm font-bold text-white">
                 Save Zerodha Keys
               </button>
+              {getMaskedKey('zerodha') && (
+                <div className="text-xs text-gray-400 font-mono mt-1">
+                  Currently configured key: <span className="text-blue-300">{getMaskedKey('zerodha')}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -227,6 +240,11 @@ export function Settings({ onClose }: { onClose: () => void }) {
                   Test Connection
                 </button>
               </div>
+              {getMaskedKey(ai.provider) && (
+                <div className="text-xs text-gray-400 font-mono mt-1">
+                  Currently configured key: <span className="text-purple-300">{getMaskedKey(ai.provider)}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -254,6 +272,11 @@ export function Settings({ onClose }: { onClose: () => void }) {
                   Send Test Message
                 </button>
               </div>
+              {getMaskedKey('telegram') && (
+                <div className="text-xs text-gray-400 font-mono mt-1">
+                  Currently configured token: <span className="text-sky-300">{getMaskedKey('telegram')}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
