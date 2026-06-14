@@ -1,0 +1,26 @@
+# Python virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Python cache files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local database and logs
+*.db
+*.log
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+pytest_*.log

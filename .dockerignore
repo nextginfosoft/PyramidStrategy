@@ -1,0 +1,29 @@
+# Python virtual environments
+**/venv/
+**/.venv/
+**/env/
+**/.env/
+
+# Python cache files
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Node modules
+**/node_modules/
+
+# Build outputs
+**/dist/
+**/build/
+
+# Local databases and logs
+**/*.db
+**/*.log
+backend/pyramidstrategy.db
+backend/trade_engine.log
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
