@@ -43,3 +43,6 @@ aiosqlite>=0.20.0        # async SQLite driver for dev
 
 # PostgreSQL driver for production Docker
 psycopg2-binary>=2.9.9
+
+# Timezone support
+pytz>=2024.1
