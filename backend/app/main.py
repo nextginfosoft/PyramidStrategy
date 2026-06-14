@@ -9,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
+# Configure logger file sink for trade execution logs
+logger.add("trade_engine.log", rotation="10 MB", retention="10 days", level="INFO", enqueue=True)
+
 from app.config import settings
 from app.db.database import init_db, get_redis_client
 from app.api.routes import config, trades, strategy, auth, ai, session, notifications

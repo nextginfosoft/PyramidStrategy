@@ -76,3 +76,74 @@ def get_pnl_history(
         .limit(limit)
         .all()
     )
+
+
+@router.get("/export")
+def export_trades(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+    import csv
+    from io import StringIO
+    from fastapi.responses import StreamingResponse
+
+    trades = (
+        db.query(Trade)
+        .filter(Trade.user_id == user.id)
+        .order_by(desc(Trade.created_at))
+        .all()
+    )
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow([
+        "ID", "Trade Date", "Side", "Level", "Instrument", "Strike", 
+        "Expiry", "Action", "Lots", "Quantity", "Avg Price", 
+        "Trigger NIFTY Level", "Kite Order ID", "Status", "PnL", 
+        "Is Paper Trade", "Created At"
+    ])
+    
+    for t in trades:
+        writer.writerow([
+            t.id,
+            t.trade_date.isoformat() if t.trade_date else "",
+            t.side,
+            t.level,
+            t.instrument,
+            t.strike,
+            t.expiry.isoformat() if t.expiry else "",
+            t.action,
+            t.lots,
+            t.qty,
+            float(t.avg_price) if t.avg_price is not None else "",
+            float(t.trigger_nifty_level) if t.trigger_nifty_level is not None else "",
+            t.kite_order_id or "",
+            t.status,
+            float(t.pnl) if t.pnl is not None else "",
+            t.is_paper_trade,
+            t.created_at.isoformat() if t.created_at else ""
+        ])
+        
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=pyramid_trades.csv"}
+    )
+
+
+@router.get("/logs/export")
+def export_logs(user: User = Depends(require_auth)):
+    import os
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    log_path = "trade_engine.log"
+    if not os.path.exists(log_path):
+        raise HTTPException(status_code=404, detail="Log file not found. Check if engine has started.")
+    
+    return FileResponse(
+        path=log_path,
+        media_type="text/plain",
+        filename="trade_engine.log"
+    )

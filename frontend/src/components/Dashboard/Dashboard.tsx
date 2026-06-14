@@ -17,10 +17,53 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const { status, wsConnected } = useStrategyStore()
   const [showSettings, setShowSettings] = useState(false)
   const [simPrice, setSimPrice] = useState('')
+  const [exportingTrades, setExportingTrades] = useState(false)
+  const [exportingLogs, setExportingLogs] = useState(false)
 
   const handleLogout = () => {
     sessionApi.logout()
     onLogout?.()
+  }
+
+  const handleExportTrades = async () => {
+    setExportingTrades(true)
+    try {
+      const blob = await tradesApi.exportTrades()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', 'pyramid_trades.csv')
+      document.body.appendChild(link)
+      link.click()
+      link.parentNode?.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error(err)
+      alert('Failed to export trades.')
+    } finally {
+      setExportingTrades(false)
+    }
+  }
+
+  const handleExportLogs = async () => {
+    setExportingLogs(true)
+    try {
+      const blob = await tradesApi.exportLogs()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', 'trade_engine.log')
+      document.body.appendChild(link)
+      link.click()
+      link.parentNode?.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (err: any) {
+      console.error(err)
+      const detail = err.response?.data?.detail
+      alert(detail || 'Failed to download execution logs. Make sure the strategy engine has run.')
+    } finally {
+      setExportingLogs(false)
+    }
   }
 
   const { data: config } = useQuery({
@@ -208,7 +251,35 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
 
           {/* Trade Log */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-            <div className="text-xs text-gray-500 mb-2">TRADE LOG</div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">TRADE LOG</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportTrades}
+                  disabled={exportingTrades}
+                  className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-300 rounded text-[10px] font-semibold border border-gray-700 transition flex items-center gap-1 shadow-sm"
+                >
+                  {exportingTrades ? (
+                    <span className="w-2.5 h-2.5 border border-gray-300 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <span>📥</span>
+                  )}
+                  Export CSV
+                </button>
+                <button
+                  onClick={handleExportLogs}
+                  disabled={exportingLogs}
+                  className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-300 rounded text-[10px] font-semibold border border-gray-700 transition flex items-center gap-1 shadow-sm"
+                >
+                  {exportingLogs ? (
+                    <span className="w-2.5 h-2.5 border border-gray-300 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <span>📄</span>
+                  )}
+                  System Logs
+                </button>
+              </div>
+            </div>
             <TradeLog trades={trades} />
           </div>
         </div>
