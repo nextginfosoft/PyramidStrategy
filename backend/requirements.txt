@@ -40,3 +40,6 @@ pytest-cov>=5.0.0
 
 # Dev utilities
 aiosqlite>=0.20.0        # async SQLite driver for dev
+
+# PostgreSQL driver for production Docker
+psycopg2-binary>=2.9.9
