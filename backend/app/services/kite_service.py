@@ -64,7 +64,8 @@ class KiteService:
         """Return Kite OAuth login URL for the frontend to open."""
         if not self._kite:
             raise RuntimeError(f"KiteService not configured for User {self.user_id} — save API credentials first")
-        return self._kite.login_url()
+        base_url = self._kite.login_url()
+        return f"{base_url}&redirect_params=user_id%3D{self.user_id}"
 
     def exchange_token(self, request_token: str) -> str:
         """Exchange request_token (from OAuth redirect) for access_token."""

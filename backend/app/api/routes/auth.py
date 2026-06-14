@@ -4,6 +4,7 @@ OAuth flow: login URL → Kite login page → callback with request_token → ac
 """
 
 import asyncio
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -72,11 +73,26 @@ def kite_login(user: User = Depends(require_auth)):
 
 
 @router.get("/kite/callback")
-def kite_callback(request_token: str = Query(...), user_id: int = Query(...)):
+@router.get("/kite/callback/")
+def kite_callback(request_token: str = Query(...), user_id: Optional[int] = Query(None)):
     """
     Step 2 — OAuth callback. Handled via redirect query.
     Note: We must pass user_id in the redirect URI to associate it back to the correct user.
     """
+    if user_id is None:
+        try:
+            with SessionLocal() as db:
+                first_user = db.query(User).order_by(User.id.asc()).first()
+                if first_user:
+                    user_id = first_user.id
+                    logger.warning(f"Kite callback received without user_id. Defaulting to first user: {first_user.username} (id={user_id})")
+                else:
+                    user_id = 1
+                    logger.warning("Kite callback received without user_id and no users in DB. Defaulting to user_id = 1.")
+        except Exception as e:
+            user_id = 1
+            logger.warning(f"Failed to query database for default user_id during callback: {e}. Defaulting to user_id = 1.")
+
     try:
         user_kite = get_user_kite_service(user_id)
         access_token = user_kite.exchange_token(request_token)

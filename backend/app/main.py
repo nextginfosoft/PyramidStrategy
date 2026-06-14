@@ -225,6 +225,7 @@ app.add_middleware(
 )
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+# Without /api prefix
 app.include_router(session.router)
 app.include_router(auth.router)
 app.include_router(config.router)
@@ -232,6 +233,36 @@ app.include_router(trades.router)
 app.include_router(strategy.router)
 app.include_router(ai.router)
 app.include_router(notifications.router)
+
+# With /api prefix (supports direct requests to port 8000 using /api prefix, e.g. callback URLs)
+app.include_router(session.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(config.router, prefix="/api")
+app.include_router(trades.router, prefix="/api")
+app.include_router(strategy.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
+
+# ── Callback Route Aliases ───────────────────────────────────────────────────
+# Redirect/callback targets configured in the Zerodha Developer Console vary.
+# These aliases capture the request regardless of path (/callback, /api/callback, /auth/callback, etc.)
+from app.api.routes.auth import kite_callback
+from typing import Optional
+from fastapi import Query
+
+@app.get("/callback")
+@app.get("/callback/")
+@app.get("/api/callback")
+@app.get("/api/callback/")
+@app.get("/auth/callback")
+@app.get("/auth/callback/")
+@app.get("/api/auth/callback")
+@app.get("/api/auth/callback/")
+def root_kite_callback_alias(
+    request_token: str = Query(...),
+    user_id: Optional[int] = Query(None)
+):
+    return kite_callback(request_token=request_token, user_id=user_id)
 
 # WebSocket
 from fastapi import WebSocket

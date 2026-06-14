@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { kiteApi } from "../../services/api";
 
 interface KiteStatusData {
   authenticated: boolean;
@@ -15,8 +16,6 @@ interface KiteStatusData {
   api_key_masked: string | null;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-
 export default function KiteStatus() {
   const [status, setStatus] = useState<KiteStatusData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -24,8 +23,8 @@ export default function KiteStatus() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/auth/kite/status`);
-      if (res.ok) setStatus(await res.json());
+      const data = await kiteApi.getStatus();
+      setStatus(data);
     } catch {
       // silently ignore — shows as disconnected
     }
@@ -41,14 +40,13 @@ export default function KiteStatus() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API_BASE}/auth/kite/login`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed");
+      const data = await kiteApi.getLoginUrl();
+      if (!data.login_url) throw new Error("No login URL returned");
       // Open Kite login in new tab
       window.open(data.login_url, "_blank", "noopener,noreferrer");
       setMessage("Kite login page opened. Complete login and return here.");
     } catch (err: any) {
-      setMessage(`Error: ${err.message}`);
+      setMessage(`Error: ${err.response?.data?.detail || err.message || "Failed"}`);
     } finally {
       setLoading(false);
     }
@@ -58,13 +56,11 @@ export default function KiteStatus() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API_BASE}/auth/kite/start-feed`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed");
+      const data = await kiteApi.startFeed();
       setMessage(data.message);
       await fetchStatus();
     } catch (err: any) {
-      setMessage(`Error: ${err.message}`);
+      setMessage(`Error: ${err.response?.data?.detail || err.message || "Failed"}`);
     } finally {
       setLoading(false);
     }
@@ -73,8 +69,7 @@ export default function KiteStatus() {
   const handleValidate = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/kite/validate`, { method: "POST" });
-      const data = await res.json();
+      const data = await kiteApi.validateToken();
       setMessage(data.message);
       await fetchStatus();
     } catch {
@@ -87,8 +82,7 @@ export default function KiteStatus() {
   const handleLoadInstruments = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/kite/load-instruments`, { method: "POST" });
-      const data = await res.json();
+      const data = await kiteApi.loadInstruments();
       setMessage(data.message);
       await fetchStatus();
     } catch {
@@ -97,6 +91,7 @@ export default function KiteStatus() {
       setLoading(false);
     }
   };
+
 
   const Dot = ({ ok }: { ok: boolean }) => (
     <span
