@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { configApi, aiApi, notificationApi } from '../../services/api'
 
@@ -25,8 +25,33 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [ai, setAi] = useState({ provider: 'openai', api_key: '' })
   const [telegram, setTelegram] = useState({ bot_token: '', chat_id: '' })
   const [paperTrade, setPaperTrade] = useState<boolean | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   const [status, setStatus] = useState<StatusMsg | null>(null)
+
+  useEffect(() => {
+    if (cfg && !isInitialized) {
+      setLevels({
+        r1: cfg.r1, r2: cfg.r2, r3: cfg.r3,
+        s1: cfg.s1, s2: cfg.s2, s3: cfg.s3,
+        lot_size: cfg.lot_size,
+        target_points: cfg.target_points,
+        sl_points: cfg.sl_points,
+      })
+      if (cfg.paper_trade !== undefined) {
+        setPaperTrade(cfg.paper_trade)
+      }
+      setIsInitialized(true)
+    }
+  }, [cfg, isInitialized])
+
+  const handleTogglePaperTrade = (value: boolean) => {
+    setPaperTrade(value)
+    saveLevels.mutate({
+      ...levels,
+      paper_trade: value,
+    })
+  }
 
   const showStatus = (text: string, ok: boolean) => {
     setStatus({ text, ok })
@@ -37,9 +62,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
     mutationFn: configApi.saveStrategy,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['strategy-config'] })
-      showStatus('✓ Strategy levels saved', true)
+      showStatus('✓ Strategy configuration saved', true)
     },
-    onError: () => showStatus('✗ Failed to save levels', false),
+    onError: () => showStatus('✗ Failed to save configuration', false),
   })
 
   const saveKey = useMutation({
@@ -53,7 +78,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   const handleSaveLevels = (e: React.FormEvent) => {
     e.preventDefault()
-    saveLevels.mutate(levels)
+    saveLevels.mutate({
+      ...levels,
+      paper_trade: paperTrade ?? true,
+    })
   }
 
   const handleSaveZerodha = () => {
@@ -114,7 +142,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
             <h3 className="text-sm font-bold text-yellow-400 mb-3">⚡ Execution Mode</h3>
             <div className="flex items-center gap-4 bg-gray-800 border border-gray-700 rounded p-3">
               <button
-                onClick={() => setPaperTrade(true)}
+                type="button"
+                onClick={() => handleTogglePaperTrade(true)}
                 className={`flex-1 py-2 rounded text-sm font-bold transition-colors ${
                   paperTrade === true || paperTrade === null
                     ? 'bg-yellow-700 text-yellow-100'
@@ -124,9 +153,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 📝 Paper Trade
               </button>
               <button
+                type="button"
                 onClick={() => {
                   if (window.confirm('⚠️ Switch to LIVE mode? Real orders will be placed!')) {
-                    setPaperTrade(false)
+                    handleTogglePaperTrade(false)
                   }
                 }}
                 className={`flex-1 py-2 rounded text-sm font-bold transition-colors ${

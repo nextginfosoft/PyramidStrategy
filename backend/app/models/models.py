@@ -26,6 +26,7 @@ class StrategyConfig(Base):
     lot_size = Column(Integer, default=75)       # NIFTY lot size
     target_points = Column(Numeric(6, 2), default=20)
     sl_points = Column(Numeric(6, 2), default=10)
+    paper_trade = Column(Boolean, default=True)
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

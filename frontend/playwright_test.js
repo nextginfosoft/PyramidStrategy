@@ -30,7 +30,7 @@ async function run() {
     console.log('Page title:', await page.title());
 
     // Take a screenshot
-    const screenshotPath = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/5313f8d4-bbb0-4eb4-9173-20b5d374266a/vercel_screenshot.png';
+    const screenshotPath = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/81402008-41d9-4839-ae97-cb774d465d46/vercel_screenshot.png';
     console.log(`Taking screenshot and saving to: ${screenshotPath}`);
     await page.screenshot({ path: screenshotPath });
 
@@ -58,7 +58,7 @@ async function run() {
       // Wait for a second or for any network request to fail
       await page.waitForTimeout(3000);
       
-      const loggedInScreenshot = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/5313f8d4-bbb0-4eb4-9173-20b5d374266a/vercel_after_login.png';
+      const loggedInScreenshot = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/81402008-41d9-4839-ae97-cb774d465d46/vercel_after_login.png';
       await page.screenshot({ path: loggedInScreenshot });
       console.log(`Took post-login screenshot and saved to: ${loggedInScreenshot}`);
     } else {

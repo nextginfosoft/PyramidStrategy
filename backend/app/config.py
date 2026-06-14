@@ -4,6 +4,9 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 
+# Disable SQLAlchemy C-extensions to fix compatibility bugs on newer Python releases (e.g. 3.14)
+os.environ["DISABLE_SQLALCHEMY_CEXT"] = "1"
+
 load_dotenv()
 
 

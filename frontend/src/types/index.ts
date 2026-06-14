@@ -45,6 +45,7 @@ export interface StrategyConfig {
   lot_size: number
   target_points: number
   sl_points: number
+  paper_trade: boolean
   is_active: boolean
 }
 

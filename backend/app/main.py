@@ -202,6 +202,7 @@ def _load_startup_config():
                     "lot_size": cfg.lot_size,
                     "target_points": float(cfg.target_points),
                     "sl_points": float(cfg.sl_points),
+                    "paper_trade": cfg.paper_trade,
                 })
                 logger.info(f"User {cfg.user_id}: Strategy config loaded from DB on startup")
     except Exception as e:

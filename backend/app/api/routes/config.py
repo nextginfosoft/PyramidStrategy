@@ -25,6 +25,7 @@ def get_strategy_config(db: Session = Depends(get_db), user: User = Depends(requ
             lot_size=75,
             target_points=20,
             sl_points=10,
+            paper_trade=True,
             is_active=False
         )
     return cfg
@@ -42,6 +43,7 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         lot_size=payload.lot_size,
         target_points=payload.target_points,
         sl_points=payload.sl_points,
+        paper_trade=payload.paper_trade,
         is_active=True,
     )
     db.add(cfg)
@@ -56,9 +58,10 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         "lot_size": cfg.lot_size,
         "target_points": float(cfg.target_points),
         "sl_points": float(cfg.sl_points),
+        "paper_trade": cfg.paper_trade,
     })
 
-    logger.info(f"User {user.username} strategy config saved: R1={cfg.r1} R2={cfg.r2} R3={cfg.r3} | S1={cfg.s1} S2={cfg.s2} S3={cfg.s3}")
+    logger.info(f"User {user.username} strategy config saved: R1={cfg.r1} R2={cfg.r2} R3={cfg.r3} | S1={cfg.s1} S2={cfg.s2} S3={cfg.s3} | paper_trade={cfg.paper_trade}")
     return cfg
 
 

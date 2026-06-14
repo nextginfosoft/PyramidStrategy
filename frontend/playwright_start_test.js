@@ -39,7 +39,7 @@ async function run() {
     console.log('Waiting for dashboard to load...');
     await page.waitForTimeout(3000);
 
-    const screenshotPath1 = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/98f23bb9-c34d-42f7-973f-8834ee211412/dashboard_before_start.png';
+    const screenshotPath1 = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/81402008-41d9-4839-ae97-cb774d465d46/dashboard_before_start.png';
     await page.screenshot({ path: screenshotPath1 });
     console.log(`Saved screenshot before starting to: ${screenshotPath1}`);
 
@@ -56,7 +56,7 @@ async function run() {
       // Wait for a second for state transition
       await page.waitForTimeout(2000);
 
-      const screenshotPath2 = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/98f23bb9-c34d-42f7-973f-8834ee211412/dashboard_after_start.png';
+      const screenshotPath2 = 'C:/Users/SANTOSH/.gemini/antigravity-cli/brain/81402008-41d9-4839-ae97-cb774d465d46/dashboard_after_start.png';
       await page.screenshot({ path: screenshotPath2 });
       console.log(`Saved screenshot after starting to: ${screenshotPath2}`);
 

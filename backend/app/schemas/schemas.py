@@ -15,6 +15,7 @@ class StrategyConfigBase(BaseModel):
     lot_size: int = 75
     target_points: float = 20.0
     sl_points: float = 10.0
+    paper_trade: bool = True
 
     @model_validator(mode="after")
     def validate_levels(self):

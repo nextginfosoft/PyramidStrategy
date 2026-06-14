@@ -62,6 +62,10 @@ class StrategyEngine:
         target = Decimal(str(config.get("target_points", 20)))
         sl = Decimal(str(config.get("sl_points", 10)))
 
+        # Load paper trade mode dynamically from configuration
+        self.mock_mode = config.get("paper_trade", True)
+        self.order_manager.paper_trade = self.mock_mode
+
         # Apply config to both state machines
         self.ce.lot_size = lot_size
         self.ce.target_points = target
@@ -73,7 +77,7 @@ class StrategyEngine:
         logger.info(
             f"User {self.user_id} config loaded: R1={config['r1']} R2={config['r2']} R3={config['r3']} "
             f"| S1={config['s1']} S2={config['s2']} S3={config['s3']} "
-            f"| lot_size={lot_size} | target={target} | sl={sl}"
+            f"| lot_size={lot_size} | target={target} | sl={sl} | paper_trade={self.mock_mode}"
         )
 
     def daily_reset(self):
@@ -104,12 +108,16 @@ class StrategyEngine:
     def get_option_ltp(self, symbol: str) -> Optional[Decimal]:
         if not symbol:
             return None
-        if not settings.PAPER_TRADE:
+        # Try real Kite service first if authenticated (allows live-data paper trading)
+        try:
             from app.services.kite_service import get_user_kite_service
             kite_service = get_user_kite_service(self.user_id)
-            kite_ltp = kite_service.get_option_ltp(symbol)
-            if kite_ltp:
-                return kite_ltp
+            if kite_service.is_authenticated():
+                kite_ltp = kite_service.get_option_ltp(symbol)
+                if kite_ltp is not None:
+                    return kite_ltp
+        except Exception as e:
+            logger.warning(f"Error fetching live option LTP from Kite: {e}")
         return self._option_ltp.get(symbol)
 
     async def on_option_tick(self, symbol: str, ltp: Decimal):
@@ -327,8 +335,9 @@ class StrategyEngine:
 
     def _get_mock_option_ltp(self, symbol: str) -> Decimal:
         """Return cached option LTP, or generate a mock price for paper trading."""
-        if symbol in self._option_ltp:
-            return self._option_ltp[symbol]
+        ltp = self.get_option_ltp(symbol)
+        if ltp is not None:
+            return ltp
         return Decimal("100.00")
 
     # ── Broadcasting ─────────────────────────────────────────────────────────
@@ -342,7 +351,7 @@ class StrategyEngine:
             "data": {
                 "nifty_ltp": float(nifty_ltp),
                 "is_running": self.is_running,
-                "paper_trade": settings.PAPER_TRADE,
+                "paper_trade": self.mock_mode,
                 "entries_allowed": is_entry_allowed(),
                 "squareoff_triggered": should_squareoff(),
                 "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
@@ -392,7 +401,7 @@ class StrategyEngine:
 
         return {
             "is_running": self.is_running,
-            "paper_trade": settings.PAPER_TRADE,
+            "paper_trade": self.mock_mode,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
             "entries_allowed": is_entry_allowed(),
             "squareoff_triggered": should_squareoff(),

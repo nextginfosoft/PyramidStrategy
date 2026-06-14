@@ -43,6 +43,7 @@ async def start_strategy(
         "lot_size": cfg.lot_size,
         "target_points": float(cfg.target_points),
         "sl_points": float(cfg.sl_points),
+        "paper_trade": cfg.paper_trade,
     }
 
     # Run safety checks before starting (especially important for live mode)
@@ -50,7 +51,7 @@ async def start_strategy(
     user_kite = get_user_kite_service(user.id)
 
     passed, errors, warnings = run_safety_checks(
-        paper_trade=settings.PAPER_TRADE,
+        paper_trade=cfg.paper_trade,
         kite_service=user_kite,
         strategy_config=config_dict,
     )
@@ -62,10 +63,13 @@ async def start_strategy(
         )
 
     # Wire KiteService into OrderManager for live trading
-    if not settings.PAPER_TRADE:
+    user_engine.order_manager.paper_trade = cfg.paper_trade
+    if not cfg.paper_trade:
         user_engine.order_manager.kite = user_kite
-        user_engine.order_manager.paper_trade = False
+    else:
+        user_engine.order_manager.kite = None
 
+    user_engine.mock_mode = cfg.paper_trade
     user_engine.load_config(config_dict)
     user_engine.start()
 
@@ -74,12 +78,12 @@ async def start_strategy(
     await user_engine._broadcast_status(nifty_price)
 
     # Start mock feed in background (paper trade mode only)
-    if settings.PAPER_TRADE:
+    if cfg.paper_trade:
         background_tasks.add_task(_run_mock_feed, user.id)
 
     return {
         "status": "started",
-        "paper_trade": settings.PAPER_TRADE,
+        "paper_trade": cfg.paper_trade,
         "warnings": warnings,
     }
 
@@ -115,18 +119,33 @@ async def simulate_tick(nifty_price: float, user: User = Depends(require_auth)):
 
 
 @router.get("/safety-check")
-def safety_check(user: User = Depends(require_auth)):
+def safety_check(db: Session = Depends(get_db), user: User = Depends(require_auth)):
     """Run safety checks without starting. Returns errors and warnings."""
     from app.core.safety_checks import run_safety_checks
     user_engine = engine_manager.get_engine(user.id)
     user_kite = get_user_kite_service(user.id)
 
+    cfg = db.query(StrategyConfig).filter(
+        StrategyConfig.user_id == user.id,
+        StrategyConfig.is_active == True
+    ).first()
+
+    paper_trade = cfg.paper_trade if cfg else settings.PAPER_TRADE
     cfg_dict = None
-    if user_engine.config:
+    if cfg:
+        cfg_dict = {
+            "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
+            "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
+            "lot_size": cfg.lot_size,
+            "target_points": float(cfg.target_points),
+            "sl_points": float(cfg.sl_points),
+            "paper_trade": cfg.paper_trade,
+        }
+    elif user_engine.config:
         cfg_dict = user_engine.config
 
     passed, errors, warnings = run_safety_checks(
-        paper_trade=settings.PAPER_TRADE,
+        paper_trade=paper_trade,
         kite_service=user_kite,
         strategy_config=cfg_dict,
     )
@@ -134,7 +153,7 @@ def safety_check(user: User = Depends(require_auth)):
         "passed": passed,
         "errors": errors,
         "warnings": warnings,
-        "paper_trade": settings.PAPER_TRADE,
+        "paper_trade": paper_trade,
     }
 
 
