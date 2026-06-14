@@ -42,6 +42,7 @@
 9. [Dashboard Walkthrough](#9-dashboard-walkthrough)
 10. [Common Errors & Fixes](#10-common-errors--fixes)
 11. [Safety Checklist Before Live Trading](#11-safety-checklist-before-live-trading)
+12. [How to Run Using Docker](#12-how-to-run-using-docker)
 
 ---
 
@@ -922,6 +923,60 @@ Expected: **153 passed**
 > - Max 3 lots per side (hard limit in state machine)
 > - SL of 10 pts enforced by order manager
 > - 11:30 AM squareoff closes everything regardless
+
+---
+
+## 12. How to Run Using Docker
+
+You can run the entire PyramidStrategy platform (React frontend, FastAPI backend, PostgreSQL database, and Redis cache) inside Docker containers. This is the recommended approach for deploying on a **VPS** (e.g., Ubuntu server) or running the complete environment locally without manual Python/Node setups.
+
+### 12.1 Prerequisites
+Make sure you have Docker and Docker Compose installed on your host system:
+* **Windows/Mac:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+* **Ubuntu/Linux VPS:** Install Docker using the terminal:
+  ```bash
+  sudo apt update && sudo apt install docker.io docker-compose-v2 -y
+  sudo systemctl enable --now docker
+  ```
+
+### 12.2 Clone and Setup
+1. Clone the repository on your server:
+   ```bash
+   git clone https://github.com/nextginfosoft/PyramidStrategy.git
+   cd PyramidStrategy
+   ```
+
+2. **Configure your VPS IP Address in `docker-compose.yml`** (so the frontend browser knows where to send API requests):
+   * **Option A (Automated command):** Run these one-liner commands to automatically swap `localhost` with your VPS IP (replace `185.185.83.49` with your actual VPS IP):
+     ```bash
+     sed -i 's|VITE_API_BASE_URL=http://localhost|VITE_API_BASE_URL=http://185.185.83.49/api|g' docker-compose.yml
+     sed -i 's|VITE_WS_URL=ws://localhost/ws|VITE_WS_URL=ws://185.185.83.49/ws|g' docker-compose.yml
+     ```
+   * **Option B (Manual edit):** Open `docker-compose.yml` in a text editor (e.g., `nano docker-compose.yml`) and update lines 46–47 under the `frontend` build arguments:
+     ```yaml
+     args:
+       - VITE_API_BASE_URL=http://your_vps_ip/api
+       - VITE_WS_URL=ws://your_vps_ip/ws
+     ```
+
+### 12.3 Spin Up the Services
+Run the following command in the root folder (where `docker-compose.yml` resides) to build and run all services in the background:
+```bash
+sudo docker compose up -d --build
+```
+This builds and connects:
+* **Frontend:** Serves Vite React static assets via Nginx on port `80`.
+* **Backend:** Runs FastAPI inside a Docker container on port `8000`.
+* **PostgreSQL:** Starts database container on port `5432` with persistent volume (`postgres_data`).
+* **Redis:** Starts Redis container on port `6379`.
+
+### 12.4 Verification & Updates
+* Open your browser and go to your VPS IP: `http://your_vps_ip` (port 80).
+* To update the system when you push changes to GitHub:
+  ```bash
+  git pull
+  sudo docker compose up -d --build
+  ```
 
 ---
 
