@@ -946,18 +946,20 @@ Make sure you have Docker and Docker Compose installed on your host system:
    cd PyramidStrategy
    ```
 
-2. **Configure your VPS IP Address in `docker-compose.yml`** (so the frontend browser knows where to send API requests):
-   * **Option A (Automated command):** Run these one-liner commands to automatically swap `localhost` with your VPS IP (replace `185.185.83.49` with your actual VPS IP):
-     ```bash
-     sed -i 's|VITE_API_BASE_URL=http://localhost|VITE_API_BASE_URL=http://185.185.83.49/api|g' docker-compose.yml
-     sed -i 's|VITE_WS_URL=ws://localhost/ws|VITE_WS_URL=ws://185.185.83.49/ws|g' docker-compose.yml
-     ```
-   * **Option B (Manual edit):** Open `docker-compose.yml` in a text editor (e.g., `nano docker-compose.yml`) and update lines 46–47 under the `frontend` build arguments:
-     ```yaml
-     args:
-       - VITE_API_BASE_URL=http://your_vps_ip/api
-       - VITE_WS_URL=ws://your_vps_ip/ws
-     ```
+2. **Configure your Domain or VPS IP Address in `docker-compose.yml`** (so the frontend browser knows where to send API requests):
+   * By default, `docker-compose.yml` is configured to use the domain **`pyramid.nextginfosoft.com`** with secure SSL/TLS.
+   * If you need to change this to a different domain or a raw IP address:
+     * **Option A (Automated command):** Run these commands (replace `your_domain.com` with your actual domain or IP):
+       ```bash
+       sed -i 's|VITE_API_BASE_URL=https://pyramid.nextginfosoft.com/api|VITE_API_BASE_URL=https://your_domain.com/api|g' docker-compose.yml
+       sed -i 's|VITE_WS_URL=wss://pyramid.nextginfosoft.com/ws|VITE_WS_URL=wss://your_domain.com/ws|g' docker-compose.yml
+       ```
+     * **Option B (Manual edit):** Open `docker-compose.yml` in a text editor (e.g., `nano docker-compose.yml`) and update the `frontend` build arguments:
+       ```yaml
+       args:
+         - VITE_API_BASE_URL=https://your_domain.com/api
+         - VITE_WS_URL=wss://your_domain.com/ws
+       ```
 
 ### 12.3 Spin Up the Services
 Run the following command in the root folder (where `docker-compose.yml` resides) to build and run all services in the background:

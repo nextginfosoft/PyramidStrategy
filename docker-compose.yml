@@ -43,8 +43,8 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_API_BASE_URL=http://localhost
-        - VITE_WS_URL=ws://localhost/ws
+        - VITE_API_BASE_URL=https://pyramid.nextginfosoft.com/api
+        - VITE_WS_URL=wss://pyramid.nextginfosoft.com/ws
     container_name: pyramid_frontend
     restart: always
     ports:
