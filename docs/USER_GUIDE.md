@@ -447,7 +447,7 @@ The AI Observer watches every trade event in real time and provides 2–3 senten
 |----------|-------|---------|
 | OpenAI | gpt-4o | General analysis, fast |
 | Anthropic | claude-3-5-sonnet | Nuanced market context |
-| Google Gemini | gemini-1.5-pro | Alternative perspective |
+| Google Gemini | gemini-2.5-flash | Alternative perspective |
 
 **Setup steps:**
 

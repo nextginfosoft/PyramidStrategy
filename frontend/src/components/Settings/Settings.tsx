@@ -452,7 +452,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     >
                       <option value="openai">OpenAI (GPT-4o)</option>
                       <option value="anthropic">Anthropic (Claude 3.5 Sonnet)</option>
-                      <option value="gemini">Google (Gemini 1.5 Pro)</option>
+                      <option value="gemini">Google (Gemini 2.5 Flash)</option>
                     </select>
                   </div>
                   <div className="space-y-1">

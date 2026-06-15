@@ -109,6 +109,16 @@ def save_api_key(payload: ApiConfigUpdate, db: Session = Depends(get_db), user: 
     elif payload.provider == "telegram":
         from app.services.notification import get_user_notification_service
         get_user_notification_service(user.id).load_from_db()
+    elif payload.provider in ("openai", "anthropic", "gemini"):
+        existing.is_active = True
+        other_providers = [p for p in ("openai", "anthropic", "gemini") if p != payload.provider]
+        db.query(ApiConfig).filter(
+            ApiConfig.user_id == user.id,
+            ApiConfig.provider.in_(other_providers)
+        ).update({ApiConfig.is_active: False}, synchronize_session=False)
+        db.commit()
+        from app.services.ai_service import get_user_ai_service
+        get_user_ai_service(user.id).load_from_db()
 
     return {"status": "saved", "provider": payload.provider}
 

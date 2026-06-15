@@ -25,7 +25,7 @@ BASE_PROMPT = (
 PROVIDER_MODELS = {
     "openai": "gpt-4o",
     "anthropic": "claude-3-5-sonnet-20241022",
-    "gemini": "gemini-1.5-pro",
+    "gemini": "gemini-2.5-flash",
 }
 
 

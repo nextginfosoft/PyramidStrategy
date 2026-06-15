@@ -164,7 +164,7 @@
 - [ ] `AIService` class with pluggable provider support
 - [ ] Implement for OpenAI (`gpt-4o`)
 - [ ] Implement for Anthropic (`claude-3-5-sonnet`)
-- [ ] Implement for Google (`gemini-1.5-pro`)
+- [ ] Implement for Google (`gemini-2.5-flash`)
 - [ ] Async task queue: AI analysis never blocks strategy engine
 - [ ] Trigger AI analysis on: entry, exit, SL hit, squareoff
 - [ ] Context payload: NIFTY level, open positions, P&L, time, VIX (if available)

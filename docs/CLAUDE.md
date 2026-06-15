@@ -249,7 +249,7 @@ LEVEL_1_ENTERED  [1 lot open, strike locked]
 
 - AI observes ALL trades in real-time (non-blocking — never delays trade execution)
 - AI API key is user-provided via Settings UI (stored encrypted in `api_config` table)
-- Supported providers: OpenAI (gpt-4o), Anthropic (claude-3-5-sonnet), Google (gemini-1.5-pro)
+- Supported providers: OpenAI (gpt-4o), Anthropic (claude-3-5-sonnet), Google (gemini-2.5-flash)
 - AI receives context: current NIFTY level, open positions, P&L, market conditions
 - AI outputs: trade suggestion, risk warning, pattern observation (displayed in "AI Observer" panel)
 - AI is ADVISORY ONLY — it NEVER triggers or blocks trades automatically
