@@ -237,7 +237,7 @@ class KiteService:
 
         thread = threading.Thread(
             target=self._ticker.connect,
-            kwargs={"threaded": True},
+            kwargs={"threaded": False},
             daemon=True,
             name=f"KiteTicker-Thread-{self.user_id}",
         )

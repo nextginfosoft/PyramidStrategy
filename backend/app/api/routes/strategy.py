@@ -77,8 +77,8 @@ async def start_strategy(
     nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
     await user_engine._broadcast_status(nifty_price)
 
-    # Start mock feed in background (paper trade mode only)
-    if cfg.paper_trade:
+    # Start mock feed in background (paper trade mode only if live feed is not active)
+    if cfg.paper_trade and not user_kite._ticker_running:
         background_tasks.add_task(_run_mock_feed, user.id)
 
     return {
