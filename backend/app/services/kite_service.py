@@ -48,6 +48,9 @@ class KiteService:
         # Option tokens currently subscribed (restored on reconnect)
         self._subscribed_option_tokens: set[int] = set()
 
+        # REST LTP cache to prevent rate limiting (symbol -> (timestamp, value))
+        self._rest_ltp_cache: dict[str, tuple[float, Optional[Decimal]]] = {}
+
         logger.info(f"KiteService initialized for User {user_id} (unauthenticated)")
 
     # ── Configuration & Auth ─────────────────────────────────────────────────
@@ -283,15 +286,29 @@ class KiteService:
     # ── REST LTP (fallback) ──────────────────────────────────────────────────
 
     def get_ltp_rest(self, symbol: str) -> Optional[Decimal]:
-        """Fetch option LTP via REST API."""
+        """Fetch option LTP via REST API with a 2-second rate-limit throttle/cache."""
         if not self.is_authenticated():
             return None
+
+        import time
+        now = time.time()
+        if symbol in self._rest_ltp_cache:
+            last_time, last_val = self._rest_ltp_cache[symbol]
+            if now - last_time < 2.0:
+                # Return cached value to prevent hitting Zerodha REST rate limits
+                return last_val
+
         try:
+            # Pre-set the cache timestamp to avoid concurrent duplicate requests
+            self._rest_ltp_cache[symbol] = (now, None)
             resp = self._kite.ltp([f"NFO:{symbol}"])
             ltp = resp.get(f"NFO:{symbol}", {}).get("last_price")
-            return Decimal(str(ltp)) if ltp else None
+            val = Decimal(str(ltp)) if ltp else None
+            self._rest_ltp_cache[symbol] = (now, val)
+            return val
         except Exception as e:
             logger.error(f"User {self.user_id}: REST LTP fetch failed for {symbol}: {e}")
+            self._rest_ltp_cache[symbol] = (now, None)
             return None
 
     def get_option_ltp(self, symbol: str) -> Optional[Decimal]:

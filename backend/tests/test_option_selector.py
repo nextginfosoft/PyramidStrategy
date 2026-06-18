@@ -56,7 +56,7 @@ class TestSymbolBuilding:
     def test_pe_symbol(self):
         expiry = date(2024, 6, 13)
         symbol = build_option_symbol("PE", 23250, expiry)
-        assert symbol == "NIFTY13JUN2423250PE"
+        assert symbol == "NIFTY2461323250PE"
 
     def test_ce_symbol(self):
         expiry = date(2024, 6, 27)

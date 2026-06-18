@@ -234,6 +234,29 @@ class TestLTPRetrieval:
         ltp = kite_svc.get_ltp_rest("NIFTY27JUN2423150PE")
         assert ltp is None
 
+    def test_get_ltp_rest_throttled(self, authenticated_svc):
+        authenticated_svc._kite.ltp.return_value = {
+            "NFO:NIFTY27JUN2423150PE": {"last_price": 130.75}
+        }
+
+        # First call should hit the API
+        ltp1 = authenticated_svc.get_ltp_rest("NIFTY27JUN2423150PE")
+        assert ltp1 == Decimal("130.75")
+        assert authenticated_svc._kite.ltp.call_count == 1
+
+        # Second call immediately after should return cached value without hitting the API
+        ltp2 = authenticated_svc.get_ltp_rest("NIFTY27JUN2423150PE")
+        assert ltp2 == Decimal("130.75")
+        assert authenticated_svc._kite.ltp.call_count == 1  # call_count remains 1
+
+        # Mock time forward by 3 seconds
+        import time
+        current_time = time.time()
+        with patch("time.time", return_value=current_time + 3.0):
+            ltp3 = authenticated_svc.get_ltp_rest("NIFTY27JUN2423150PE")
+            assert ltp3 == Decimal("130.75")
+            assert authenticated_svc._kite.ltp.call_count == 2  # increments to 2
+
 
 # ── Status Tests ─────────────────────────────────────────────────────────────
 

@@ -107,15 +107,30 @@ def get_expiry_date(trade_date: Optional[date] = None) -> date:
 def format_expiry_for_symbol(expiry: date) -> str:
     """
     Formats expiry date in Kite's instrument symbol format.
-    Example: 2024-06-27 → '27JUN24'
-    Used when constructing option symbol strings like NIFTY27JUN2424150PE.
+    - Monthly expiry (last Thursday of the month): '27JUN24' (DDMMMYY)
+    - Weekly expiry (other Thursdays): '24606' (YYMDD where M is 1-9, O, N, D)
     """
-    month_map = {
-        1: "JAN", 2: "FEB", 3: "MAR", 4: "APR",
-        5: "MAY", 6: "JUN", 7: "JUL", 8: "AUG",
-        9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC",
-    }
-    return f"{expiry.day:02d}{month_map[expiry.month]}{str(expiry.year)[2:]}"
+    # Check if this Thursday is the last Thursday of the month
+    next_thursday = expiry + timedelta(days=7)
+    is_monthly = next_thursday.month != expiry.month
+
+    if is_monthly:
+        month_map = {
+            1: "JAN", 2: "FEB", 3: "MAR", 4: "APR",
+            5: "MAY", 6: "JUN", 7: "JUL", 8: "AUG",
+            9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC",
+        }
+        return f"{expiry.day:02d}{month_map[expiry.month]}{str(expiry.year)[2:]}"
+    else:
+        # Weekly expiry format: YY + M + DD
+        yy = str(expiry.year)[2:]
+        month_char_map = {
+            1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6",
+            7: "7", 8: "8", 9: "9", 10: "O", 11: "N", 12: "D"
+        }
+        m = month_char_map[expiry.month]
+        dd = f"{expiry.day:02d}"
+        return f"{yy}{m}{dd}"
 
 
 def seconds_until_squareoff(current_time: Optional[datetime] = None) -> int:

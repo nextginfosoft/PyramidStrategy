@@ -124,4 +124,4 @@ class TestSymbolFormat:
 
     def test_expiry_format_single_digit_day(self):
         d = date(2024, 6, 6)
-        assert format_expiry_for_symbol(d) == "06JUN24"
+        assert format_expiry_for_symbol(d) == "24606"
