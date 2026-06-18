@@ -36,6 +36,8 @@ export const tradesApi = {
   getPnlHistory: () => api.get('/trades/pnl/history').then(r => r.data),
   exportTrades: (): Promise<Blob> => api.get('/trades/export', { responseType: 'blob' }).then(r => r.data),
   exportLogs: (): Promise<Blob> => api.get('/trades/logs/export', { responseType: 'blob' }).then(r => r.data),
+  getLogs: (start_time?: string, end_time?: string): Promise<{ logs: string[] }> =>
+    api.get('/trades/logs', { params: { start_time, end_time } }).then(r => r.data),
 }
 
 export const healthApi = {

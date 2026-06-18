@@ -9,8 +9,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
+# Time filter to restrict logs to 9 AM - 12:30 PM IST
+def log_time_filter(record):
+    try:
+        from app.core.time_rules import now_ist
+        from datetime import time
+        t = now_ist().time()
+        return time(9, 0) <= t <= time(12, 30)
+    except Exception:
+        # Fallback to true if timezone helper not fully loaded/ready
+        return True
+
 # Configure logger file sink for trade execution logs
-logger.add("trade_engine.log", rotation="10 MB", retention="10 days", level="INFO", enqueue=True)
+logger.add(
+    "trade_engine.log",
+    rotation="10 MB",
+    retention="10 days",
+    level="INFO",
+    enqueue=True,
+    filter=log_time_filter
+)
 
 from app.config import settings
 from app.db.database import init_db, get_redis_client

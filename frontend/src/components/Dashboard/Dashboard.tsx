@@ -10,12 +10,14 @@ import { PnLChart } from '../PnLChart/PnLChart'
 import { AIObserver } from '../AIObserver/AIObserver'
 import { Settings } from '../Settings/Settings'
 import KiteStatus from '../KiteStatus/KiteStatus'
+import { LiveLogModal } from '../LiveLogModal/LiveLogModal'
 
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
   const qc = useQueryClient()
   const { status, wsConnected } = useStrategyStore()
   const [showSettings, setShowSettings] = useState(false)
+  const [showLiveLogs, setShowLiveLogs] = useState(false)
   const [simPrice, setSimPrice] = useState('')
   const [exportingTrades, setExportingTrades] = useState(false)
   const [exportingLogs, setExportingLogs] = useState(false)
@@ -144,6 +146,10 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
               ▶ START
             </button>
           )}
+          <button onClick={() => setShowLiveLogs(true)}
+            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+            📄 Trade Log
+          </button>
           <button onClick={() => setShowSettings(true)}
             className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
             ⚙ Settings
@@ -323,6 +329,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
       </div>
 
       {showSettings && <Settings onClose={() => { setShowSettings(false); qc.invalidateQueries() }} />}
+      {showLiveLogs && <LiveLogModal onClose={() => setShowLiveLogs(false)} />}
     </div>
   )
 }

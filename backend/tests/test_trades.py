@@ -193,7 +193,7 @@ class TestTradesRoutes:
             user_id=1,
             trade_date=today_ist(),
             side="CE",
-            level="R1",
+            level="L1",
             instrument="NIFTY27JUN2423100CE",
             strike=23100,
             expiry=today_ist(),
@@ -222,9 +222,35 @@ class TestTradesRoutes:
         rows = list(reader)
         
         assert len(rows) == 2  # Header + 1 trade
-        assert rows[0][0] == "ID"
-        assert rows[1][4] == "NIFTY27JUN2423100CE"
-        assert rows[1][2] == "CE"
+        assert rows[0][0] == "Trade ID"
+        assert rows[1][1] == "S1"  # CE + L1 maps to S1
+        assert rows[1][2] == "NIFTY27JUN2423100CE"
+
+    def test_get_logs_empty(self, client):
+        if os.path.exists("trade_engine.log"):
+            os.remove("trade_engine.log")
+        resp = client.get("/trades/logs")
+        assert resp.status_code == 200
+        assert resp.json() == {"logs": []}
+
+    def test_get_logs_filtered(self, client):
+        # Create a dummy log file with timestamps
+        with open("trade_engine.log", "w", encoding="utf-8") as f:
+            f.write("2026-06-18 08:30:00 | INFO | Early log\n")
+            f.write("2026-06-18 09:30:00 | INFO | Log 1 inside\n")
+            f.write("2026-06-18 11:15:00 | INFO | Log 2 inside\n")
+            f.write("2026-06-18 12:45:00 | INFO | Late log\n")
+
+        try:
+            resp = client.get("/trades/logs?start_time=09:00&end_time=12:30")
+            assert resp.status_code == 200
+            data = resp.json()["logs"]
+            assert len(data) == 2
+            assert "Log 1 inside" in data[0]
+            assert "Log 2 inside" in data[1]
+        finally:
+            if os.path.exists("trade_engine.log"):
+                os.remove("trade_engine.log")
 
     def test_export_logs_not_found(self, client):
         # Ensure log file does not exist during this test
