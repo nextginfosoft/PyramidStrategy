@@ -4,6 +4,7 @@ import csv
 from io import StringIO
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -226,56 +227,46 @@ class TestTradesRoutes:
         assert rows[1][1] == "S1"  # CE + L1 maps to S1
         assert rows[1][2] == "NIFTY27JUN2423100CE"
 
-    def test_get_logs_empty(self, client):
-        if os.path.exists("trade_engine.log"):
-            os.remove("trade_engine.log")
+    @patch("os.path.exists", return_value=False)
+    def test_get_logs_empty(self, mock_exists, client):
         resp = client.get("/trades/logs")
         assert resp.status_code == 200
         assert resp.json() == {"logs": []}
 
-    def test_get_logs_filtered(self, client):
-        # Create a dummy log file with timestamps
-        with open("trade_engine.log", "w", encoding="utf-8") as f:
-            f.write("2026-06-18 08:30:00 | INFO | Early log\n")
-            f.write("2026-06-18 09:30:00 | INFO | Log 1 inside\n")
-            f.write("2026-06-18 11:15:00 | INFO | Log 2 inside\n")
-            f.write("2026-06-18 12:45:00 | INFO | Late log\n")
-
-        try:
+    @patch("os.path.exists", return_value=True)
+    def test_get_logs_filtered(self, mock_exists, client):
+        dummy_log_content = (
+            "2026-06-18 08:30:00 | INFO | Early log\n"
+            "2026-06-18 09:30:00 | INFO | Log 1 inside\n"
+            "2026-06-18 11:15:00 | INFO | Log 2 inside\n"
+            "2026-06-18 12:45:00 | INFO | Late log\n"
+        )
+        from unittest.mock import mock_open
+        with patch("builtins.open", mock_open(read_data=dummy_log_content)):
             resp = client.get("/trades/logs?start_time=09:00&end_time=12:30")
             assert resp.status_code == 200
             data = resp.json()["logs"]
             assert len(data) == 2
             assert "Log 1 inside" in data[0]
             assert "Log 2 inside" in data[1]
-        finally:
-            if os.path.exists("trade_engine.log"):
-                os.remove("trade_engine.log")
 
-    def test_export_logs_not_found(self, client):
-        # Ensure log file does not exist during this test
-        if os.path.exists("trade_engine.log"):
-            os.rename("trade_engine.log", "trade_engine.log.bak")
-        
-        try:
-            resp = client.get("/trades/logs/export")
-            assert resp.status_code == 404
-            assert "Log file not found" in resp.json()["detail"]
-        finally:
-            if os.path.exists("trade_engine.log.bak"):
-                os.rename("trade_engine.log.bak", "trade_engine.log")
+    @patch("os.path.exists", return_value=False)
+    def test_export_logs_not_found(self, mock_exists, client):
+        resp = client.get("/trades/logs/export")
+        assert resp.status_code == 404
+        assert "Log file not found" in resp.json()["detail"]
 
-    def test_export_logs_success(self, client):
-        # Create a dummy log file
-        with open("trade_engine.log", "w", newline="\n") as f:
-            f.write("Log line 1\nLog line 2\n")
-        
-        try:
-            resp = client.get("/trades/logs/export")
-            assert resp.status_code == 200
-            assert resp.headers["content-type"] == "text/plain; charset=utf-8"
-            assert 'filename="trade_engine.log"' in resp.headers["content-disposition"]
-            assert resp.text.replace("\r\n", "\n") == "Log line 1\nLog line 2\n"
-        finally:
-            if os.path.exists("trade_engine.log"):
-                os.remove("trade_engine.log")
+    @patch("os.path.exists", return_value=True)
+    @patch("fastapi.responses.FileResponse")
+    def test_export_logs_success(self, mock_file_response, mock_exists, client):
+        from fastapi.responses import Response
+        mock_file_response.return_value = Response(
+            content="Log line 1\nLog line 2\n",
+            media_type="text/plain",
+            headers={"content-disposition": 'attachment; filename="trade_engine.log"'}
+        )
+        resp = client.get("/trades/logs/export")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "text/plain; charset=utf-8"
+        assert 'filename="trade_engine.log"' in resp.headers["content-disposition"]
+        assert resp.text.replace("\r\n", "\n") == "Log line 1\nLog line 2\n"

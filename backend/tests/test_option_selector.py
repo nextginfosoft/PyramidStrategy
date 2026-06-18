@@ -76,11 +76,11 @@ class TestGetOptionDetails:
         assert details["strike"] == 23250  # ATM(23200) + 50
         assert "NIFTY" in details["symbol"]
         assert "PE" in details["symbol"]
-        assert details["expiry"] == date(2024, 6, 13)
+        assert details["expiry"] == date(2024, 6, 18)
 
     def test_tuesday_rule_in_option_details(self):
         """Tuesday should get next weekly expiry."""
         tuesday = date(2024, 6, 11)
         details = get_option_details("PE", Decimal("23200"), trade_date=tuesday)
-        expected_expiry = date(2024, 6, 20)  # Next Thursday
+        expected_expiry = date(2024, 6, 18)  # Next Tuesday
         assert details["expiry"] == expected_expiry

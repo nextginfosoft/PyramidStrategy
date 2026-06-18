@@ -7,7 +7,7 @@ from datetime import date, datetime
 import pytz
 from app.core.time_rules import (
     is_entry_allowed, should_squareoff, is_tuesday,
-    get_expiry_date, format_expiry_for_symbol, get_next_thursday
+    get_expiry_date, format_expiry_for_symbol, get_next_tuesday
 )
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -84,44 +84,48 @@ class TestTuesdayRule:
 
 
 class TestExpiryDate:
-    def test_thursday_expiry_is_same_day(self):
-        """On Thursday, expiry should be today (same-day weekly expiry)."""
-        thursday = date(2024, 6, 13)
-        expiry = get_expiry_date(thursday)
-        assert expiry == thursday
-
-    def test_monday_expiry_is_this_thursday(self):
-        """On Monday, expiry should be this week's Thursday."""
+    def test_monday_expiry_is_this_tuesday(self):
+        """On Monday, expiry should be this week's Tuesday."""
         monday = date(2024, 6, 10)
         expiry = get_expiry_date(monday)
-        expected = date(2024, 6, 13)  # Thursday of same week
+        expected = date(2024, 6, 11)  # Tuesday of same week
         assert expiry == expected
 
-    def test_tuesday_expiry_is_next_thursday(self):
-        """Rule 9: Tuesday → next weekly expiry (next Thursday)."""
+    def test_tuesday_expiry_is_next_tuesday(self):
+        """Tuesday (same-day expiry) → roll over to NEXT Tuesday."""
         tuesday = date(2024, 6, 11)
         expiry = get_expiry_date(tuesday)
-        expected = date(2024, 6, 20)  # NEXT Thursday
+        expected = date(2024, 6, 18)  # NEXT Tuesday
         assert expiry == expected, f"Expected {expected}, got {expiry}"
 
-    def test_wednesday_expiry_is_this_thursday(self):
+    def test_wednesday_expiry_is_next_tuesday(self):
         wednesday = date(2024, 6, 12)
         expiry = get_expiry_date(wednesday)
-        expected = date(2024, 6, 13)
+        expected = date(2024, 6, 18)
         assert expiry == expected
 
-    def test_friday_expiry_is_next_thursday(self):
+    def test_thursday_expiry_is_next_tuesday(self):
+        thursday = date(2024, 6, 13)
+        expiry = get_expiry_date(thursday)
+        expected = date(2024, 6, 18)
+        assert expiry == expected
+
+    def test_friday_expiry_is_next_tuesday(self):
         friday = date(2024, 6, 14)
         expiry = get_expiry_date(friday)
-        expected = date(2024, 6, 20)
+        expected = date(2024, 6, 18)
         assert expiry == expected
 
 
 class TestSymbolFormat:
-    def test_expiry_format(self):
-        d = date(2024, 6, 27)
-        assert format_expiry_for_symbol(d) == "27JUN24"
+    def test_expiry_format_monthly(self):
+        d = date(2024, 6, 25) # Last Tuesday of June
+        assert format_expiry_for_symbol(d) == "25JUN24"
+
+    def test_expiry_format_weekly(self):
+        d = date(2024, 6, 11)
+        assert format_expiry_for_symbol(d) == "24611"
 
     def test_expiry_format_single_digit_day(self):
-        d = date(2024, 6, 6)
-        assert format_expiry_for_symbol(d) == "24606"
+        d = date(2024, 6, 4)
+        assert format_expiry_for_symbol(d) == "24604"

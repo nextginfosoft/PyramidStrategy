@@ -73,46 +73,45 @@ def is_tuesday(d: Optional[date] = None) -> bool:
     return check_date.weekday() == 1  # Monday=0, Tuesday=1
 
 
-def get_next_thursday(from_date: Optional[date] = None) -> date:
+def get_next_tuesday(from_date: Optional[date] = None) -> date:
     """
-    Returns the next Thursday strictly after the given date (or today).
-    NIFTY weekly options expire on Thursday.
+    Returns the next Tuesday strictly after the given date (or today).
+    NIFTY weekly options expire on Tuesday.
     """
     d = from_date or today_ist()
-    days_until_thursday = (3 - d.weekday()) % 7  # Thursday = weekday 3
-    if days_until_thursday == 0:
-        days_until_thursday = 7  # Already Thursday — go to next week
-    return d + timedelta(days=days_until_thursday)
+    days_until_tuesday = (1 - d.weekday()) % 7  # Tuesday = weekday 1
+    if days_until_tuesday == 0:
+        days_until_tuesday = 7  # Already Tuesday — go to next week
+    return d + timedelta(days=days_until_tuesday)
 
 
 def get_expiry_date(trade_date: Optional[date] = None) -> date:
     """
     Returns the correct expiry date for options:
-    - Thursday → same day (it IS the weekly expiry)
-    - Tuesday  → skip this week's Thursday, use NEXT Thursday (Tuesday Rule)
-    - All other days → nearest upcoming Thursday (same week)
+    - Tuesday (same-day expiry) → roll over to NEXT Tuesday (Tuesday Rule)
+    - All other days → nearest upcoming Tuesday (same week)
 
     This is a hard rule — NEVER make it configurable.
     """
     d = trade_date or today_ist()
-    days_to_thursday = (3 - d.weekday()) % 7  # Thursday = weekday 3
+    days_to_tuesday = (1 - d.weekday()) % 7  # Tuesday = weekday 1
 
-    if is_tuesday(d):
-        # Tuesday Rule: jump over current week's Thursday to next week
-        days_to_thursday += 7
+    if days_to_tuesday == 0:
+        # Tuesday Rule: same-day weekly expiry, roll over to next week
+        days_to_tuesday = 7
 
-    return d + timedelta(days=days_to_thursday)
+    return d + timedelta(days=days_to_tuesday)
 
 
 def format_expiry_for_symbol(expiry: date) -> str:
     """
     Formats expiry date in Kite's instrument symbol format.
-    - Monthly expiry (last Thursday of the month): '27JUN24' (DDMMMYY)
-    - Weekly expiry (other Thursdays): '24606' (YYMDD where M is 1-9, O, N, D)
+    - Monthly expiry (last Tuesday of the month): '27JUN24' (DDMMMYY)
+    - Weekly expiry (other Tuesdays): '24606' (YYMDD where M is 1-9, O, N, D)
     """
-    # Check if this Thursday is the last Thursday of the month
-    next_thursday = expiry + timedelta(days=7)
-    is_monthly = next_thursday.month != expiry.month
+    # Check if this Tuesday is the last Tuesday of the month
+    next_tuesday = expiry + timedelta(days=7)
+    is_monthly = next_tuesday.month != expiry.month
 
     if is_monthly:
         month_map = {
