@@ -169,8 +169,7 @@ class TestRule6_StopLoss:
         pe_sm.enter_level2(PRICE_L2)
         pe_sm.enter_level3(PRICE_L3)
 
-        avg = pe_sm.entry_avg_price
-        sl_trigger = avg - Decimal("10")
+        sl_trigger = pe_sm.level3_entry_price - Decimal("10")
         assert pe_sm.check_sl(sl_trigger) is True
 
     def test_sl_not_triggered_at_9pts(self, pe_sm):
@@ -178,8 +177,7 @@ class TestRule6_StopLoss:
         pe_sm.enter_level2(PRICE_L2)
         pe_sm.enter_level3(PRICE_L3)
 
-        avg = pe_sm.entry_avg_price
-        not_sl = avg - Decimal("9")
+        not_sl = pe_sm.level3_entry_price - Decimal("9")
         assert pe_sm.check_sl(not_sl) is False
 
     def test_sl_triggered_at_exactly_10pts(self, pe_sm):
@@ -187,8 +185,7 @@ class TestRule6_StopLoss:
         pe_sm.enter_level2(PRICE_L2)
         pe_sm.enter_level3(PRICE_L3)
 
-        avg = pe_sm.entry_avg_price
-        sl_exact = avg - Decimal("10")
+        sl_exact = pe_sm.level3_entry_price - Decimal("10")
         assert pe_sm.check_sl(sl_exact) is True
 
 

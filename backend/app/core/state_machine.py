@@ -45,6 +45,7 @@ class StateMachine:
     entry_avg_price: Optional[Decimal] = None  # Average entry price across all entries
     total_invested: Decimal = Decimal("0")     # sum of (price × qty) for avg calculation
     total_qty: int = 0                         # total quantity bought
+    level3_entry_price: Optional[Decimal] = None  # Price at which Level 3 was filled
 
     # P&L
     realized_pnl: Decimal = Decimal("0")
@@ -66,6 +67,7 @@ class StateMachine:
         self.locked_instrument = None
         self.locked_expiry = None
         self.entry_avg_price = None
+        self.level3_entry_price = None
         self.total_invested = Decimal("0")
         self.total_qty = 0
         self.realized_pnl = Decimal("0")
@@ -172,13 +174,14 @@ class StateMachine:
         new_total_qty = self.total_qty + qty
         self.total_invested = self.total_invested + (fill_price * qty)
         self.entry_avg_price = self.total_invested / new_total_qty
+        self.level3_entry_price = fill_price
         self.total_qty = new_total_qty
         self.state = State.L3_ENTERED
 
         logger.info(
             f"[{self.side}] L3 ENTERED | adding 1 lot to {self.locked_instrument} "
             f"| new_avg={self.entry_avg_price:.2f} | total_lots=3 | SL ACTIVE @ "
-            f"{self.entry_avg_price - self.sl_points:.2f}"
+            f"{self.level3_entry_price - self.sl_points:.2f}"
         )
         return {
             "action": "BUY",
@@ -207,9 +210,9 @@ class StateMachine:
         Check if Stop Loss (10 pts) has been hit.
         SL is ONLY active at Level 3 (CLAUDE.md Rule 6).
         """
-        if self.state != State.L3_ENTERED or self.entry_avg_price is None:
+        if self.state != State.L3_ENTERED or self.level3_entry_price is None:
             return False
-        loss_pts = self.entry_avg_price - current_ltp
+        loss_pts = self.level3_entry_price - current_ltp
         return loss_pts >= self.sl_points
 
     def exit_position(self, exit_price: Decimal, reason: str) -> dict:
@@ -260,6 +263,7 @@ class StateMachine:
         self.locked_instrument = None
         self.locked_expiry = None
         self.entry_avg_price = None
+        self.level3_entry_price = None
         self.total_invested = Decimal("0")
         self.total_qty = 0
 

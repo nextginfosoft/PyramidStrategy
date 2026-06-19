@@ -104,6 +104,19 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   const handleSaveLevels = (e: React.FormEvent) => {
     e.preventDefault()
+
+    const { r1, r2, r3, s1, s2, s3 } = levels;
+
+    if (s1 <= s2 || s2 <= s3) {
+      showStatus('✗ Support levels must be descending (S1 > S2 > S3)', false)
+      return
+    }
+
+    if (r1 >= r2 || r2 >= r3) {
+      showStatus('✗ Resistance levels must be ascending (R1 < R2 < R3)', false)
+      return
+    }
+
     saveLevels.mutate({
       ...levels,
       paper_trade: paperTrade ?? true,

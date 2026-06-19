@@ -29,6 +29,7 @@ class StrategyEngine:
         self.user_id = user_id
         self.is_running: bool = False
         self.last_nifty_price: Optional[Decimal] = None
+        self.last_entry_time: dict[str, float] = {"CE": 0.0, "PE": 0.0}
 
         # Independent state machines per CLAUDE.md
         self.ce = StateMachine(side="CE")
@@ -85,6 +86,7 @@ class StrategyEngine:
         self.ce.reset_daily()
         self.pe.reset_daily()
         self._option_ltp.clear()
+        self.last_entry_time = {"CE": 0.0, "PE": 0.0}
         logger.info(f"User {self.user_id}: Daily reset complete — state machines reset")
 
     def start(self):
@@ -131,28 +133,33 @@ class StrategyEngine:
         Called on every NIFTY price tick.
         Processes CE and PE independently.
         """
-        self.last_nifty_price = nifty_ltp
         if not self.is_running or not self.config:
+            self.last_nifty_price = nifty_ltp
             return
 
         # Check squareoff first (highest priority)
         if should_squareoff():
+            self.last_nifty_price = nifty_ltp
             await self._force_squareoff()
             return
 
+        prev_nifty = self.last_nifty_price
+
         # Process both sides independently
         await asyncio.gather(
-            self._process_side("PE", nifty_ltp),
-            self._process_side("CE", nifty_ltp),
+            self._process_side("PE", nifty_ltp, prev_nifty),
+            self._process_side("CE", nifty_ltp, prev_nifty),
             return_exceptions=True,
         )
+
+        self.last_nifty_price = nifty_ltp
 
         # Broadcast updated status to frontend
         await self._broadcast_status(nifty_ltp)
 
     # ── Side Processing ──────────────────────────────────────────────────────
 
-    async def _process_side(self, side: str, nifty_ltp: Decimal):
+    async def _process_side(self, side: str, nifty_ltp: Decimal, prev_nifty: Optional[Decimal]):
         """Process a single side (CE or PE) for a given NIFTY tick."""
         sm: StateMachine = self.ce if side == "CE" else self.pe
 
@@ -162,13 +169,13 @@ class StrategyEngine:
 
             # Check for new level entries
             if sm.state in (State.IDLE, State.L1_ENTERED, State.L2_ENTERED):
-                await self._check_level_entry(sm, side, nifty_ltp)
+                await self._check_level_entry(sm, side, nifty_ltp, prev_nifty)
 
         except Exception as e:
             logger.error(f"User {self.user_id} [{side}] Error processing tick: {e}", exc_info=True)
             await self._broadcast_error(side, str(e))
 
-    async def _check_level_entry(self, sm: StateMachine, side: str, nifty_ltp: Decimal):
+    async def _check_level_entry(self, sm: StateMachine, side: str, nifty_ltp: Decimal, prev_nifty: Optional[Decimal]):
         """Check if NIFTY has hit a trigger level and entry is warranted."""
         if not is_entry_allowed():
             return
@@ -178,37 +185,45 @@ class StrategyEngine:
         s1, s2, s3 = Decimal(str(cfg["s1"])), Decimal(str(cfg["s2"])), Decimal(str(cfg["s3"]))
 
         if side == "PE":
-            await self._handle_pe_levels(sm, nifty_ltp, r1, r2, r3)
+            await self._handle_pe_levels(sm, nifty_ltp, prev_nifty, r1, r2, r3)
         else:
-            await self._handle_ce_levels(sm, nifty_ltp, s1, s2, s3)
+            await self._handle_ce_levels(sm, nifty_ltp, prev_nifty, s1, s2, s3)
 
-    async def _handle_pe_levels(self, sm: StateMachine, ltp: Decimal,
+    async def _handle_pe_levels(self, sm: StateMachine, ltp: Decimal, prev_nifty: Optional[Decimal],
                                   r1: Decimal, r2: Decimal, r3: Decimal):
         """PE: trigger when NIFTY hits or crosses resistance levels from below."""
-        if sm.state == State.IDLE and sm.can_enter_level1() and ltp >= r1:
+        import time
+        cooldown_elapsed = time.time() - self.last_entry_time.get("PE", 0.0) >= 60
+
+        if sm.state == State.IDLE and sm.can_enter_level1() and prev_nifty is not None and prev_nifty < r1 and ltp >= r1:
             await self._execute_entry(sm, "PE", "L1", ltp, r1)
 
-        elif sm.state == State.L1_ENTERED and sm.can_enter_level2() and ltp >= r2:
+        elif sm.state == State.L1_ENTERED and sm.can_enter_level2() and cooldown_elapsed and prev_nifty is not None and prev_nifty < r2 and ltp >= r2:
             await self._execute_entry(sm, "PE", "L2", ltp, r2)
 
-        elif sm.state == State.L2_ENTERED and sm.can_enter_level3() and ltp >= r3:
+        elif sm.state == State.L2_ENTERED and sm.can_enter_level3() and cooldown_elapsed and prev_nifty is not None and prev_nifty < r3 and ltp >= r3:
             await self._execute_entry(sm, "PE", "L3", ltp, r3)
 
-    async def _handle_ce_levels(self, sm: StateMachine, ltp: Decimal,
+    async def _handle_ce_levels(self, sm: StateMachine, ltp: Decimal, prev_nifty: Optional[Decimal],
                                   s1: Decimal, s2: Decimal, s3: Decimal):
         """CE: trigger when NIFTY hits or crosses support levels from above."""
-        if sm.state == State.IDLE and sm.can_enter_level1() and ltp <= s1:
+        import time
+        cooldown_elapsed = time.time() - self.last_entry_time.get("CE", 0.0) >= 60
+
+        if sm.state == State.IDLE and sm.can_enter_level1() and prev_nifty is not None and prev_nifty > s1 and ltp <= s1:
             await self._execute_entry(sm, "CE", "L1", ltp, s1)
 
-        elif sm.state == State.L1_ENTERED and sm.can_enter_level2() and ltp <= s2:
+        elif sm.state == State.L1_ENTERED and sm.can_enter_level2() and cooldown_elapsed and prev_nifty is not None and prev_nifty > s2 and ltp <= s2:
             await self._execute_entry(sm, "CE", "L2", ltp, s2)
 
-        elif sm.state == State.L2_ENTERED and sm.can_enter_level3() and ltp <= s3:
+        elif sm.state == State.L2_ENTERED and sm.can_enter_level3() and cooldown_elapsed and prev_nifty is not None and prev_nifty > s3 and ltp <= s3:
             await self._execute_entry(sm, "CE", "L3", ltp, s3)
 
     async def _execute_entry(self, sm: StateMachine, side: str, level: str,
                                nifty_ltp: Decimal, trigger_level: Decimal):
         """Execute an entry at the given level."""
+        import time
+        self.last_entry_time[side] = time.time()
         with SessionLocal() as db:
             # At L1: resolve option symbol
             if level == "L1":
