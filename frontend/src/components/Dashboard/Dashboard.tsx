@@ -11,6 +11,7 @@ import { AIObserver } from '../AIObserver/AIObserver'
 import { Settings } from '../Settings/Settings'
 import KiteStatus from '../KiteStatus/KiteStatus'
 import { LiveLogModal } from '../LiveLogModal/LiveLogModal'
+import { PDFReportsModal } from '../PDFReportsModal/PDFReportsModal'
 
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
@@ -18,6 +19,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const { status, wsConnected } = useStrategyStore()
   const [showSettings, setShowSettings] = useState(false)
   const [showLiveLogs, setShowLiveLogs] = useState(false)
+  const [showPDFReports, setShowPDFReports] = useState(false)
   const [simPrice, setSimPrice] = useState('')
   const [exportingTrades, setExportingTrades] = useState(false)
   const [exportingLogs, setExportingLogs] = useState(false)
@@ -149,6 +151,10 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           <button onClick={() => setShowLiveLogs(true)}
             className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
             📄 Trade Log
+          </button>
+          <button onClick={() => setShowPDFReports(true)}
+            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+            📋 PDF Reports
           </button>
           <button onClick={() => setShowSettings(true)}
             className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
@@ -330,6 +336,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
 
       {showSettings && <Settings onClose={() => { setShowSettings(false); qc.invalidateQueries() }} />}
       {showLiveLogs && <LiveLogModal onClose={() => setShowLiveLogs(false)} />}
+      {showPDFReports && <PDFReportsModal onClose={() => setShowPDFReports(false)} />}
     </div>
   )
 }

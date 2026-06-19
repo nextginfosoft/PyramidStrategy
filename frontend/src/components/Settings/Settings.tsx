@@ -17,7 +17,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     return !!apiKeys?.find((k: any) => k.provider === provider)?.api_key_masked
   }
 
-  const [activeTab, setActiveTab] = useState<'strategy' | 'zerodha' | 'ai' | 'telegram'>('strategy')
+  const [activeTab, setActiveTab] = useState<'strategy' | 'zerodha' | 'ai' | 'telegram' | 'whatsapp' | 'reporting'>('strategy')
 
   const [levels, setLevels] = useState({
     r1: cfg?.r1 ?? 23170, r2: cfg?.r2 ?? 23220, r3: cfg?.r3 ?? 23250,
@@ -30,12 +30,62 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '' })
   const [ai, setAi] = useState({ provider: 'openai', api_key: '' })
   const [telegram, setTelegram] = useState({ bot_token: '', chat_id: '' })
+  const [whatsapp, setWhatsapp] = useState({
+    provider_type: 'meta',
+    access_token: '',
+    phone_number_id: '',
+    recipient_phone: '',
+    twilio_sid: '',
+    twilio_auth_token: '',
+    twilio_from: '',
+    twilio_to: ''
+  })
+  const [reportingFormat, setReportingFormat] = useState('telegram')
   const [paperTrade, setPaperTrade] = useState<boolean | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
 
   const [status, setStatus] = useState<StatusMsg | null>(null)
   const [testingAi, setTestingAi] = useState(false)
   const [testingTelegram, setTestingTelegram] = useState(false)
+  const [testingWhatsapp, setTestingWhatsapp] = useState(false)
+
+  // Password visibility states
+  const [showZerodhaKey, setShowZerodhaKey] = useState(false)
+  const [showZerodhaSecret, setShowZerodhaSecret] = useState(false)
+  const [showAiKey, setShowAiKey] = useState(false)
+  const [showTelegramToken, setShowTelegramToken] = useState(false)
+  const [showWhatsappToken, setShowWhatsappToken] = useState(false)
+  const [showTwilioAuth, setShowTwilioAuth] = useState(false)
+
+  useEffect(() => {
+    if (apiKeys) {
+      const telegramKey = apiKeys.find((k: any) => k.provider === 'telegram');
+      if (telegramKey && telegramKey.extra_config) {
+        setTelegram(p => ({
+          ...p,
+          chat_id: telegramKey.extra_config.chat_id || ''
+        }));
+      }
+
+      const whatsappKey = apiKeys.find((k: any) => k.provider === 'whatsapp');
+      if (whatsappKey && whatsappKey.extra_config) {
+        const extra = whatsappKey.extra_config;
+        setWhatsapp(p => ({
+          ...p,
+          provider_type: extra.provider_type || 'meta',
+          phone_number_id: extra.phone_number_id || '',
+          recipient_phone: extra.recipient_phone || '',
+          twilio_from: extra.from_phone || '',
+          twilio_to: extra.to_phone || ''
+        }));
+      }
+
+      const reportingKey = apiKeys.find((k: any) => k.provider === 'reporting');
+      if (reportingKey && reportingKey.extra_config) {
+        setReportingFormat(reportingKey.extra_config.format || 'telegram');
+      }
+    }
+  }, [apiKeys]);
 
   useEffect(() => {
     if (cfg && !isInitialized) {
@@ -98,6 +148,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
       if (vars.provider === 'zerodha') setZerodha({ api_key: '', api_secret: '' })
       if (vars.provider === ai.provider) setAi(p => ({ ...p, api_key: '' }))
       if (vars.provider === 'telegram') setTelegram(p => ({ ...p, bot_token: '' }))
+      if (vars.provider === 'whatsapp') setWhatsapp(p => ({ ...p, access_token: '', twilio_auth_token: '' }))
     },
     onError: (_, vars) => showStatus(`✗ Failed to save ${vars.provider.toUpperCase()} credentials`, false),
   })
@@ -142,6 +193,40 @@ export function Settings({ onClose }: { onClose: () => void }) {
     })
   }
 
+  const handleSaveWhatsapp = () => {
+    if (whatsapp.provider_type === 'meta') {
+      if (!whatsapp.phone_number_id || !whatsapp.recipient_phone) return
+      saveKey.mutate({
+        provider: 'whatsapp',
+        api_key: whatsapp.access_token || undefined,
+        extra_config: {
+          provider_type: 'meta',
+          phone_number_id: whatsapp.phone_number_id,
+          recipient_phone: whatsapp.recipient_phone
+        }
+      })
+    } else {
+      if (!whatsapp.twilio_from || !whatsapp.twilio_to) return
+      saveKey.mutate({
+        provider: 'whatsapp',
+        api_key: whatsapp.twilio_sid || undefined,
+        api_secret: whatsapp.twilio_auth_token || undefined,
+        extra_config: {
+          provider_type: 'twilio',
+          from_phone: whatsapp.twilio_from,
+          to_phone: whatsapp.twilio_to
+        }
+      })
+    }
+  }
+
+  const handleSaveReporting = () => {
+    saveKey.mutate({
+      provider: 'reporting',
+      extra_config: { format: reportingFormat }
+    })
+  }
+
   const handleTestAi = async () => {
     setTestingAi(true)
     try {
@@ -166,14 +251,26 @@ export function Settings({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const handleTestWhatsapp = async () => {
+    setTestingWhatsapp(true)
+    try {
+      const res = await notificationApi.testWhatsapp()
+      showStatus(res.success ? '✓ Test message dispatched to WhatsApp' : `✗ WhatsApp failed: ${res.message}`, res.success)
+    } catch {
+      showStatus('✗ WhatsApp test request failed', false)
+    } finally {
+      setTestingWhatsapp(false)
+    }
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-950 border border-gray-800 rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div className="bg-gray-950/90 border border-gray-800/80 rounded-2xl w-full max-w-2xl shadow-2xl shadow-blue-500/5 overflow-hidden flex flex-col max-h-[90vh] backdrop-blur-xl">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900/50">
+        <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900/40">
           <div className="flex items-center gap-2">
             <span className="text-orange-500 text-lg">⚙</span>
-            <h2 className="text-base font-bold text-white tracking-wide uppercase">System Settings</h2>
+            <h2 className="text-base font-bold text-white tracking-wide uppercase">System Configuration</h2>
           </div>
           <button 
             onClick={onClose} 
@@ -183,60 +280,82 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {/* Custom Premium Tabs */}
-        <div className="flex border-b border-gray-800 bg-gray-900/20 overflow-x-auto scrollbar-none">
+        {/* Custom Premium Tabs with color coordination */}
+        <div className="flex border-b border-gray-800/80 bg-gray-900/20 overflow-x-auto scrollbar-none p-1 gap-1">
           <button
             onClick={() => setActiveTab('strategy')}
-            className={`flex-1 min-w-[120px] py-3 text-[11px] font-bold uppercase tracking-wider transition-all border-b-2 flex items-center justify-center gap-1.5 ${
+            className={`flex-1 min-w-[110px] py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'strategy'
-                ? 'border-orange-500 text-orange-400 bg-orange-500/5'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-900/40'
+                ? 'bg-orange-500/10 text-orange-400 border border-orange-500/30'
+                : 'border border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-900/40'
             }`}
           >
-            📊 Strategy Rules
+            📊 Strategy
           </button>
           <button
             onClick={() => setActiveTab('zerodha')}
-            className={`flex-1 min-w-[120px] py-3 text-[11px] font-bold uppercase tracking-wider transition-all border-b-2 flex items-center justify-center gap-1.5 ${
+            className={`flex-1 min-w-[110px] py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'zerodha'
-                ? 'border-blue-500 text-blue-400 bg-blue-500/5'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-900/40'
+                ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                : 'border border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-900/40'
             }`}
           >
             🔑 Kite Connect
-            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('zerodha') ? 'bg-green-400 shadow-sm' : 'bg-gray-600'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('zerodha') ? 'bg-green-400 shadow-sm shadow-green-500/50 animate-pulse' : 'bg-gray-600'}`} />
           </button>
           <button
             onClick={() => setActiveTab('ai')}
-            className={`flex-1 min-w-[120px] py-3 text-[11px] font-bold uppercase tracking-wider transition-all border-b-2 flex items-center justify-center gap-1.5 ${
+            className={`flex-1 min-w-[110px] py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'ai'
-                ? 'border-purple-500 text-purple-400 bg-purple-500/5'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-900/40'
+                ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                : 'border border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-900/40'
             }`}
           >
             🤖 AI Observer
-            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('openai') || isConfigured('anthropic') || isConfigured('gemini') ? 'bg-green-400 shadow-sm' : 'bg-gray-600'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('openai') || isConfigured('anthropic') || isConfigured('gemini') ? 'bg-green-400 shadow-sm shadow-green-500/50 animate-pulse' : 'bg-gray-600'}`} />
           </button>
           <button
             onClick={() => setActiveTab('telegram')}
-            className={`flex-1 min-w-[120px] py-3 text-[11px] font-bold uppercase tracking-wider transition-all border-b-2 flex items-center justify-center gap-1.5 ${
+            className={`flex-1 min-w-[110px] py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'telegram'
-                ? 'border-sky-500 text-sky-400 bg-sky-500/5'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-900/40'
+                ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30'
+                : 'border border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-900/40'
             }`}
           >
-            🔔 Notifications
-            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('telegram') ? 'bg-green-400 shadow-sm' : 'bg-gray-600'}`} />
+            🔔 Telegram
+            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('telegram') ? 'bg-green-400 shadow-sm shadow-green-500/50 animate-pulse' : 'bg-gray-600'}`} />
+          </button>
+          <button
+            onClick={() => setActiveTab('whatsapp')}
+            className={`flex-1 min-w-[110px] py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'whatsapp'
+                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                : 'border border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-900/40'
+            }`}
+          >
+            💬 WhatsApp
+            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('whatsapp') ? 'bg-green-400 shadow-sm shadow-green-500/50 animate-pulse' : 'bg-gray-600'}`} />
+          </button>
+          <button
+            onClick={() => setActiveTab('reporting')}
+            className={`flex-1 min-w-[110px] py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'reporting'
+                ? 'bg-teal-500/10 text-teal-400 border border-teal-500/30'
+                : 'border border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-900/40'
+            }`}
+          >
+            📋 Reports
+            <span className={`w-1.5 h-1.5 rounded-full ${isConfigured('reporting') ? 'bg-green-400 shadow-sm shadow-green-500/50 animate-pulse' : 'bg-gray-600'}`} />
           </button>
         </div>
 
         {/* Status Alert Notification Bar */}
         {status && (
-          <div className="px-4 pt-4">
-            <div className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 border transition-all ${
+          <div className="px-5 pt-4">
+            <div className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 border transition-all ${
               status.ok 
-                ? 'bg-green-950/40 border-green-800 text-green-300' 
-                : 'bg-red-950/40 border-red-800 text-red-300'
+                ? 'bg-green-950/30 border-green-800/50 text-green-300' 
+                : 'bg-red-950/30 border-red-800/50 text-red-300'
             }`}>
               <span>{status.ok ? '✓' : '⚠️'}</span>
               <span>{status.text}</span>
@@ -251,19 +370,19 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {activeTab === 'strategy' && (
             <div className="space-y-5">
               {/* Execution mode card */}
-              <div className="bg-gray-900/40 border border-gray-800 rounded-lg p-3">
-                <span className="text-[10px] uppercase font-extrabold tracking-wider text-gray-500 block mb-2">⚡ Execution Mode</span>
-                <div className="flex gap-2">
+              <div className="bg-gray-900/30 border border-gray-800/60 rounded-xl p-4">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-2.5">⚡ Execution Channel</span>
+                <div className="flex gap-3">
                   <button
                     type="button"
                     onClick={() => handleTogglePaperTrade(true)}
-                    className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all border flex flex-col items-center justify-center ${
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all border flex flex-col items-center justify-center ${
                       paperTrade === true || paperTrade === null
-                        ? 'bg-yellow-950/40 border-yellow-700 text-yellow-400 shadow-lg shadow-yellow-950/20'
-                        : 'bg-gray-900/50 border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-300'
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-lg shadow-amber-950/20'
+                        : 'bg-gray-900/40 border-gray-800/60 text-gray-500 hover:border-gray-700 hover:text-gray-300'
                     }`}
                   >
-                    <span className="text-sm mb-0.5">📝</span>
+                    <span className="text-base mb-1">📝</span>
                     <span>Paper Trading</span>
                   </button>
                   <button
@@ -273,17 +392,17 @@ export function Settings({ onClose }: { onClose: () => void }) {
                         handleTogglePaperTrade(false)
                       }
                     }}
-                    className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all border flex flex-col items-center justify-center ${
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all border flex flex-col items-center justify-center ${
                       paperTrade === false
-                        ? 'bg-red-950/40 border-red-700 text-red-400 shadow-lg shadow-red-950/20'
-                        : 'bg-gray-900/50 border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-300'
+                        ? 'bg-red-500/10 border-red-500/40 text-red-400 shadow-lg shadow-red-950/20'
+                        : 'bg-gray-900/40 border-gray-800/60 text-gray-500 hover:border-gray-700 hover:text-gray-300'
                     }`}
                   >
-                    <span className="text-sm mb-0.5">⚡</span>
+                    <span className="text-base mb-1">⚡</span>
                     <span>Live Auto Trading</span>
                   </button>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-2 text-center">
+                <p className="text-[10px] text-gray-500 mt-2.5 text-center">
                   {paperTrade === false
                     ? '⚠️ Warning: Orders are executed live on Zerodha Kite exchange!'
                     : 'System simulates all order executions locally based on market LTP.'}
@@ -295,20 +414,20 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   
                   {/* Bearish Levels card */}
-                  <div className="bg-red-950/10 border border-red-900/20 rounded-lg p-3 space-y-3">
-                    <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 border-b border-red-900/20 pb-1.5">
+                  <div className="bg-red-950/5 border border-red-900/20 rounded-xl p-4 space-y-3">
+                    <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 border-b border-red-900/20 pb-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                       Bearish Levels (Resistance / PE)
                     </span>
                     <div className="grid grid-cols-3 gap-2">
                       {(['r1', 'r2', 'r3'] as const).map(k => (
                         <label key={k} className="block space-y-1">
-                          <span className="text-[10px] text-gray-500 font-bold uppercase">{k} Trigger</span>
+                          <span className="text-[9px] text-gray-500 font-bold uppercase">{k} Level</span>
                           <input
                             type="number"
                             required
                             step="any"
-                            className="w-full bg-gray-900 border border-gray-800 focus:border-red-500 focus:ring-1 focus:ring-red-500 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all"
+                            className="w-full bg-gray-900 border border-gray-800 focus:border-red-500/70 focus:ring-1 focus:ring-red-500/30 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all"
                             value={levels[k]}
                             onChange={e => setLevels(p => ({ ...p, [k]: +e.target.value }))}
                           />
@@ -318,20 +437,20 @@ export function Settings({ onClose }: { onClose: () => void }) {
                   </div>
 
                   {/* Bullish Levels card */}
-                  <div className="bg-green-950/10 border border-green-900/20 rounded-lg p-3 space-y-3">
-                    <span className="text-xs font-bold text-green-400 flex items-center gap-1.5 border-b border-green-900/20 pb-1.5">
+                  <div className="bg-green-950/5 border border-green-900/20 rounded-xl p-4 space-y-3">
+                    <span className="text-xs font-bold text-green-400 flex items-center gap-1.5 border-b border-green-900/20 pb-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                       Bullish Levels (Support / CE)
                     </span>
                     <div className="grid grid-cols-3 gap-2">
                       {(['s1', 's2', 's3'] as const).map(k => (
                         <label key={k} className="block space-y-1">
-                          <span className="text-[10px] text-gray-500 font-bold uppercase">{k} Trigger</span>
+                          <span className="text-[9px] text-gray-500 font-bold uppercase">{k} Level</span>
                           <input
                             type="number"
                             required
                             step="any"
-                            className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 focus:ring-1 focus:ring-green-500 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all"
+                            className="w-full bg-gray-900 border border-gray-800 focus:border-green-500/70 focus:ring-1 focus:ring-green-500/30 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all"
                             value={levels[k]}
                             onChange={e => setLevels(p => ({ ...p, [k]: +e.target.value }))}
                           />
@@ -339,64 +458,72 @@ export function Settings({ onClose }: { onClose: () => void }) {
                       ))}
                     </div>
                   </div>
-
                 </div>
 
-                {/* Lot Size, Target, SL Parameters */}
-                <div className="bg-gray-900/30 border border-gray-850 rounded-lg p-3">
-                  <span className="text-[10px] uppercase font-extrabold tracking-wider text-gray-500 block mb-3">⚙ Core Parameters</span>
+                {/* Core Parameters card */}
+                <div className="bg-gray-900/20 border border-gray-800/80 rounded-xl p-4">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-3">⚙ Core Parameters</span>
                   <div className="grid grid-cols-3 gap-3">
-                    <label className="block space-y-1">
+                    <div className="block space-y-1">
                       <span className="text-[10px] text-gray-400 font-medium">Lot Size (Lots)</span>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        required
-                        className="w-full bg-gray-900 border border-gray-800 focus:border-orange-500 rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                        value={Math.round(levels.lot_size / 65)}
-                        onChange={e => {
-                          const lots = +e.target.value;
-                          setLevels(p => ({ ...p, lot_size: lots * 65 }));
-                        }}
-                      />
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          required
+                          className="w-full bg-gray-900 border border-gray-800 focus:border-orange-500 rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono"
+                          value={Math.round(levels.lot_size / 65)}
+                          onChange={e => {
+                            const lots = +e.target.value;
+                            setLevels(p => ({ ...p, lot_size: lots * 65 }));
+                          }}
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">📦</span>
+                      </div>
                       <span className="text-[9px] text-gray-600 block">1 Lot = 65 shares</span>
-                    </label>
+                    </div>
 
-                    <label className="block space-y-1">
+                    <div className="block space-y-1">
                       <span className="text-[10px] text-gray-400 font-medium">Target Points</span>
-                      <input
-                        type="number"
-                        min="1"
-                        required
-                        className="w-full bg-gray-900 border border-gray-800 focus:border-orange-500 rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                        value={levels.target_points}
-                        onChange={e => setLevels(p => ({ ...p, target_points: +e.target.value }))}
-                      />
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          className="w-full bg-gray-900 border border-gray-800 focus:border-orange-500 rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono"
+                          value={levels.target_points}
+                          onChange={e => setLevels(p => ({ ...p, target_points: +e.target.value }))}
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🎯</span>
+                      </div>
                       <span className="text-[9px] text-gray-600 block">Per position exit</span>
-                    </label>
+                    </div>
 
-                    <label className="block space-y-1">
+                    <div className="block space-y-1">
                       <span className="text-[10px] text-gray-400 font-medium">SL Points (L3 Only)</span>
-                      <input
-                        type="number"
-                        min="1"
-                        required
-                        className="w-full bg-gray-900 border border-gray-800 focus:border-orange-500 rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                        value={levels.sl_points}
-                        onChange={e => setLevels(p => ({ ...p, sl_points: +e.target.value }))}
-                      />
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          className="w-full bg-gray-900 border border-gray-800 focus:border-orange-500 rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono"
+                          value={levels.sl_points}
+                          onChange={e => setLevels(p => ({ ...p, sl_points: +e.target.value }))}
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🛑</span>
+                      </div>
                       <span className="text-[9px] text-gray-600 block">Active at Level 3</span>
-                    </label>
+                    </div>
                   </div>
                 </div>
 
                 <div className="flex justify-end">
                   <button 
                     type="submit"
-                    className="px-5 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 transition-all shadow-md font-bold text-xs uppercase tracking-wider text-white rounded-lg"
+                    className="px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 transition-all shadow-md font-bold text-xs uppercase tracking-wider text-white rounded-lg"
                   >
-                    Save Strategy Parameters
+                    Save Parameters
                   </button>
                 </div>
               </form>
@@ -406,7 +533,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {/* TAB 2: ZERODHA KITE */}
           {activeTab === 'zerodha' && (
             <div className="space-y-4">
-              <div className="bg-gray-900/40 border border-gray-800 rounded-lg p-4 space-y-3">
+              <div className="bg-gray-900/30 border border-gray-800/80 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-2 border-b border-gray-850 pb-2">
                   <span className="text-lg">🔗</span>
                   <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">Zerodha Kite API Settings</span>
@@ -418,23 +545,43 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 <div className="space-y-3 pt-1">
                   <div className="space-y-1">
                     <span className="text-[10px] text-gray-500 font-bold uppercase">API Key</span>
-                    <input 
-                      type="password" 
-                      placeholder="Enter API Key"
-                      className="w-full bg-gray-900 border border-gray-800 focus:border-blue-500 rounded px-3 py-2 text-xs text-white font-mono transition-all"
-                      value={zerodha.api_key} 
-                      onChange={e => setZerodha(p => ({ ...p, api_key: e.target.value }))} 
-                    />
+                    <div className="relative">
+                      <input 
+                        type={showZerodhaKey ? "text" : "password"} 
+                        placeholder="Enter API Key"
+                        className="w-full bg-gray-900 border border-gray-800 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                        value={zerodha.api_key} 
+                        onChange={e => setZerodha(p => ({ ...p, api_key: e.target.value }))} 
+                      />
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔑</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowZerodhaKey(!showZerodhaKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                      >
+                        {showZerodhaKey ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <span className="text-[10px] text-gray-500 font-bold uppercase">API Secret</span>
-                    <input 
-                      type="password" 
-                      placeholder="Enter API Secret"
-                      className="w-full bg-gray-900 border border-gray-800 focus:border-blue-500 rounded px-3 py-2 text-xs text-white font-mono transition-all"
-                      value={zerodha.api_secret} 
-                      onChange={e => setZerodha(p => ({ ...p, api_secret: e.target.value }))} 
-                    />
+                    <div className="relative">
+                      <input 
+                        type={showZerodhaSecret ? "text" : "password"} 
+                        placeholder="Enter API Secret"
+                        className="w-full bg-gray-900 border border-gray-800 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                        value={zerodha.api_secret} 
+                        onChange={e => setZerodha(p => ({ ...p, api_secret: e.target.value }))} 
+                      />
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔒</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowZerodhaSecret(!showZerodhaSecret)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                      >
+                        {showZerodhaSecret ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -443,13 +590,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     {getMaskedKey('zerodha') ? (
                       <span>Active Key: <code className="text-blue-400 font-mono">{getMaskedKey('zerodha')}</code></span>
                     ) : (
-                      <span className="text-red-400 font-semibold">⚠️ No API Key Configured</span>
+                      <span className="text-red-400 font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" /> No API Key Configured
+                      </span>
                     )}
                   </div>
                   <button 
                     onClick={handleSaveZerodha}
                     disabled={!zerodha.api_key && !zerodha.api_secret}
-                    className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
+                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
                   >
                     Save API Credentials
                   </button>
@@ -461,7 +610,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {/* TAB 3: AI OBSERVER */}
           {activeTab === 'ai' && (
             <div className="space-y-4">
-              <div className="bg-gray-900/40 border border-gray-800 rounded-lg p-4 space-y-3">
+              <div className="bg-gray-900/30 border border-gray-800/80 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-2 border-b border-gray-850 pb-2">
                   <span className="text-lg">🤖</span>
                   <span className="text-xs font-bold text-purple-400 uppercase tracking-wide">AI Advisory Observer</span>
@@ -473,25 +622,42 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 <div className="space-y-3 pt-1">
                   <div className="space-y-1">
                     <span className="text-[10px] text-gray-500 font-bold uppercase">Provider</span>
-                    <select 
-                      className="w-full bg-gray-900 border border-gray-800 focus:border-purple-500 rounded px-3 py-2 text-xs text-white transition-all cursor-pointer"
-                      value={ai.provider} 
-                      onChange={e => setAi(p => ({ ...p, provider: e.target.value }))}
-                    >
-                      <option value="openai">OpenAI (GPT-4o)</option>
-                      <option value="anthropic">Anthropic (Claude 3.5 Sonnet)</option>
-                      <option value="gemini">Google (Gemini 2.5 Flash)</option>
-                    </select>
+                    <div className="flex border border-gray-800 bg-gray-950 p-0.5 rounded-lg">
+                      {(['openai', 'anthropic', 'gemini'] as const).map(p => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setAi(prev => ({ ...prev, provider: p }))}
+                          className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${
+                            ai.provider === p
+                              ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                              : 'text-gray-500 hover:text-gray-300'
+                          }`}
+                        >
+                          {p === 'openai' ? 'OpenAI' : p === 'anthropic' ? 'Anthropic' : 'Gemini'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <span className="text-[10px] text-gray-500 font-bold uppercase">API Key</span>
-                    <input 
-                      type="password" 
-                      placeholder={`Enter API Key for ${ai.provider === 'openai' ? 'OpenAI' : ai.provider === 'anthropic' ? 'Anthropic' : 'Google Gemini'}`}
-                      className="w-full bg-gray-900 border border-gray-800 focus:border-purple-500 rounded px-3 py-2 text-xs text-white font-mono transition-all"
-                      value={ai.api_key} 
-                      onChange={e => setAi(p => ({ ...p, api_key: e.target.value }))} 
-                    />
+                    <div className="relative">
+                      <input 
+                        type={showAiKey ? "text" : "password"} 
+                        placeholder={`Enter API Key for ${ai.provider === 'openai' ? 'OpenAI' : ai.provider === 'anthropic' ? 'Anthropic' : 'Google Gemini'}`}
+                        className="w-full bg-gray-900 border border-gray-800 focus:border-purple-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                        value={ai.api_key} 
+                        onChange={e => setAi(p => ({ ...p, api_key: e.target.value }))} 
+                      />
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔑</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAiKey(!showAiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                      >
+                        {showAiKey ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -515,7 +681,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     <button 
                       onClick={handleSaveAi}
                       disabled={!ai.api_key}
-                      className="px-5 py-2 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
+                      className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
                     >
                       Save Key
                     </button>
@@ -528,7 +694,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {/* TAB 4: TELEGRAM NOTIFICATIONS */}
           {activeTab === 'telegram' && (
             <div className="space-y-4">
-              <div className="bg-gray-900/40 border border-gray-800 rounded-lg p-4 space-y-3">
+              <div className="bg-gray-900/30 border border-gray-800/80 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-2 border-b border-gray-850 pb-2">
                   <span className="text-lg">📱</span>
                   <span className="text-xs font-bold text-sky-400 uppercase tracking-wide">Telegram Alerts</span>
@@ -540,23 +706,36 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 <div className="space-y-3 pt-1">
                   <div className="space-y-1">
                     <span className="text-[10px] text-gray-500 font-bold uppercase">Bot Token</span>
-                    <input 
-                      type="password" 
-                      placeholder="Enter Bot Token (e.g. 123456:ABC-DEF)"
-                      className="w-full bg-gray-900 border border-gray-800 focus:border-sky-500 rounded px-3 py-2 text-xs text-white font-mono transition-all"
-                      value={telegram.bot_token} 
-                      onChange={e => setTelegram(p => ({ ...p, bot_token: e.target.value }))} 
-                    />
+                    <div className="relative">
+                      <input 
+                        type={showTelegramToken ? "text" : "password"} 
+                        placeholder="Enter Bot Token (e.g. 123456:ABC-DEF)"
+                        className="w-full bg-gray-900 border border-gray-800 focus:border-sky-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                        value={telegram.bot_token} 
+                        onChange={e => setTelegram(p => ({ ...p, bot_token: e.target.value }))} 
+                      />
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔑</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowTelegramToken(!showTelegramToken)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                      >
+                        {showTelegramToken ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <span className="text-[10px] text-gray-500 font-bold uppercase">Chat ID</span>
-                    <input 
-                      type="text" 
-                      placeholder="Enter Chat ID (e.g. 987654321)"
-                      className="w-full bg-gray-900 border border-gray-800 focus:border-sky-500 rounded px-3 py-2 text-xs text-white font-mono transition-all"
-                      value={telegram.chat_id} 
-                      onChange={e => setTelegram(p => ({ ...p, chat_id: e.target.value }))} 
-                    />
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        placeholder="Enter Chat ID (e.g. 987654321)"
+                        className="w-full bg-gray-900 border border-gray-800 focus:border-sky-500 rounded pl-8 pr-3 py-2 text-xs text-white font-mono transition-all"
+                        value={telegram.chat_id} 
+                        onChange={e => setTelegram(p => ({ ...p, chat_id: e.target.value }))} 
+                      />
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">💬</span>
+                    </div>
                   </div>
                 </div>
 
@@ -565,7 +744,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     {getMaskedKey('telegram') ? (
                       <span>Active Token: <code className="text-sky-400 font-mono">{getMaskedKey('telegram')}</code></span>
                     ) : (
-                      <span className="text-gray-500">No active notification channel</span>
+                      <span className="text-gray-500 font-medium">No active notification channel</span>
                     )}
                   </div>
                   <div className="flex gap-2">
@@ -580,7 +759,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     <button 
                       onClick={handleSaveTelegram}
                       disabled={!telegram.bot_token || !telegram.chat_id}
-                      className="px-5 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
+                      className="px-5 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
                     >
                       Save Configuration
                     </button>
@@ -590,10 +769,245 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
+          {/* TAB 5: WHATSAPP NOTIFICATIONS */}
+          {activeTab === 'whatsapp' && (
+            <div className="space-y-4">
+              <div className="bg-gray-900/30 border border-gray-800/80 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">💬</span>
+                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wide">WhatsApp Alerts</span>
+                  </div>
+                  <div className="flex rounded-lg overflow-hidden border border-gray-800 bg-gray-950 p-0.5">
+                    <button
+                      onClick={() => setWhatsapp(p => ({ ...p, provider_type: 'meta' }))}
+                      className={`px-3 py-1 text-[10px] font-semibold uppercase rounded transition-all ${
+                        whatsapp.provider_type === 'meta'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'text-gray-500 hover:text-gray-300'
+                      }`}
+                    >
+                      Meta Cloud
+                    </button>
+                    <button
+                      onClick={() => setWhatsapp(p => ({ ...p, provider_type: 'twilio' }))}
+                      className={`px-3 py-1 text-[10px] font-semibold uppercase rounded transition-all ${
+                        whatsapp.provider_type === 'twilio'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'text-gray-500 hover:text-gray-300'
+                      }`}
+                    >
+                      Twilio
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Configure alerts for strategy execution (entries, target exits, stop loss hits, and scheduled squareoffs) to be delivered on WhatsApp.
+                </p>
+
+                <div className="space-y-3 pt-1">
+                  {whatsapp.provider_type === 'meta' ? (
+                    <>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-gray-500 font-bold uppercase">Meta Access Token</span>
+                        <div className="relative">
+                          <input
+                            type={showWhatsappToken ? "text" : "password"}
+                            placeholder={getMaskedKey('whatsapp') ? "••••••••••••••••" : "Enter Meta Graph API Access Token"}
+                            className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                            value={whatsapp.access_token}
+                            onChange={e => setWhatsapp(p => ({ ...p, access_token: e.target.value }))}
+                          />
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔑</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowWhatsappToken(!showWhatsappToken)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                          >
+                            {showWhatsappToken ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">Phone Number ID</span>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="e.g. 1092837498"
+                              className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 rounded pl-8 pr-3 py-2 text-xs text-white font-mono transition-all"
+                              value={whatsapp.phone_number_id}
+                              onChange={e => setWhatsapp(p => ({ ...p, phone_number_id: e.target.value }))}
+                            />
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🆔</span>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">Recipient Phone</span>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="e.g. +919999999999"
+                              className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 rounded pl-8 pr-3 py-2 text-xs text-white font-mono transition-all"
+                              value={whatsapp.recipient_phone}
+                              onChange={e => setWhatsapp(p => ({ ...p, recipient_phone: e.target.value }))}
+                            />
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">📞</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">Twilio Account SID</span>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder={isConfigured('whatsapp') ? "Configured (Masked)" : "ACxxxxxxxxxxxxxxxx"}
+                              className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 rounded pl-8 pr-3 py-2 text-xs text-white font-mono transition-all"
+                              value={whatsapp.twilio_sid}
+                              onChange={e => setWhatsapp(p => ({ ...p, twilio_sid: e.target.value }))}
+                            />
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🆔</span>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">Twilio Auth Token</span>
+                          <div className="relative">
+                            <input
+                              type={showTwilioAuth ? "text" : "password"}
+                              placeholder={isConfigured('whatsapp') ? "••••••••••••••••" : "Enter Auth Token"}
+                              className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                              value={whatsapp.twilio_auth_token}
+                              onChange={e => setWhatsapp(p => ({ ...p, twilio_auth_token: e.target.value }))}
+                            />
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔒</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowTwilioAuth(!showTwilioAuth)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                            >
+                              {showTwilioAuth ? 'Hide' : 'Show'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">From Number (Sandbox)</span>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="e.g. +14155238886"
+                              className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 rounded pl-8 pr-3 py-2 text-xs text-white font-mono transition-all"
+                              value={whatsapp.twilio_from}
+                              onChange={e => setWhatsapp(p => ({ ...p, twilio_from: e.target.value }))}
+                            />
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">📞</span>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">To Number</span>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="e.g. +919999999999"
+                              className="w-full bg-gray-900 border border-gray-800 focus:border-green-500 rounded pl-8 pr-3 py-2 text-xs text-white font-mono transition-all"
+                              value={whatsapp.twilio_to}
+                              onChange={e => setWhatsapp(p => ({ ...p, twilio_to: e.target.value }))}
+                            />
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">📞</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex justify-between items-center pt-2">
+                  <div className="text-[10px] text-gray-500 font-medium">
+                    {isConfigured('whatsapp') ? (
+                      <span>WhatsApp channel configured.</span>
+                    ) : (
+                      <span className="text-gray-500">No active notification channel</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleTestWhatsapp}
+                      disabled={testingWhatsapp}
+                      className="px-4 py-2 bg-gray-800 hover:bg-gray-750 disabled:opacity-40 text-xs font-semibold text-gray-300 rounded-lg flex items-center gap-1 border border-gray-700 transition"
+                    >
+                      {testingWhatsapp && <span className="w-2.5 h-2.5 border border-gray-300 border-t-transparent rounded-full animate-spin" />}
+                      Test Alert
+                    </button>
+                    <button
+                      onClick={handleSaveWhatsapp}
+                      disabled={whatsapp.provider_type === 'meta' ? (!whatsapp.phone_number_id || !whatsapp.recipient_phone) : (!whatsapp.twilio_from || !whatsapp.twilio_to)}
+                      className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
+                    >
+                      Save Configuration
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: REPORTING PREFERENCES */}
+          {activeTab === 'reporting' && (
+            <div className="space-y-4">
+              <div className="bg-gray-900/30 border border-gray-800/80 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2 border-b border-gray-800 pb-2">
+                  <span className="text-lg">📋</span>
+                  <span className="text-xs font-bold text-teal-400 uppercase tracking-wide">Automated Daily Reporting</span>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Track long-term performance without manual work. Select your preferred daily and weekly summary briefing delivery format.
+                </p>
+
+                <div className="space-y-4 pt-1">
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-gray-500 font-bold uppercase">Delivery Format</span>
+                    <select
+                      value={reportingFormat}
+                      onChange={e => setReportingFormat(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-800 focus:border-teal-500 rounded px-3 py-2 text-xs text-white transition-all font-semibold cursor-pointer"
+                    >
+                      <option value="telegram">Telegram Text Message</option>
+                      <option value="whatsapp">WhatsApp Text Message</option>
+                      <option value="pdf">PDF Attachment (sent via Telegram/WhatsApp)</option>
+                    </select>
+                  </div>
+
+                  <div className="bg-teal-950/20 border border-teal-900/40 rounded-xl p-4 text-xs text-teal-400 space-y-2.5">
+                    <div className="font-bold flex items-center gap-1.5 text-white">
+                      <span>⏰</span> Automated Delivery Schedule:
+                    </div>
+                    <ul className="list-disc pl-4 space-y-2 text-gray-300">
+                      <li><strong className="text-teal-400">Daily EOD report</strong> generated at <strong className="text-teal-400">12:30 PM</strong> (Includes today's trades, gross/net P&L, strategy decisions, and AI observations).</li>
+                      <li><strong className="text-teal-400">Weekly Summary report</strong> generated on <strong className="text-teal-400">Monday at 9:00 AM</strong> (Prior week stats Monday to Friday breakdown).</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSaveReporting}
+                    className="px-5 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
+                  >
+                    Save Preferences
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-gray-800 bg-gray-900/50 flex items-center justify-between text-[10px] text-gray-500">
+        <div className="p-3 border-t border-gray-800/85 bg-gray-900/50 flex items-center justify-between text-[10px] text-gray-500 px-5">
           <span>🛡 API keys are securely stored with AES-256 encryption.</span>
           <span>v1.0.0</span>
         </div>

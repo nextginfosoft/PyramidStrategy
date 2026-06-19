@@ -38,6 +38,11 @@ export const tradesApi = {
   exportLogs: (): Promise<Blob> => api.get('/trades/logs/export', { responseType: 'blob' }).then(r => r.data),
   getLogs: (start_time?: string, end_time?: string): Promise<{ logs: string[] }> =>
     api.get('/trades/logs', { params: { start_time, end_time } }).then(r => r.data),
+  getReports: (): Promise<{ reports: any[] }> => api.get('/trades/reports').then(r => r.data),
+  downloadReport: (filename: string): Promise<Blob> =>
+    api.get(`/trades/reports/download`, { params: { filename }, responseType: 'blob' }).then(r => r.data),
+  triggerReport: (reportDate?: string) =>
+    api.post('/trades/reports/trigger-daily', null, { params: { report_date: reportDate } }).then(r => r.data),
 }
 
 export const healthApi = {
@@ -89,6 +94,7 @@ export const sessionApi = {
 
 export const notificationApi = {
   test: () => api.post('/notifications/test').then(r => r.data),
+  testWhatsapp: () => api.post('/notifications/whatsapp/test').then(r => r.data),
   getStatus: () => api.get('/notifications/status').then(r => r.data),
   reload: () => api.post('/notifications/reload').then(r => r.data),
 }

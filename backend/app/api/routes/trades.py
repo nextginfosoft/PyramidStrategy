@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from datetime import date
+from datetime import date, datetime
 from app.db.database import get_db
 from app.models.models import Trade, DailyPnL, User
 from app.schemas.schemas import TradeResponse, DailyPnLResponse
@@ -226,3 +226,67 @@ def export_logs(user: User = Depends(require_auth)):
         media_type="text/plain",
         filename="trade_engine.log"
     )
+
+
+@router.get("/reports")
+def list_reports(user: User = Depends(require_auth)):
+    """List all generated PDF reports in the logs/reports folder."""
+    import os
+    reports_dir = os.path.join("logs", "reports")
+    if not os.path.exists(reports_dir):
+        return {"reports": []}
+        
+    files = []
+    for f in os.listdir(reports_dir):
+        if f.endswith(".pdf") and f"_{user.id}_" in f:
+            path = os.path.join(reports_dir, f)
+            stat = os.stat(path)
+            parts = f.replace(".pdf", "").split("_")
+            report_type = parts[0]
+            report_date = parts[3] if len(parts) >= 4 else ""
+            
+            files.append({
+                "filename": f,
+                "type": report_type,
+                "date": report_date,
+                "size_bytes": stat.st_size,
+                "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat()
+            })
+            
+    files.sort(key=lambda x: x["created_at"], reverse=True)
+    return {"reports": files}
+
+
+@router.get("/reports/download")
+def download_report(filename: str, user: User = Depends(require_auth)):
+    """Download a specific PDF report."""
+    import os
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+        
+    if f"_{user.id}_" not in filename:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    reports_dir = os.path.join("logs", "reports")
+    filepath = os.path.join(reports_dir, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Report not found")
+        
+    return FileResponse(
+        path=filepath,
+        media_type="application/pdf",
+        filename=filename
+    )
+
+
+@router.post("/reports/trigger-daily")
+async def trigger_daily_report(report_date: date | None = None, user: User = Depends(require_auth)):
+    """Trigger manual daily report generation for testing."""
+    from app.services.reporting import send_daily_report
+    from app.core.time_rules import today_ist
+    target = report_date or today_ist()
+    await send_daily_report(user.id, target)
+    return {"status": "triggered", "date": target.isoformat()}

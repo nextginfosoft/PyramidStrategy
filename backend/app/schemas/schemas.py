@@ -113,6 +113,7 @@ class ApiConfigResponse(BaseModel):
     provider: str
     api_key_masked: Optional[str]     # e.g. "sk-...xxxx"
     is_active: bool
+    extra_config: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 

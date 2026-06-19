@@ -35,4 +35,7 @@ Thumbs.db
 logs/
 
 # Strategy data (optional — commit if you want to share backtests)
-# *.db
+*.db
+
+# Scratch directory
+backend/scratch/

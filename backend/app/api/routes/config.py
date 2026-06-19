@@ -109,6 +109,9 @@ def save_api_key(payload: ApiConfigUpdate, db: Session = Depends(get_db), user: 
     elif payload.provider == "telegram":
         from app.services.notification import get_user_notification_service
         get_user_notification_service(user.id).load_from_db()
+    elif payload.provider == "whatsapp":
+        from app.services.whatsapp import get_user_whatsapp_service
+        get_user_whatsapp_service(user.id).load_from_db()
     elif payload.provider in ("openai", "anthropic", "gemini"):
         existing.is_active = True
         other_providers = [p for p in ("openai", "anthropic", "gemini") if p != payload.provider]
@@ -139,5 +142,6 @@ def list_api_keys(db: Session = Depends(get_db), user: User = Depends(require_au
             provider=cfg.provider,
             api_key_masked=masked,
             is_active=cfg.is_active,
+            extra_config=cfg.extra_config,
         ))
     return result

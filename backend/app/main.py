@@ -102,6 +102,38 @@ def schedule_jobs():
 
     scheduler.add_job(scheduled_squareoff, "cron", hour=11, minute=30, id="squareoff")
 
+    # 12:30 PM — Automated Daily EOD Report
+    async def daily_reporting():
+        from app.db.database import SessionLocal
+        from app.models.models import User
+        from app.services.reporting import send_daily_report
+        from datetime import date
+        try:
+            with SessionLocal() as db:
+                users = db.query(User).all()
+                for u in users:
+                    await send_daily_report(u.id, date.today())
+        except Exception as e:
+            logger.error(f"Daily reporting job failed: {e}")
+
+    scheduler.add_job(daily_reporting, "cron", hour=12, minute=30, id="daily_report")
+
+    # Monday 9:00 AM — Weekly Summary Report
+    async def weekly_reporting():
+        from app.db.database import SessionLocal
+        from app.models.models import User
+        from app.services.reporting import send_weekly_report
+        from datetime import date
+        try:
+            with SessionLocal() as db:
+                users = db.query(User).all()
+                for u in users:
+                    await send_weekly_report(u.id, date.today())
+        except Exception as e:
+            logger.error(f"Weekly reporting job failed: {e}")
+
+    scheduler.add_job(weekly_reporting, "cron", day_of_week="mon", hour=9, minute=0, id="weekly_report")
+
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 @asynccontextmanager
