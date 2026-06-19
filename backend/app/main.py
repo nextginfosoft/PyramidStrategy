@@ -12,12 +12,13 @@ from loguru import logger
 # Time filter to restrict logs to 9 AM - 12:30 PM IST
 def log_time_filter(record):
     try:
-        from app.core.time_rules import now_ist
-        from datetime import time
-        t = now_ist().time()
-        return time(9, 0) <= t <= time(12, 30)
+        import datetime
+        # IST is UTC + 5:30
+        ist_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        t = datetime.datetime.now(ist_tz).time()
+        return datetime.time(9, 0) <= t <= datetime.time(12, 30)
     except Exception:
-        # Fallback to true if timezone helper not fully loaded/ready
+        # Fallback to true on unexpected errors
         return True
 
 # Configure logger file sink for trade execution logs
@@ -245,6 +246,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    logger.error(f"❌ Validation error on {request.method} {request.url.path}: {exc.errors()}")
+    return await request_validation_exception_handler(request, exc)
+
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 # Without /api prefix

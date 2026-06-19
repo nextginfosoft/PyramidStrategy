@@ -72,7 +72,22 @@ export function Settings({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ['strategy-config'] })
       showStatus('✓ Strategy configurations saved successfully', true)
     },
-    onError: () => showStatus('✗ Failed to save strategy configuration', false),
+    onError: (err: any) => {
+      let errMsg = 'Failed to save strategy configuration';
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail) && detail.length > 0) {
+          const firstErr = detail[0];
+          errMsg = firstErr.msg || errMsg;
+          if (errMsg.startsWith('Value error, ')) {
+            errMsg = errMsg.substring('Value error, '.length);
+          }
+        } else if (typeof detail === 'string') {
+          errMsg = detail;
+        }
+      }
+      showStatus(`✗ ${errMsg}`, false);
+    },
   })
 
   const saveKey = useMutation({
