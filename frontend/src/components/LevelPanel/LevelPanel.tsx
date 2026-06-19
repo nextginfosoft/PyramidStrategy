@@ -7,15 +7,15 @@ interface Props {
 }
 
 const STATE_COLORS: Record<string, string> = {
-  IDLE: 'text-gray-400',
+  IDLE: 'text-navy-300',
   L1_ENTERED: 'text-yellow-400',
   L2_ENTERED: 'text-orange-400',
   L3_ENTERED: 'text-red-400',
-  BLOCKED: 'text-gray-500',
+  BLOCKED: 'text-navy-400',
 }
 
 export function LevelPanel({ status, config }: Props) {
-  if (!config) return <div className="text-gray-500 text-sm">No config — set levels in Settings</div>
+  if (!config) return <div className="text-navy-300 text-sm">No config — set levels in Settings</div>
 
   const pe = status?.pe
   const ce = status?.ce

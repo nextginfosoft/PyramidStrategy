@@ -119,9 +119,9 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const todayPnl = pnl?.gross_pnl ?? 0
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
+    <div className="min-h-screen bg-navy-950 text-navy-100">
       {/* Header */}
-      <header className="border-b border-gray-800 px-4 py-2 flex items-center justify-between">
+      <header className="border-b border-navy-700 bg-navy-900/60 backdrop-blur-md px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-orange-400 font-bold text-lg">🔺 PyramidStrategy</span>
           {paperTrade && (
@@ -138,30 +138,30 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         <div className="flex items-center gap-2">
           {isRunning ? (
             <button onClick={() => stopMut.mutate()}
-              className="px-3 py-1 bg-red-800 hover:bg-red-700 rounded text-xs font-bold">
+              className="px-3 py-1 bg-red-800 hover:bg-red-700 rounded text-xs font-bold shadow-md shadow-red-950/20">
               ⏹ STOP
             </button>
           ) : (
             <button onClick={() => startMut.mutate()}
               disabled={!config}
-              className="px-3 py-1 bg-green-700 hover:bg-green-600 disabled:opacity-40 rounded text-xs font-bold">
+              className="px-3 py-1 bg-green-700 hover:bg-green-600 disabled:opacity-40 rounded text-xs font-bold shadow-md shadow-green-950/20">
               ▶ START
             </button>
           )}
           <button onClick={() => setShowLiveLogs(true)}
-            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150">
             📄 Trade Log
           </button>
           <button onClick={() => setShowPDFReports(true)}
-            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150">
             📋 PDF Reports
           </button>
           <button onClick={() => setShowSettings(true)}
-            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150">
             ⚙ Settings
           </button>
           <button onClick={handleLogout}
-            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400">
+            className="px-3 py-1 bg-navy-900 hover:bg-navy-800 border border-navy-700 rounded text-xs text-navy-300 hover:text-navy-100 transition duration-150">
             ⇥ Logout
           </button>
         </div>
@@ -205,27 +205,27 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         {/* Left: NIFTY + Levels */}
         <div className="col-span-3 space-y-3">
           {/* NIFTY price */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-            <div className="text-xs text-gray-500 mb-1">NIFTY 50</div>
+          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+            <div className="text-xs text-navy-300 mb-1 font-semibold">NIFTY 50</div>
             <div className="text-2xl font-bold text-white font-mono">
               {niftyLtp ? niftyLtp.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
             </div>
           </div>
 
           {/* Level panel */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-            <div className="text-xs text-gray-500 mb-2">LEVELS</div>
+          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+            <div className="text-xs text-navy-300 mb-2 font-semibold">LEVELS</div>
             <LevelPanel status={status} config={config ?? null} />
           </div>
 
           {/* Paper trade simulator */}
           {paperTrade && (
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3">
-              <div className="text-xs text-yellow-600 mb-2 font-bold">🎮 SIMULATE TICK</div>
+            <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+              <div className="text-xs text-yellow-500 mb-2 font-bold uppercase tracking-wide">🎮 Simulate Tick</div>
               <div className="flex gap-1">
                 <input
                   type="number"
-                  className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                  className="flex-1 bg-navy-800 border border-navy-700 focus:border-orange-500 focus:outline-none rounded px-2 py-1 text-xs text-white"
                   placeholder="NIFTY price"
                   value={simPrice}
                   onChange={e => setSimPrice(e.target.value)}
@@ -233,7 +233,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
                 <button
                   onClick={() => { simMut.mutate(+simPrice); setSimPrice('') }}
                   disabled={!simPrice}
-                  className="px-2 py-1 bg-orange-700 hover:bg-orange-600 rounded text-xs disabled:opacity-40">
+                  className="px-2 py-1 bg-orange-700 hover:bg-orange-600 text-white rounded text-xs font-semibold disabled:opacity-40 transition duration-150">
                   →
                 </button>
               </div>
@@ -244,35 +244,35 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         {/* Center: P&L + Trade Log */}
         <div className="col-span-5 space-y-3">
           {/* P&L Summary */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-500">TODAY'S P&L</span>
-              <span className="text-xs text-gray-600">{pnl?.total_exits ?? 0} exits | {pnl?.winning_trades ?? 0} wins</span>
+              <span className="text-xs text-navy-300 font-semibold">TODAY'S P&L</span>
+              <span className="text-xs text-navy-300 font-mono">{pnl?.total_exits ?? 0} exits | {pnl?.winning_trades ?? 0} wins</span>
             </div>
             <div className={clsx('text-2xl font-bold font-mono',
-              todayPnl > 0 ? 'text-green-400' : todayPnl < 0 ? 'text-red-400' : 'text-gray-400')}>
+              todayPnl > 0 ? 'text-green-400' : todayPnl < 0 ? 'text-red-400' : 'text-navy-300')}>
               {todayPnl >= 0 ? '+' : ''}₹{todayPnl.toFixed(0)}
             </div>
           </div>
 
           {/* P&L Chart */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-            <div className="text-xs text-gray-500 mb-2">P&L CHART</div>
+          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+            <div className="text-xs text-navy-300 mb-2 font-semibold">P&L CHART</div>
             <PnLChart data={pnlChartData} />
           </div>
 
           {/* Trade Log */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">TRADE LOG</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-navy-200">TRADE LOG</span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleExportTrades}
                   disabled={exportingTrades}
-                  className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-300 rounded text-[10px] font-semibold border border-gray-700 transition flex items-center gap-1 shadow-sm"
+                  className="px-2.5 py-1 bg-navy-800 hover:bg-navy-700 disabled:opacity-40 text-navy-200 rounded text-[10px] font-semibold border border-navy-700 transition flex items-center gap-1 shadow-sm"
                 >
                   {exportingTrades ? (
-                    <span className="w-2.5 h-2.5 border border-gray-300 border-t-transparent rounded-full animate-spin" />
+                    <span className="w-2.5 h-2.5 border border-navy-300 border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <span>📥</span>
                   )}
@@ -281,10 +281,10 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
                 <button
                   onClick={handleExportLogs}
                   disabled={exportingLogs}
-                  className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-300 rounded text-[10px] font-semibold border border-gray-700 transition flex items-center gap-1 shadow-sm"
+                  className="px-2.5 py-1 bg-navy-800 hover:bg-navy-700 disabled:opacity-40 text-navy-200 rounded text-[10px] font-semibold border border-navy-700 transition flex items-center gap-1 shadow-sm"
                 >
                   {exportingLogs ? (
-                    <span className="w-2.5 h-2.5 border border-gray-300 border-t-transparent rounded-full animate-spin" />
+                    <span className="w-2.5 h-2.5 border border-navy-300 border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <span>📄</span>
                   )}
@@ -299,16 +299,16 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         {/* Right: AI Observer + Open Positions */}
         <div className="col-span-4 space-y-3">
           {/* Open Positions */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-            <div className="text-xs text-gray-500 mb-2">OPEN POSITIONS</div>
+          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+            <div className="text-xs text-navy-300 mb-2 font-semibold">OPEN POSITIONS</div>
             {[status?.ce, status?.pe].map((sm, i) => (
               sm && sm.state !== 'IDLE' && sm.state !== 'BLOCKED' && (
-                <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-gray-800">
+                <div key={i} className="flex items-center justify-between text-xs py-1.5 border-b border-navy-850">
                   <span className={i === 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
                     {i === 0 ? 'CE' : 'PE'}
                   </span>
-                  <span className="text-gray-300">{sm.locked_instrument}</span>
-                  <span className="text-gray-400">{sm.lots}L</span>
+                  <span className="text-navy-100">{sm.locked_instrument}</span>
+                  <span className="text-navy-300">{sm.lots}L</span>
                   <span className={clsx('font-mono',
                     (sm.unrealized_pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400')}>
                     {sm.unrealized_pnl != null
@@ -319,7 +319,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
               )
             ))}
             {(!status?.ce || status.ce.state === 'IDLE') && (!status?.pe || status.pe.state === 'IDLE') && (
-              <div className="text-gray-600 text-xs text-center py-2">No open positions</div>
+              <div className="text-navy-300 text-xs text-center py-2">No open positions</div>
             )}
           </div>
 
@@ -327,8 +327,8 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           <KiteStatus />
 
           {/* AI Observer */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-            <div className="text-xs text-gray-500 mb-2">🤖 AI OBSERVER</div>
+          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+            <div className="text-xs text-navy-300 mb-2 font-semibold">🤖 AI OBSERVER</div>
             <AIObserver />
           </div>
         </div>

@@ -69,31 +69,31 @@ export function PDFReportsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-950 border border-gray-800 rounded-xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-navy-950 border border-navy-700 rounded-xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900/50">
+        <div className="flex items-center justify-between p-4 border-b border-navy-700 bg-navy-900/50">
           <div className="flex items-center gap-2">
             <span className="text-teal-400 text-lg">📋</span>
             <h2 className="text-base font-bold text-white tracking-wide uppercase">PDF Performance Reports</h2>
           </div>
           <button 
             onClick={onClose} 
-            className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-gray-800 rounded-lg text-lg flex items-center justify-center"
+            className="text-navy-300 hover:text-white transition-colors p-1.5 hover:bg-navy-800 rounded-lg text-lg flex items-center justify-center"
           >
             ✕
           </button>
         </div>
 
         {/* Trigger manual report */}
-        <div className="p-4 border-b border-gray-800 bg-gray-900/10 flex flex-wrap items-center justify-between gap-4">
+        <div className="p-4 border-b border-navy-700 bg-navy-900/10 flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <h3 className="text-xs font-bold text-teal-400 uppercase">Trigger Historical Report</h3>
-            <p className="text-[11px] text-gray-500">Generate a custom EOD report PDF for testing or backfilled records.</p>
+            <p className="text-[11px] text-navy-300">Generate a custom EOD report PDF for testing or backfilled records.</p>
           </div>
           <div className="flex items-center gap-2">
             <input
               type="date"
-              className="bg-gray-900 border border-gray-800 focus:border-teal-500 rounded px-3 py-1.5 text-xs text-white"
+              className="bg-navy-900 border border-navy-700 focus:border-teal-500 rounded px-3 py-1.5 text-xs text-white"
               value={triggerDate}
               onChange={e => setTriggerDate(e.target.value)}
             />
@@ -109,20 +109,20 @@ export function PDFReportsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Reports list */}
-        <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-gray-950/40">
+        <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-navy-950/40">
           {error && <div className="text-red-400 text-center py-4 text-xs font-semibold">{error}</div>}
           {loading && reports.length === 0 && (
-            <div className="text-gray-500 text-center py-12 text-xs">Loading report archive...</div>
+            <div className="text-navy-300 text-center py-12 text-xs">Loading report archive...</div>
           )}
           {!loading && reports.length === 0 && !error && (
-            <div className="text-gray-500 text-center py-12 text-xs">No PDF reports generated yet. Reports are automatically compiled at 12:30 PM.</div>
+            <div className="text-navy-300 text-center py-12 text-xs">No PDF reports generated yet. Reports are automatically compiled at 12:30 PM.</div>
           )}
 
           {reports.length > 0 && (
-            <div className="overflow-hidden border border-gray-800 rounded-lg">
+            <div className="overflow-hidden border border-navy-700 rounded-lg">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-gray-900 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-800">
+                  <tr className="bg-navy-900 text-[10px] font-bold text-navy-300 uppercase tracking-wider border-b border-navy-700">
                     <th className="p-3">Report Date</th>
                     <th className="p-3">Report Type</th>
                     <th className="p-3">File Size</th>
@@ -130,9 +130,9 @@ export function PDFReportsModal({ onClose }: { onClose: () => void }) {
                     <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-850 text-xs text-gray-300">
+                <tbody className="divide-y divide-navy-800 text-xs text-navy-200">
                   {reports.map((report) => (
-                    <tr key={report.filename} className="hover:bg-gray-900/30 transition-colors">
+                    <tr key={report.filename} className="hover:bg-navy-900/30 transition-colors">
                       <td className="p-3 font-semibold text-white">{new Date(report.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                       <td className="p-3">
                         <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -143,14 +143,14 @@ export function PDFReportsModal({ onClose }: { onClose: () => void }) {
                           {report.type === 'daily' ? 'Daily EOD' : 'Weekly Summary'}
                         </span>
                       </td>
-                      <td className="p-3 font-mono text-[11px] text-gray-500">{(report.size_bytes / 1024).toFixed(1)} KB</td>
-                      <td className="p-3 text-gray-400 font-mono text-[10px]">
+                      <td className="p-3 font-mono text-[11px] text-navy-300">{(report.size_bytes / 1024).toFixed(1)} KB</td>
+                      <td className="p-3 text-navy-300 font-mono text-[10px]">
                         {new Date(report.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                       </td>
                       <td className="p-3 text-right">
                         <button
                           onClick={() => handleDownload(report.filename)}
-                          className="px-3 py-1 bg-gray-800 hover:bg-gray-700 hover:text-white rounded border border-gray-700 text-[11px] font-semibold transition"
+                          className="px-3 py-1 bg-navy-800 hover:bg-navy-700 hover:text-white rounded border border-navy-700 text-[11px] font-semibold transition text-navy-200"
                         >
                           📥 Download PDF
                         </button>
@@ -164,11 +164,11 @@ export function PDFReportsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-gray-800 bg-gray-900/50 flex items-center justify-between text-[10px] text-gray-500 px-5">
+        <div className="p-3 border-t border-navy-700 bg-navy-900/50 flex items-center justify-between text-[10px] text-navy-300 px-5">
           <span>Daily reports generate at 12:30 PM. Weekly briefings on Monday at 9:00 AM.</span>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded font-bold text-xs"
+            className="px-4 py-1.5 bg-navy-800 hover:bg-navy-700 text-white rounded font-bold text-xs border border-navy-700 transition"
           >
             Close
           </button>

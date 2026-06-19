@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-950 text-gray-100 font-mono;
+  @apply bg-navy-950 text-navy-100 font-mono;
   -webkit-font-smoothing: antialiased;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: #111; }
-::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+::-webkit-scrollbar-track { background: #0a0e1a; }
+::-webkit-scrollbar-thumb { background: #25304b; border-radius: 2px; }

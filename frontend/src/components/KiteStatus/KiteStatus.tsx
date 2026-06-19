@@ -102,9 +102,9 @@ export default function KiteStatus() {
   );
 
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
+    <div className="bg-navy-900 border border-navy-700 rounded-xl p-4 space-y-3 shadow-lg">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
+        <h3 className="text-sm font-semibold text-navy-100 uppercase tracking-wide">
           Zerodha Kite
         </h3>
         <span
@@ -113,7 +113,7 @@ export default function KiteStatus() {
               ? "bg-green-900 text-green-300"
               : status?.authenticated
               ? "bg-yellow-900 text-yellow-300"
-              : "bg-gray-700 text-gray-400"
+              : "bg-navy-800 text-navy-300 border border-navy-700"
           }`}
         >
           {status?.ticker_connected
@@ -125,7 +125,7 @@ export default function KiteStatus() {
       </div>
 
       {status && (
-        <div className="grid grid-cols-2 gap-1.5 text-xs text-gray-400">
+        <div className="grid grid-cols-2 gap-1.5 text-xs text-navy-300">
           <div>
             <Dot ok={status.authenticated} />
             Auth token
@@ -143,7 +143,7 @@ export default function KiteStatus() {
             Options streaming ({status.subscribed_options})
           </div>
           {status.api_key_masked && (
-            <div className="col-span-2 text-gray-500 font-mono">
+            <div className="col-span-2 text-navy-400 font-mono text-[11px]">
               API key: {status.api_key_masked}
             </div>
           )}
@@ -155,7 +155,7 @@ export default function KiteStatus() {
           <button
             onClick={handleLogin}
             disabled={loading}
-            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded font-medium disabled:opacity-50"
+            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-blue-950/20"
           >
             {loading ? "Opening..." : "Login to Kite"}
           </button>
@@ -165,7 +165,7 @@ export default function KiteStatus() {
               <button
                 onClick={handleStartFeed}
                 disabled={loading}
-                className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded font-medium disabled:opacity-50"
+                className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-green-950/20"
               >
                 {loading ? "Starting..." : "▶ Start Live Feed"}
               </button>
@@ -174,7 +174,7 @@ export default function KiteStatus() {
               <button
                 onClick={handleLoadInstruments}
                 disabled={loading}
-                className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded font-medium disabled:opacity-50"
+                className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-purple-950/20"
               >
                 Load Instruments
               </button>
@@ -182,7 +182,7 @@ export default function KiteStatus() {
             <button
               onClick={handleValidate}
               disabled={loading}
-              className="text-xs bg-gray-600 hover:bg-gray-500 text-white px-3 py-1.5 rounded font-medium disabled:opacity-50"
+              className="text-xs bg-navy-800 hover:bg-navy-700 text-navy-200 border border-navy-700 px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150"
             >
               Validate Token
             </button>
@@ -209,5 +209,6 @@ export default function KiteStatus() {
         </p>
       )}
     </div>
+
   );
 }
