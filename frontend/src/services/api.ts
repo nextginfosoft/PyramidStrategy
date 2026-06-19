@@ -69,6 +69,37 @@ export const aiApi = {
   getStatus: () => api.get('/ai/status').then(r => r.data),
 }
 
+export const backtestApi = {
+  run: (payload: {
+    start_date: string
+    end_date: string
+    config: {
+      r1: number
+      r2: number
+      r3: number
+      s1: number
+      s2: number
+      s3: number
+      lot_size: number
+      target_points: number
+      sl_points: number
+      name?: string
+    }
+    compare_configs?: Array<{
+      r1: number
+      r2: number
+      r3: number
+      s1: number
+      s2: number
+      s3: number
+      lot_size: number
+      target_points: number
+      sl_points: number
+      name?: string
+    }>
+  }) => api.post('/backtest', payload).then(r => r.data),
+}
+
 export const sessionApi = {
   register: (username: string, password: string) =>
     api.post('/session/register', { username, password }).then(r => r.data),

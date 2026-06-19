@@ -12,6 +12,7 @@ import { Settings } from '../Settings/Settings'
 import KiteStatus from '../KiteStatus/KiteStatus'
 import { LiveLogModal } from '../LiveLogModal/LiveLogModal'
 import { PDFReportsModal } from '../PDFReportsModal/PDFReportsModal'
+import { BacktestModal } from '../BacktestModal/BacktestModal'
 
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
@@ -20,6 +21,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const [showSettings, setShowSettings] = useState(false)
   const [showLiveLogs, setShowLiveLogs] = useState(false)
   const [showPDFReports, setShowPDFReports] = useState(false)
+  const [showBacktest, setShowBacktest] = useState(false)
   const [simPrice, setSimPrice] = useState('')
   const [exportingTrades, setExportingTrades] = useState(false)
   const [exportingLogs, setExportingLogs] = useState(false)
@@ -155,6 +157,10 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           <button onClick={() => setShowPDFReports(true)}
             className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150">
             📋 PDF Reports
+          </button>
+          <button onClick={() => setShowBacktest(true)}
+            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150">
+            📊 Backtest
           </button>
           <button onClick={() => setShowSettings(true)}
             className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150">
@@ -337,6 +343,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
       {showSettings && <Settings onClose={() => { setShowSettings(false); qc.invalidateQueries() }} />}
       {showLiveLogs && <LiveLogModal onClose={() => setShowLiveLogs(false)} />}
       {showPDFReports && <PDFReportsModal onClose={() => setShowPDFReports(false)} />}
+      {showBacktest && <BacktestModal onClose={() => setShowBacktest(false)} />}
     </div>
   )
 }

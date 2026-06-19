@@ -90,7 +90,8 @@ def require_auth(
             detail="Not authenticated — please login",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user = db.query(User).filter(User.id == user_id).first()
+    users = db.query(User).filter(User.id == user_id).all()
+    user = users[0] if users else None
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -114,7 +115,8 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
             detail="Password must be at least 6 characters long",
         )
 
-    existing = db.query(User).filter(User.username == body.username).first()
+    existing_list = db.query(User).filter(User.username == body.username).all()
+    existing = existing_list[0] if existing_list else None
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -134,7 +136,8 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     """Authenticate and get JWT token."""
-    user = db.query(User).filter(User.username == body.username).first()
+    users = db.query(User).filter(User.username == body.username).all()
+    user = users[0] if users else None
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -162,7 +165,8 @@ def check_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(sec
     """Non-throwing auth check — returns authenticated status."""
     user_id = verify_token(credentials)
     if user_id:
-        user = db.query(User).filter(User.id == user_id).first()
+        users = db.query(User).filter(User.id == user_id).all()
+        user = users[0] if users else None
         if user:
             return {"authenticated": True, "username": user.username}
     return {"authenticated": False, "username": None}
