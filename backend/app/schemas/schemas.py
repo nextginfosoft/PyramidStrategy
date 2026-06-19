@@ -1,6 +1,6 @@
 from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 
@@ -60,6 +60,24 @@ class TradeResponse(BaseModel):
     pnl: Optional[float]
     is_paper_trade: bool
     created_at: datetime
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def ensure_tz(cls, v):
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                return v.replace(tzinfo=timezone.utc)
+        elif isinstance(v, str):
+            try:
+                # Handle ISO format strings if passed directly
+                from dateutil.parser import parse
+                dt = parse(v)
+                if dt.tzinfo is None:
+                    return dt.replace(tzinfo=timezone.utc)
+                return dt
+            except Exception:
+                pass
+        return v
 
     model_config = {"from_attributes": True}
 

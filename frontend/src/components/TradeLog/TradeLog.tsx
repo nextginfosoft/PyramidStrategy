@@ -32,7 +32,15 @@ export function TradeLog({ trades }: Props) {
               <td className={clsx('pr-2 font-bold', t.side === 'CE' ? 'text-green-400' : 'text-red-400')}>
                 {t.side}
               </td>
-              <td className="pr-2 text-navy-200">{t.level}</td>
+              <td className="pr-2 text-navy-200">
+                {t.level === 'L1'
+                  ? (t.side === 'CE' ? 'S1' : 'R1')
+                  : t.level === 'L2'
+                  ? (t.side === 'CE' ? 'S2' : 'R2')
+                  : t.level === 'L3'
+                  ? (t.side === 'CE' ? 'S3' : 'R3')
+                  : t.level}
+              </td>
               <td className={clsx('pr-2', t.action === 'BUY' ? 'text-blue-400' : 'text-orange-400')}>
                 {t.action}
               </td>

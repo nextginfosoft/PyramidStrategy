@@ -14,6 +14,15 @@ const STATE_COLORS: Record<string, string> = {
   BLOCKED: 'text-navy-400',
 }
 
+function formatState(state: string | undefined, side: 'CE' | 'PE'): string {
+  if (!state) return 'IDLE'
+  if (state.startsWith('L')) {
+    const prefix = side === 'CE' ? 'S' : 'R'
+    return state.replace('L', prefix)
+  }
+  return state
+}
+
 export function LevelPanel({ status, config }: Props) {
   if (!config) return <div className="text-navy-300 text-sm">No config — set levels in Settings</div>
 
@@ -69,12 +78,12 @@ export function LevelPanel({ status, config }: Props) {
       <div className="flex gap-2 mt-3">
         <div className={clsx('flex-1 text-center py-1 rounded text-xs font-bold border',
           'border-green-800 bg-green-950/30', STATE_COLORS[ce?.state ?? 'IDLE'])}>
-          CE: {ce?.state ?? 'IDLE'}
+          CE: {formatState(ce?.state, 'CE')}
           {(ce?.lots ?? 0) > 0 && <span className="ml-1 text-white">{ce!.lots}L</span>}
         </div>
         <div className={clsx('flex-1 text-center py-1 rounded text-xs font-bold border',
           'border-red-800 bg-red-950/30', STATE_COLORS[pe?.state ?? 'IDLE'])}>
-          PE: {pe?.state ?? 'IDLE'}
+          PE: {formatState(pe?.state, 'PE')}
           {(pe?.lots ?? 0) > 0 && <span className="ml-1 text-white">{pe!.lots}L</span>}
         </div>
       </div>

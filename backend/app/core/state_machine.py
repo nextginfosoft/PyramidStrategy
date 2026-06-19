@@ -73,6 +73,12 @@ class StateMachine:
         self.realized_pnl = Decimal("0")
         self.blocked_levels = set()
 
+    def mapped_level(self, lvl: str) -> str:
+        if lvl in ("L1", "L2", "L3"):
+            prefix = "S" if self.side == "CE" else "R"
+            return lvl.replace("L", prefix)
+        return lvl
+
     # ── Entry Logic ──────────────────────────────────────────────────────────
 
     def can_enter_level1(self) -> bool:
@@ -80,7 +86,7 @@ class StateMachine:
         if self.state != State.IDLE:
             return False
         if "L1" in self.blocked_levels:
-            logger.debug(f"[{self.side}] L1 is blocked today")
+            logger.debug(f"[{self.side}] {self.mapped_level('L1')} is blocked today")
             return False
         return True
 
@@ -89,7 +95,7 @@ class StateMachine:
         if self.state != State.L1_ENTERED:
             return False
         if "L2" in self.blocked_levels:
-            logger.debug(f"[{self.side}] L2 is blocked today")
+            logger.debug(f"[{self.side}] {self.mapped_level('L2')} is blocked today")
             return False
         return True
 
@@ -98,7 +104,7 @@ class StateMachine:
         if self.state != State.L2_ENTERED:
             return False
         if "L3" in self.blocked_levels:
-            logger.debug(f"[{self.side}] L3 is blocked today")
+            logger.debug(f"[{self.side}] {self.mapped_level('L3')} is blocked today")
             return False
         return True
 
@@ -120,7 +126,7 @@ class StateMachine:
         self.state = State.L1_ENTERED
 
         logger.info(
-            f"[{self.side}] L1 ENTERED | instrument={instrument} | strike={strike} "
+            f"[{self.side}] {self.mapped_level('L1')} ENTERED | instrument={instrument} | strike={strike} "
             f"| price={fill_price} | lots=1 | qty={qty}"
         )
         return {
@@ -149,7 +155,7 @@ class StateMachine:
         self.state = State.L2_ENTERED
 
         logger.info(
-            f"[{self.side}] L2 ENTERED | adding 1 lot to {self.locked_instrument} "
+            f"[{self.side}] {self.mapped_level('L2')} ENTERED | adding 1 lot to {self.locked_instrument} "
             f"| new_avg={self.entry_avg_price:.2f} | total_lots=2 | total_qty={self.total_qty}"
         )
         return {
@@ -179,7 +185,7 @@ class StateMachine:
         self.state = State.L3_ENTERED
 
         logger.info(
-            f"[{self.side}] L3 ENTERED | adding 1 lot to {self.locked_instrument} "
+            f"[{self.side}] {self.mapped_level('L3')} ENTERED | adding 1 lot to {self.locked_instrument} "
             f"| new_avg={self.entry_avg_price:.2f} | total_lots=3 | SL ACTIVE @ "
             f"{self.level3_entry_price - self.sl_points:.2f}"
         )
@@ -253,7 +259,7 @@ class StateMachine:
         logger.info(
             f"[{self.side}] EXIT | reason={reason} | price={exit_price:.2f} "
             f"| avg_entry={self.entry_avg_price:.2f} | pnl={pnl_rupees:.2f} "
-            f"| level_blocked={level_reached}"
+            f"| level_blocked={self.mapped_level(level_reached)}"
         )
 
         # Reset position state but keep blocked_levels and realized_pnl

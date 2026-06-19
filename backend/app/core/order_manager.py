@@ -59,6 +59,12 @@ class OrderManager:
         Returns fill details: {trade_id, order_id, fill_price, qty, status}
         """
         qty = lots * lot_size
+        mapped_level = level
+        if level in ("L1", "L2", "L3"):
+            if side == "CE":
+                mapped_level = level.replace("L", "S")
+            elif side == "PE":
+                mapped_level = level.replace("L", "R")
 
         if self.paper_trade:
             fill_price = mock_ltp or Decimal("100.00")
@@ -66,7 +72,7 @@ class OrderManager:
             status = "COMPLETE"
             logger.info(
                 f"[PAPER] [User {self.user_id}] BUY {qty} {instrument} @ {fill_price} | "
-                f"lots={lots} | level={level} | trigger_nifty={trigger_nifty}"
+                f"lots={lots} | level={mapped_level} | trigger_nifty={trigger_nifty}"
             )
         else:
             if not self.kite:
@@ -75,7 +81,7 @@ class OrderManager:
                 instrument=instrument,
                 transaction_type="BUY",
                 qty=qty,
-                context=f"User {self.user_id} {side} {level} BUY",
+                context=f"User {self.user_id} {side} {mapped_level} BUY",
             )
 
         # Persist to DB
@@ -83,7 +89,7 @@ class OrderManager:
             user_id=self.user_id,
             trade_date=today_ist(),
             side=side,
-            level=level,
+            level=mapped_level,
             instrument=instrument,
             strike=strike,
             expiry=expiry,
@@ -99,7 +105,7 @@ class OrderManager:
         db.add(trade)
         db.flush()
 
-        self._log_audit(db, "ORDER_PLACED", side, level, trigger_nifty, {
+        self._log_audit(db, "ORDER_PLACED", side, mapped_level, trigger_nifty, {
             "trade_id": trade.id,
             "action": "BUY",
             "instrument": instrument,

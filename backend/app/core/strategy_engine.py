@@ -378,10 +378,13 @@ class StrategyEngine:
     async def _broadcast_trade_event(self, side: str, level: str, action: str, details: dict):
         if not self.broadcast_fn:
             return
+        mapped_level = level
+        if level in ("L1", "L2", "L3"):
+            mapped_level = level.replace("L", "S" if side == "CE" else "R")
         await self.broadcast_fn(self.user_id, {
             "type": "trade_event",
             "user_id": self.user_id,
-            "data": {"side": side, "level": level, "action": action, **details},
+            "data": {"side": side, "level": mapped_level, "action": action, **details},
         })
 
     async def _broadcast_error(self, side: str, message: str):
