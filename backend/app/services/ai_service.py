@@ -303,14 +303,52 @@ class AIService:
 
     async def _call_gemini(self, prompt: str) -> str:
         import httpx
+        models_to_try = [
+            PROVIDER_MODELS["gemini"],
+            "gemini-2.5-flash-lite",
+            "gemini-3.1-flash-lite"
+        ]
+        
+        # De-duplicate while preserving order
+        seen = set()
+        unique_models = []
+        for m in models_to_try:
+            if m not in seen:
+                seen.add(m)
+                unique_models.append(m)
+                
+        last_exc = None
         async with httpx.AsyncClient(timeout=12) as client:
-            resp = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{PROVIDER_MODELS['gemini']}:generateContent?key={self._api_key}",
-                json={"contents": [{"parts": [{"text": prompt}]}]},
-            )
-            resp.raise_for_status()
-            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            for model in unique_models:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self._api_key}"
+                    resp = await client.post(
+                        url,
+                        json={"contents": [{"parts": [{"text": prompt}]}]},
+                    )
+                    if resp.status_code == 429:
+                        logger.warning(f"User {self.user_id}: Gemini model {model} returned 429 (Rate Limit). Trying fallback...")
+                        last_exc = httpx.HTTPStatusError(
+                            f"Client error '429' for url {url}",
+                            request=resp.request,
+                            response=resp
+                        )
+                        continue
+                    resp.raise_for_status()
+                    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        logger.warning(f"User {self.user_id}: Gemini model {model} returned 429 status error. Trying fallback...")
+                        last_exc = e
+                        continue
+                    raise e
+                except Exception as e:
+                    logger.warning(f"User {self.user_id}: Gemini model {model} failed: {e}")
+                    last_exc = e
+                    continue
+        if last_exc:
+            raise last_exc
+        raise Exception("All Gemini models failed to respond.")
 
     async def test_connection(self) -> tuple:
         if not self._api_key:
