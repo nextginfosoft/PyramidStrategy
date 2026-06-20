@@ -134,13 +134,13 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const { data: trades = [] } = useQuery({
     queryKey: ['trades-today'],
     queryFn: tradesApi.getToday,
-    refetchInterval: 3000,
+    refetchInterval: wsConnected ? 15000 : 3000,
   })
 
   const { data: pnl } = useQuery({
     queryKey: ['pnl-today'],
     queryFn: tradesApi.getTodayPnl,
-    refetchInterval: 3000,
+    refetchInterval: wsConnected ? 15000 : 3000,
   })
 
   const startMut = useMutation({

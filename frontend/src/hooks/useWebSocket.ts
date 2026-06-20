@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useStrategyStore } from '../store/strategyStore'
 import type { WSMessage } from '../types'
 
@@ -8,6 +9,7 @@ export function useWebSocket() {
   const ws = useRef<WebSocket | null>(null)
   const { handleWSMessage, setWsConnected } = useStrategyStore()
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>()
+  const qc = useQueryClient()
 
   const connect = () => {
     if (ws.current?.readyState === WebSocket.OPEN) return
@@ -28,6 +30,11 @@ export function useWebSocket() {
       try {
         const msg: WSMessage = JSON.parse(ev.data)
         handleWSMessage(msg)
+        if (msg.type === 'trade_event') {
+          qc.invalidateQueries({ queryKey: ['trades-today'] })
+          qc.invalidateQueries({ queryKey: ['pnl-today'] })
+          qc.invalidateQueries({ queryKey: ['trades-log-data'] })
+        }
       } catch (e) {
         console.error('WS parse error', e)
       }
