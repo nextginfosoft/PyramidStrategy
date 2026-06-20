@@ -203,15 +203,15 @@ export function TradeLog() {
             {isLoading ? 'Loading trades...' : 'No matching trades found'}
           </div>
         ) : (
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[420px] sm:min-w-full text-xs">
             <thead className="sticky top-0 bg-navy-900 z-10">
               <tr className="text-navy-300 border-b border-navy-700">
                 <th className="text-left py-1.5 pr-2">Date/Time</th>
                 <th className="text-left pr-2">Side</th>
-                <th className="text-left pr-2">Lvl</th>
+                <th className="text-left pr-2 hidden sm:table-cell">Lvl</th>
                 <th className="text-left pr-2">Action</th>
-                <th className="text-right pr-2">Price</th>
-                <th className="text-right pr-2">Lots</th>
+                <th className="text-right pr-2 hidden md:table-cell">Price</th>
+                <th className="text-right pr-2 hidden sm:table-cell">Lots</th>
                 <th className="text-right">P&L</th>
               </tr>
             </thead>
@@ -226,7 +226,7 @@ export function TradeLog() {
                   <td className={clsx('pr-2 font-bold', t.side === 'CE' ? 'text-green-400' : 'text-red-400')}>
                     {t.side === 'CE' ? '▲ CE' : '▼ PE'}
                   </td>
-                  <td className="pr-2 text-navy-200">
+                  <td className="pr-2 text-navy-200 hidden sm:table-cell">
                     {t.level === 'L1'
                       ? (t.side === 'CE' ? 'S1' : 'R1')
                       : t.level === 'L2'
@@ -238,10 +238,10 @@ export function TradeLog() {
                   <td className={clsx('pr-2 font-medium', t.action === 'BUY' ? 'text-blue-400' : 'text-orange-400')}>
                     {t.action}
                   </td>
-                  <td className="text-right pr-2 text-navy-100 font-mono">
+                  <td className="text-right pr-2 text-navy-100 font-mono hidden md:table-cell">
                     {t.avg_price?.toFixed(2) ?? '—'}
                   </td>
-                  <td className="text-right pr-2 text-navy-200 font-mono">{t.lots}</td>
+                  <td className="text-right pr-2 text-navy-200 font-mono hidden sm:table-cell">{t.lots}</td>
                   <td className={clsx('text-right font-mono font-semibold',
                     t.pnl == null ? 'text-navy-300'
                     : t.pnl >= 0 ? 'text-green-400' : 'text-red-400')}>

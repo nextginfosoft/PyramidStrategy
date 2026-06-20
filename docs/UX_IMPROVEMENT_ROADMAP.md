@@ -30,7 +30,7 @@ These require layout or state-management changes but no architecture rework.
 | # | Item | Why it matters | Touch points |
 |---|------|-----------------|---------------|
 | 2.1 | [Completed] Responsive layout: stack the 3-column grid below `lg` breakpoint | Currently fixed `grid-cols-12`; unusable on tablet/phone widths | `Dashboard.tsx` |
-| 2.2 | Horizontal scroll / column-priority for TradeLog table on narrow screens | 7-column table has no mobile fallback | `TradeLog.tsx` |
+| 2.2 | [Completed] Horizontal scroll / column-priority for TradeLog table on narrow screens | 7-column table has no mobile fallback | `TradeLog.tsx` |
 | 2.3 | [Completed] Unified toast/notification system (success, error, warning, info) | Currently 3 different patterns (alert, inline banner, message paragraph) | New shared component; used by `Dashboard`, `KiteStatus`, `Settings` |
 | 2.4 | [Completed] Loading/skeleton states for price, P&L, config, open positions | `'—'` is ambiguous between "loading," "no data," and "broken" | `Dashboard.tsx`, `LevelPanel.tsx` |
 | 2.5 | [Completed] Pause/reduce 3s polling fallback when WebSocket is actually connected | Avoids redundant network calls and potential stale-vs-live conflicts | `Dashboard.tsx` queries, `useWebSocket.ts` |
