@@ -14,6 +14,7 @@ export interface StrategyStatus {
   is_running: boolean
   paper_trade: boolean
   nifty_ltp: number | null
+  nifty_prev_close: number | null
   ce: SideStatus
   pe: SideStatus
   entries_allowed: boolean

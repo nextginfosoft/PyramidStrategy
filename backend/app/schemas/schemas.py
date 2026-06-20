@@ -111,6 +111,7 @@ class StrategyStatus(BaseModel):
     is_running: bool
     paper_trade: bool
     nifty_ltp: Optional[float]
+    nifty_prev_close: Optional[float] = None
     ce: SideStatus
     pe: SideStatus
     today_pnl: float = 0.0

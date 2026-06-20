@@ -323,6 +323,23 @@ class KiteService:
             pass
         return self.get_ltp_rest(symbol)
 
+    def get_nifty_prev_close(self) -> Optional[Decimal]:
+        """Fetch NIFTY previous close price from Kite REST API."""
+        if not self.is_authenticated() or not self._kite:
+            return None
+        try:
+            res = self._kite.quote(["NSE:NIFTY 50"])
+            nifty_quote = res.get("NSE:NIFTY 50")
+            if nifty_quote:
+                ohlc = nifty_quote.get("ohlc")
+                if ohlc:
+                    close = ohlc.get("close")
+                    if close:
+                        return Decimal(str(close))
+        except Exception as e:
+            logger.warning(f"Failed to fetch NIFTY previous close (REST API): {e}")
+        return None
+
     # ── Status ───────────────────────────────────────────────────────────────
 
     def get_status(self) -> dict:

@@ -40,6 +40,7 @@ class StrategyEngine:
 
         # Option LTP cache (updated by market data feed)
         self._option_ltp: dict[str, Decimal] = {}  # symbol → ltp
+        self.nifty_prev_close: Optional[Decimal] = Decimal("23150.00")
 
         # Order manager (initialized with user_id)
         self.order_manager = OrderManager(user_id=self.user_id, kite_service=None)
@@ -360,11 +361,22 @@ class StrategyEngine:
     async def _broadcast_status(self, nifty_ltp: Decimal):
         if not self.broadcast_fn:
             return
+        if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
+            try:
+                from app.services.kite_service import get_user_kite_service
+                ks = get_user_kite_service(self.user_id)
+                live_prev_close = ks.get_nifty_prev_close()
+                if live_prev_close:
+                    self.nifty_prev_close = live_prev_close
+            except Exception as e:
+                logger.warning(f"Error fetching live NIFTY previous close: {e}")
+
         status = {
             "type": "strategy_status",
             "user_id": self.user_id,
             "data": {
                 "nifty_ltp": float(nifty_ltp),
+                "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
                 "is_running": self.is_running,
                 "paper_trade": self.mock_mode,
                 "entries_allowed": is_entry_allowed(),
@@ -417,10 +429,21 @@ class StrategyEngine:
         nifty_ltp_str = get_redis_client().get("nifty:ltp")
         nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else None
 
+        if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
+            try:
+                from app.services.kite_service import get_user_kite_service
+                ks = get_user_kite_service(self.user_id)
+                live_prev_close = ks.get_nifty_prev_close()
+                if live_prev_close:
+                    self.nifty_prev_close = live_prev_close
+            except Exception:
+                pass
+
         return {
             "is_running": self.is_running,
             "paper_trade": self.mock_mode,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
+            "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
             "entries_allowed": is_entry_allowed(),
             "squareoff_triggered": should_squareoff(),
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),

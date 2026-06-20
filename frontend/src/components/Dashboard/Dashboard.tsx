@@ -172,6 +172,31 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const niftyLtp = status?.nifty_ltp
   const todayPnl = pnl?.gross_pnl ?? 0
 
+  const niftyPrevClose = status?.nifty_prev_close
+  const niftyChange = useMemo(() => {
+    if (niftyLtp == null || niftyPrevClose == null || niftyPrevClose === 0) return null
+    const diff = niftyLtp - niftyPrevClose
+    const pct = (diff / niftyPrevClose) * 100
+    return {
+      diff,
+      pct,
+      isUp: diff >= 0,
+      formattedDiff: Math.abs(diff).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      formattedPct: Math.abs(pct).toFixed(2) + '%',
+    }
+  }, [niftyLtp, niftyPrevClose])
+
+  const marketTimestamp = useMemo(() => {
+    if (!lastLtpTime) return null
+    const date = new Date(lastLtpTime)
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).toUpperCase() + ' IST'
+  }, [lastLtpTime])
+
   useEffect(() => {
     if (niftyLtp != null) {
       setLastLtpTime(Date.now())
@@ -293,17 +318,57 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         {/* Left: NIFTY + Levels */}
         <div className="col-span-3 space-y-3">
           {/* NIFTY price */}
-          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-navy-300 font-semibold">NIFTY 50</span>
+          <div className="bg-navy-900 border border-navy-700/60 rounded-xl p-4 shadow-lg flex flex-col gap-2 relative overflow-hidden transition-all duration-300 hover:border-navy-600">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-navy-300 font-bold uppercase tracking-wider">NIFTY 50</span>
+              <span className={clsx(
+                'text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider',
+                wsConnected ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+              )}>
+                {wsConnected ? 'LIVE' : 'OFFLINE'}
+              </span>
+            </div>
+            
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-extrabold text-white font-mono tracking-tight">
+                {niftyLtp ? niftyLtp.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
+              </span>
+            </div>
+
+            {/* Point / % change pill badge */}
+            {niftyChange ? (
+              <div className="flex items-center gap-2">
+                <span className={clsx(
+                  'inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border shadow-sm transition-colors',
+                  niftyChange.isUp 
+                    ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                )}>
+                  <span>{niftyChange.isUp ? '↑' : '↓'}</span>
+                  <span>{niftyChange.formattedDiff}</span>
+                  <span className="opacity-80">({niftyChange.formattedPct})</span>
+                </span>
+                <span className="text-[10px] text-navy-300 font-medium">today</span>
+              </div>
+            ) : niftyLtp ? (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full border border-navy-700 bg-navy-800 text-navy-300 shadow-sm font-mono">
+                  — (—%)
+                </span>
+                <span className="text-[10px] text-navy-300 font-medium">today</span>
+              </div>
+            ) : null}
+
+            {/* Market timestamp */}
+            <div className="mt-1 pt-2 border-t border-navy-800 flex items-center justify-between text-[10px] text-navy-300">
+              <span>
+                {marketTimestamp ? `As of ${marketTimestamp}` : 'Awaiting data...'}
+              </span>
               {lastLtpTime && (
-                <span className="text-[10px] text-navy-300 font-mono">
+                <span className="font-mono text-navy-300 bg-navy-850 px-1 py-0.5 rounded border border-navy-800/40">
                   {formatTimeAgo(lastLtpTime)}
                 </span>
               )}
-            </div>
-            <div className="text-2xl font-bold text-white font-mono">
-              {niftyLtp ? niftyLtp.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
             </div>
           </div>
 

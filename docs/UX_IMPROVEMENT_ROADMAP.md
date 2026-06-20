@@ -52,6 +52,7 @@ Lower urgency, but compounds the "feels professional" perception.
 | 3.6 | Replace fixed `setTimeout(1500)` auto-login-after-register with awaited chained call | Avoids feeling laggy on slow networks; more correct |
 | 3.7 | Password strength/length hint on registration | Minor but standard UX expectation |
 | 3.8 | Icon/shape redundancy alongside color for CE/PE and level states | Accessibility for colorblind users (red/green is the worst pairing for deuteranopia) |
+| 3.9 | [Completed] NIFTY price tile redesign: % / point change badge (↑/↓ colored pill) + market-style timestamp, Google-Finance-style | Gives the price tile the at-a-glance "is the market up or down" signal that a bare LTP number doesn't provide. **Needs a backend addition first**: `prev_close` (or `day_open`) is not currently in `StrategyStatus` — likely sourced from Kite's `ohlc.close` quote field alongside the existing `nifty_ltp` feed. |
 
 ---
 
