@@ -30,7 +30,7 @@ export const configApi = {
 
 export const tradesApi = {
   getToday: (): Promise<Trade[]> => api.get('/trades/today').then(r => r.data),
-  getHistory: (params?: { from_date?: string; to_date?: string; side?: string }) =>
+  getHistory: (params?: { from_date?: string; to_date?: string; side?: string; limit?: number }): Promise<Trade[]> =>
     api.get('/trades/history', { params }).then(r => r.data),
   getTodayPnl: () => api.get('/trades/pnl/today').then(r => r.data),
   getPnlHistory: () => api.get('/trades/pnl/history').then(r => r.data),

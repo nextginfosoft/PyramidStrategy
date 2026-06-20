@@ -459,7 +459,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
                 </button>
               </div>
             </div>
-            <TradeLog trades={trades} />
+            <TradeLog />
           </div>
         </div>
 

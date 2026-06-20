@@ -34,7 +34,7 @@ These require layout or state-management changes but no architecture rework.
 | 2.3 | Unified toast/notification system (success, error, warning, info) | Currently 3 different patterns (alert, inline banner, message paragraph) | New shared component; used by `Dashboard`, `KiteStatus`, `Settings` |
 | 2.4 | Loading/skeleton states for price, P&L, config, open positions | `'—'` is ambiguous between "loading," "no data," and "broken" | `Dashboard.tsx`, `LevelPanel.tsx` |
 | 2.5 | Pause/reduce 3s polling fallback when WebSocket is actually connected | Avoids redundant network calls and potential stale-vs-live conflicts | `Dashboard.tsx` queries, `useWebSocket.ts` |
-| 2.6 | Trade log filters: side (CE/PE), level, win/loss, date range | Only "today" is queryable from UI; log will get harder to scan as trade count grows | `TradeLog.tsx`, `services/api.ts` |
+| 2.6 | [Completed] Trade log filters: side (CE/PE), level, win/loss, date range | Only "today" is queryable from UI; log will get harder to scan as trade count grows | `TradeLog.tsx`, `services/api.ts` |
 
 ---
 

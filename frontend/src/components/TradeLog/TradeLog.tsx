@@ -1,64 +1,260 @@
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type { Trade } from '../../types'
+import { tradesApi } from '../../services/api'
 import clsx from 'clsx'
 import { format } from 'date-fns'
 
-interface Props { trades: Trade[] }
+const getLocalDateString = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
-export function TradeLog({ trades }: Props) {
-  if (!trades.length) {
-    return <div className="text-navy-300 text-sm text-center py-8">No trades today</div>
+const getRangeDates = (range: string) => {
+  const today = new Date()
+  switch (range) {
+    case 'today':
+      return { from: getLocalDateString(today), to: getLocalDateString(today) }
+    case 'yesterday': {
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      return { from: getLocalDateString(yesterday), to: getLocalDateString(yesterday) }
+    }
+    case 'last7': {
+      const last7 = new Date()
+      last7.setDate(last7.getDate() - 6)
+      return { from: getLocalDateString(last7), to: getLocalDateString(today) }
+    }
+    case 'last30': {
+      const last30 = new Date()
+      last30.setDate(last30.getDate() - 29)
+      return { from: getLocalDateString(last30), to: getLocalDateString(today) }
+    }
+    default:
+      return { from: '', to: '' }
   }
+}
+
+export function TradeLog() {
+  const [dateRange, setDateRange] = useState('today')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [sideFilter, setSideFilter] = useState('all')
+  const [levelFilter, setLevelFilter] = useState('all')
+  const [outcomeFilter, setOutcomeFilter] = useState('all')
+
+  // Calculate API parameters
+  const apiParams = useMemo(() => {
+    if (dateRange === 'today') return { isToday: true }
+    if (dateRange === 'custom') {
+      return {
+        isToday: false,
+        from_date: customFrom || undefined,
+        to_date: customTo || undefined,
+      }
+    }
+    const { from, to } = getRangeDates(dateRange)
+    return {
+      isToday: false,
+      from_date: from,
+      to_date: to,
+    }
+  }, [dateRange, customFrom, customTo])
+
+  // Fetch trades
+  const { data: allTrades = [] as Trade[], isLoading } = useQuery<Trade[]>({
+    queryKey: ['trades-log-data', apiParams],
+    queryFn: async (): Promise<Trade[]> => {
+      if (apiParams.isToday) {
+        return tradesApi.getToday()
+      } else {
+        return tradesApi.getHistory({
+          from_date: apiParams.from_date,
+          to_date: apiParams.to_date,
+          limit: 200,
+        })
+      }
+    },
+    refetchInterval: apiParams.isToday ? 3000 : false,
+  })
+
+  // Apply filters locally
+  const filteredTrades = useMemo(() => {
+    return allTrades.filter((t) => {
+      // 1. Side filter
+      if (sideFilter !== 'all' && t.side !== sideFilter) {
+        return false
+      }
+
+      // 2. Level filter
+      if (levelFilter !== 'all') {
+        const matchesLevel = 
+          (levelFilter === 'L1' && (t.level === 'L1' || t.level === 'R1' || t.level === 'S1')) ||
+          (levelFilter === 'L2' && (t.level === 'L2' || t.level === 'R2' || t.level === 'S2')) ||
+          (levelFilter === 'L3' && (t.level === 'L3' || t.level === 'R3' || t.level === 'S3'))
+        if (!matchesLevel) return false
+      }
+
+      // 3. Outcome filter
+      if (outcomeFilter !== 'all') {
+        const hasPnl = t.pnl != null
+        const isExit = t.action === 'EXIT'
+        if (outcomeFilter === 'wins') {
+          if (!isExit || !hasPnl || t.pnl! <= 0) return false
+        } else if (outcomeFilter === 'losses') {
+          if (!isExit || !hasPnl || t.pnl! > 0) return false
+        } else if (outcomeFilter === 'open') {
+          if (t.status !== 'OPEN') return false
+        }
+      }
+
+      return true
+    })
+  }, [allTrades, sideFilter, levelFilter, outcomeFilter])
+
+  const selectClass = "bg-navy-800 border border-navy-700/60 text-[11px] text-navy-100 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand cursor-pointer hover:border-navy-600 transition-colors"
 
   return (
-    <div className="overflow-auto max-h-64">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-navy-300 border-b border-navy-700">
-            <th className="text-left py-1 pr-2">Time</th>
-            <th className="text-left pr-2">Side</th>
-            <th className="text-left pr-2">Lvl</th>
-            <th className="text-left pr-2">Action</th>
-            <th className="text-right pr-2">Price</th>
-            <th className="text-right pr-2">Lots</th>
-            <th className="text-right">P&L</th>
-          </tr>
-        </thead>
-        <tbody>
-          {trades.map((t) => (
-            <tr key={t.id} className="border-b border-navy-800 hover:bg-navy-900/50">
-              <td className="py-1 pr-2 text-navy-300">
-                {format(new Date(t.created_at), 'HH:mm:ss')}
-              </td>
-              <td className={clsx('pr-2 font-bold', t.side === 'CE' ? 'text-green-400' : 'text-red-400')}>
-                {t.side === 'CE' ? '▲ CE' : '▼ PE'}
-              </td>
-              <td className="pr-2 text-navy-200">
-                {t.level === 'L1'
-                  ? (t.side === 'CE' ? 'S1' : 'R1')
-                  : t.level === 'L2'
-                  ? (t.side === 'CE' ? 'S2' : 'R2')
-                  : t.level === 'L3'
-                  ? (t.side === 'CE' ? 'S3' : 'R3')
-                  : t.level}
-              </td>
-              <td className={clsx('pr-2', t.action === 'BUY' ? 'text-blue-400' : 'text-orange-400')}>
-                {t.action}
-              </td>
-              <td className="text-right pr-2 text-navy-100">
-                {t.avg_price?.toFixed(2) ?? '—'}
-              </td>
-              <td className="text-right pr-2 text-navy-200">{t.lots}</td>
-              <td className={clsx('text-right font-mono',
-                t.pnl == null ? 'text-navy-300'
-                : t.pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                {t.pnl != null
-                  ? `${t.pnl >= 0 ? '+' : ''}₹${t.pnl.toFixed(0)}`
-                  : (t.status === 'OPEN' ? <span className="text-yellow-400">OPEN</span> : '—')}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-3">
+      {/* Filters Container */}
+      <div className="flex flex-col gap-2.5 p-2 bg-navy-950/40 rounded-lg border border-navy-800/80">
+        <div className="flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-navy-300 font-bold uppercase tracking-wider">Range:</span>
+            <select
+              value={dateRange}
+              onChange={e => setDateRange(e.target.value)}
+              className={selectClass}
+            >
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7">Last 7 Days</option>
+              <option value="last30">Last 30 Days</option>
+              <option value="custom">Custom Range</option>
+            </select>
+
+            {dateRange === 'custom' && (
+              <div className="flex items-center gap-1 animate-fade-in">
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  className="bg-navy-800 border border-navy-700 text-[10px] text-white rounded px-1.5 py-0.5 focus:ring-1 focus:ring-orange-500 focus:outline-none font-mono"
+                />
+                <span className="text-[10px] text-navy-400">to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  className="bg-navy-800 border border-navy-700 text-[10px] text-white rounded px-1.5 py-0.5 focus:ring-1 focus:ring-orange-500 focus:outline-none font-mono"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="text-[10px] text-navy-400 font-mono">
+            {isLoading ? 'Loading...' : `${filteredTrades.length} / ${allTrades.length} trades`}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2.5 items-center border-t border-navy-800/40 pt-2">
+          <span className="text-[10px] text-navy-300 font-bold uppercase tracking-wider">Filters:</span>
+          
+          <select
+            value={sideFilter}
+            onChange={e => setSideFilter(e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">All Sides</option>
+            <option value="CE">CE Only</option>
+            <option value="PE">PE Only</option>
+          </select>
+
+          <select
+            value={levelFilter}
+            onChange={e => setLevelFilter(e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">All Levels</option>
+            <option value="L1">L1 (R1/S1)</option>
+            <option value="L2">L2 (R2/S2)</option>
+            <option value="L3">L3 (R3/S3)</option>
+          </select>
+
+          <select
+            value={outcomeFilter}
+            onChange={e => setOutcomeFilter(e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">All Outcomes</option>
+            <option value="wins">Wins</option>
+            <option value="losses">Losses</option>
+            <option value="open">Open Positions</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Table Container */}
+      <div className="overflow-auto max-h-64 scrollbar-thin">
+        {!filteredTrades.length ? (
+          <div className="text-navy-300 text-xs text-center py-8">
+            {isLoading ? 'Loading trades...' : 'No matching trades found'}
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-navy-900 z-10">
+              <tr className="text-navy-300 border-b border-navy-700">
+                <th className="text-left py-1.5 pr-2">Date/Time</th>
+                <th className="text-left pr-2">Side</th>
+                <th className="text-left pr-2">Lvl</th>
+                <th className="text-left pr-2">Action</th>
+                <th className="text-right pr-2">Price</th>
+                <th className="text-right pr-2">Lots</th>
+                <th className="text-right">P&L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTrades.map((t) => (
+                <tr key={t.id} className="border-b border-navy-800 hover:bg-navy-900/50 transition-colors">
+                  <td className="py-1.5 pr-2 text-navy-300 whitespace-nowrap">
+                    {dateRange === 'today' 
+                      ? format(new Date(t.created_at), 'HH:mm:ss')
+                      : format(new Date(t.created_at), 'dd MMM HH:mm:ss')}
+                  </td>
+                  <td className={clsx('pr-2 font-bold', t.side === 'CE' ? 'text-green-400' : 'text-red-400')}>
+                    {t.side === 'CE' ? '▲ CE' : '▼ PE'}
+                  </td>
+                  <td className="pr-2 text-navy-200">
+                    {t.level === 'L1'
+                      ? (t.side === 'CE' ? 'S1' : 'R1')
+                      : t.level === 'L2'
+                      ? (t.side === 'CE' ? 'S2' : 'R2')
+                      : t.level === 'L3'
+                      ? (t.side === 'CE' ? 'S3' : 'R3')
+                      : t.level}
+                  </td>
+                  <td className={clsx('pr-2 font-medium', t.action === 'BUY' ? 'text-blue-400' : 'text-orange-400')}>
+                    {t.action}
+                  </td>
+                  <td className="text-right pr-2 text-navy-100 font-mono">
+                    {t.avg_price?.toFixed(2) ?? '—'}
+                  </td>
+                  <td className="text-right pr-2 text-navy-200 font-mono">{t.lots}</td>
+                  <td className={clsx('text-right font-mono font-semibold',
+                    t.pnl == null ? 'text-navy-300'
+                    : t.pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
+                    {t.pnl != null
+                      ? `${t.pnl >= 0 ? '+' : ''}₹${t.pnl.toFixed(0)}`
+                      : (t.status === 'OPEN' ? <span className="text-yellow-400 font-bold uppercase tracking-wider text-[10px] bg-yellow-950/40 px-1 py-0.5 rounded border border-yellow-500/20">OPEN</span> : '—')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   )
 }
