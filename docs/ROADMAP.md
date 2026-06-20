@@ -119,16 +119,18 @@
 - A/B test different configurations using backtesting
 - Important: variants must still respect ALL general rules in CLAUDE.md
 
-### R12: AI-Powered Level Detection
+### R12: Pre-Market Intelligence Brief
 **Priority:** High (strategic differentiator)  
-**Why:** Automate the hardest manual task — finding good R/S levels.
+**Why:** Automate the hardest manual task — delivering reasoned, OI-backed S/R levels before market open so the user approves rather than guesses.
 
-- Computer vision or ML model trained on NIFTY charts
-- Detect key support/resistance zones from prior sessions
-- Auto-suggest R1/R2/R3 and S1/S2/S3 before market open
-- Confidence score for each suggested level
-- User approves suggestions → strategy activates with AI-suggested levels
-- This is the core of the automotive-AI crossover for Santosh's startup vision
+- Runs automatically at 8:45 AM IST via APScheduler before every trading session
+- Fetches live OI snapshot from Kite option chain — extracts max pain, PCR, top CE walls (resistance) and PE walls (support)
+- Pulls previous session OHLCV from Kite historical API — uses prior high/low/close as pivot anchors
+- Incorporates Gift Nifty indicated open for gap-up/gap-down bias and India VIX for volatility-adjusted band widening
+- LLM (Claude/Gemini) synthesizes all inputs and suggests R1/R2/R3 and S1/S2/S3 with a plain-English reason and HIGH/MEDIUM/LOW confidence score per level
+- Brief delivered via Telegram alert and Dashboard update by 9:00 AM IST
+- User reviews suggested levels → clicks Approve → strategy arms automatically with AI-suggested levels
+- Every level is verifiable on NSE option chain or Sensibull — fully explainable, no black box
 
 ### R13: SaaS Productization
 **Priority:** High (startup vision)  

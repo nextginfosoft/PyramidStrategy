@@ -355,6 +355,99 @@ class KiteService:
             logger.warning(f"Failed to fetch INDIA VIX (REST API): {e}")
         return 13.5
 
+    def get_option_chain_snapshot(self, current_ltp: float) -> dict:
+        """
+        Fetch quotes for NIFTY option chain around spot price (ATM ± 300).
+        Calculate PCR, Max Pain strike, and CE/PE OI Walls.
+        """
+        if not self.is_authenticated() or not self._kite:
+            return {
+                "pcr": 1.0,
+                "max_pain": int(round(current_ltp / 50) * 50),
+                "ce_wall": int(round((current_ltp + 150) / 50) * 50),
+                "pe_wall": int(round((current_ltp - 150) / 50) * 50),
+                "spot": current_ltp
+            }
+        try:
+            from app.core.option_selector import get_expiry_date, build_option_symbol
+            from app.core.time_rules import today_ist
+            
+            trade_date = today_ist()
+            expiry = get_expiry_date(trade_date)
+            
+            atm = int(round(current_ltp / 50) * 50)
+            strikes = [atm + offset for offset in range(-300, 301, 50)]
+            
+            symbols = []
+            symbol_to_strike_side = {}
+            for strike in strikes:
+                for side in ("CE", "PE"):
+                    sym = build_option_symbol(side, strike, expiry)
+                    symbols.append(f"NFO:{sym}")
+                    symbol_to_strike_side[f"NFO:{sym}"] = (strike, side)
+            
+            logger.info(f"User {self.user_id}: Fetching quotes for {len(symbols)} option chain instruments...")
+            quotes = self._kite.quote(symbols)
+            
+            chain = {strike: {"CE": 0, "PE": 0} for strike in strikes}
+            total_call_oi = 0
+            total_put_oi = 0
+            
+            ce_wall_strike = atm
+            pe_wall_strike = atm
+            max_ce_oi = -1
+            max_pe_oi = -1
+            
+            for sym, q in quotes.items():
+                oi = q.get("oi", 0)
+                strike, side = symbol_to_strike_side.get(sym, (None, None))
+                if strike is not None:
+                    chain[strike][side] = oi
+                    if side == "CE":
+                        total_call_oi += oi
+                        if oi > max_ce_oi:
+                            max_ce_oi = oi
+                            ce_wall_strike = strike
+                    elif side == "PE":
+                        total_put_oi += oi
+                        if oi > max_pe_oi:
+                            max_pe_oi = oi
+                            pe_wall_strike = strike
+            
+            pcr = round(total_put_oi / total_call_oi, 2) if total_call_oi > 0 else 1.0
+            
+            min_pain = float("inf")
+            max_pain_strike = atm
+            for k in strikes:
+                pain = 0
+                for strike, data in chain.items():
+                    ce_oi = data["CE"]
+                    pe_oi = data["PE"]
+                    if k > strike:
+                        pain += (k - strike) * ce_oi
+                    elif k < strike:
+                        pain += (strike - k) * pe_oi
+                if pain < min_pain:
+                    min_pain = pain
+                    max_pain_strike = k
+            
+            return {
+                "pcr": pcr,
+                "max_pain": max_pain_strike,
+                "ce_wall": ce_wall_strike,
+                "pe_wall": pe_wall_strike,
+                "spot": current_ltp
+            }
+        except Exception as e:
+            logger.error(f"User {self.user_id}: Failed to compute option chain snapshot: {e}")
+            return {
+                "pcr": 1.0,
+                "max_pain": int(round(current_ltp / 50) * 50),
+                "ce_wall": int(round((current_ltp + 150) / 50) * 50),
+                "pe_wall": int(round((current_ltp - 150) / 50) * 50),
+                "spot": current_ltp
+            }
+
     # ── Status ───────────────────────────────────────────────────────────────
 
     def get_status(self) -> dict:

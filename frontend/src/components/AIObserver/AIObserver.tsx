@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useStrategyStore } from '../../store/strategyStore'
+import { useToastStore } from '../../store/toastStore'
 import { aiApi } from '../../services/api'
 import { format } from 'date-fns'
 import clsx from 'clsx'
@@ -27,9 +28,16 @@ interface PreMarketBrief {
   suggested_config?: {
     s1: number; s2: number; s3: number
     r1: number; r2: number; r3: number
+    recommended_lots?: number
   } | null
   quality_score?: number
   quality_reason?: string
+  pcr?: number | null
+  max_pain?: number | null
+  ce_wall?: number | null
+  pe_wall?: number | null
+  opening_gap?: number | null
+  approved?: boolean
 }
 
 interface PostSessionReview {
@@ -44,6 +52,30 @@ interface PostSessionReview {
 export function AIObserver() {
   const [activeTab, setActiveTab] = useState<'live' | 'pre' | 'post'>('live')
   const wsSuggestions = useStrategyStore((s) => s.aiSuggestions)
+  const queryClient = useQueryClient()
+  const addToast = useToastStore((state) => state.addToast)
+  const [isApproving, setIsApproving] = useState(false)
+
+  const handleApprove = async () => {
+    setIsApproving(true)
+    try {
+      const res = await aiApi.approvePreMarketBrief()
+      if (res.success) {
+        addToast(res.message || "Suggested configurations applied and strategy armed!", "success")
+        queryClient.invalidateQueries({ queryKey: ['ai-pre-market'] })
+        queryClient.invalidateQueries({ queryKey: ['strategy-status'] })
+        queryClient.invalidateQueries({ queryKey: ['strategy-config'] })
+      } else {
+        addToast("Failed to arm strategy: " + (res.error || "Unknown error"), "error")
+      }
+    } catch (e: any) {
+      const detail = e.response?.data?.detail
+      const msg = typeof detail === 'object' ? (detail.message || JSON.stringify(detail)) : (detail || e.message)
+      addToast(msg || "Error arming strategy", "error")
+    } finally {
+      setIsApproving(false)
+    }
+  }
 
   // 1. Live suggestions query
   const { data: apiSuggestions, isLoading: isLiveLoading } = useQuery<ApiSuggestion[]>({
@@ -210,6 +242,51 @@ export function AIObserver() {
                   </p>
                 )}
 
+                {/* Market Indicators Grid */}
+                <div className="grid grid-cols-2 gap-2 bg-navy-850 p-2 rounded-lg border border-navy-800 text-[10px]">
+                  <div>
+                    <span className="text-navy-400 block uppercase tracking-wider text-[8px]">GIFT Nifty Gap</span>
+                    <span className={clsx("font-bold text-xs", 
+                      (preMarket.opening_gap ?? 0) > 5 ? "text-green-400" : (preMarket.opening_gap ?? 0) < -5 ? "text-red-400" : "text-navy-300"
+                    )}>
+                      {preMarket.opening_gap !== undefined && preMarket.opening_gap !== null ? (
+                        <>
+                          {preMarket.opening_gap > 0 ? '+' : ''}
+                          {preMarket.opening_gap.toFixed(1)} pts{' '}
+                          <span className="text-[9px] opacity-80 font-normal">
+                            ({preMarket.opening_gap > 5 ? 'Gap Up' : preMarket.opening_gap < -5 ? 'Gap Down' : 'Flat'})
+                          </span>
+                        </>
+                      ) : (
+                        'Flat / N/A'
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-navy-400 block uppercase tracking-wider text-[8px]">Put-Call Ratio (PCR)</span>
+                    <span className="font-bold text-xs text-white">
+                      {preMarket.pcr !== undefined && preMarket.pcr !== null ? preMarket.pcr.toFixed(2) : 'N/A'}{' '}
+                      <span className="text-[9px] text-navy-400 font-semibold font-normal">
+                        ({(preMarket.pcr ?? 1) > 1.1 ? 'Bullish' : (preMarket.pcr ?? 1) < 0.9 ? 'Bearish' : 'Neutral'})
+                      </span>
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-navy-400 block uppercase tracking-wider text-[8px]">Max Pain Strike</span>
+                    <span className="font-bold text-xs text-orange-400">
+                      {preMarket.max_pain !== undefined && preMarket.max_pain !== null ? preMarket.max_pain.toLocaleString() : 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-navy-400 block uppercase tracking-wider text-[8px]">OI Walls (S/R)</span>
+                    <span className="font-bold text-xs text-white">
+                      <span className="text-green-400">{preMarket.pe_wall ?? 'N/A'}</span>
+                      <span className="text-navy-500 mx-1">/</span>
+                      <span className="text-red-400">{preMarket.ce_wall ?? 'N/A'}</span>
+                    </span>
+                  </div>
+                </div>
+
                 {/* VIX Analysis */}
                 <div className="bg-navy-850/60 p-2.5 rounded border border-navy-800/60 leading-relaxed text-navy-200">
                   <span className="text-blue-400 font-bold block mb-1">Vol Analysis</span>
@@ -230,8 +307,8 @@ export function AIObserver() {
 
                 {/* Suggested configuration */}
                 {preMarket.suggested_config && (
-                  <div className="bg-navy-850 p-2 rounded-lg border border-navy-800/80">
-                    <span className="text-blue-400 font-bold block mb-1.5 uppercase tracking-wide text-[9px]">Suggested Spacing Levels</span>
+                  <div className="bg-navy-850 p-2.5 rounded-lg border border-navy-800/80 space-y-2">
+                    <span className="text-blue-400 font-bold block uppercase tracking-wide text-[9px]">Suggested Spacing Levels</span>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
                       <div>
                         <span className="text-navy-400">CE Support (S1/S2/S3):</span>
@@ -245,8 +322,37 @@ export function AIObserver() {
                           {preMarket.suggested_config.r1} / {preMarket.suggested_config.r2} / {preMarket.suggested_config.r3}
                         </span>
                       </div>
+                      <div className="col-span-2 border-t border-navy-800/60 pt-1.5 mt-1.5 flex items-center justify-between">
+                        <span className="text-navy-400 font-mono">Recommended Lots:</span>
+                        <span className="font-bold text-white text-xs font-mono">{preMarket.suggested_config.recommended_lots ?? 'Standard'}</span>
+                      </div>
                     </div>
-                    <span className="text-[8px] text-navy-400 mt-2 block italic text-center">AI advice remains Advisory — review before applying in Settings.</span>
+
+                    {/* Approve & Arm Button */}
+                    <div className="pt-2">
+                      {preMarket.approved ? (
+                        <div className="w-full text-center py-1.5 bg-green-950/40 text-green-400 border border-green-800/40 text-[10px] uppercase tracking-wider font-extrabold rounded font-mono">
+                          ✓ Strategy Armed & Suggested Config Applied
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleApprove()}
+                          disabled={isApproving}
+                          className={clsx(
+                            "w-full text-center py-2 text-[10px] uppercase tracking-wider font-extrabold rounded font-mono border focus:outline-none transition-all duration-200",
+                            isApproving 
+                              ? "bg-navy-800 border-navy-700 text-navy-400 cursor-not-allowed"
+                              : "bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border-orange-500/30 hover:border-orange-500/50 cursor-pointer shadow-sm active:scale-[0.98]"
+                          )}
+                        >
+                          {isApproving ? "Arming Strategy..." : "⚡ Approve Suggested Config & Arm"}
+                        </button>
+                      )}
+                    </div>
+                    
+                    <span className="text-[8px] text-navy-400 mt-2 block italic text-center leading-relaxed">
+                      AI suggestions remain strictly Advisory. Clicking Approve updates active settings and starts strategy loops.
+                    </span>
                   </div>
                 )}
               </div>

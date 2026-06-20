@@ -6,18 +6,21 @@ POST /ai/test               — test AI provider connection
 POST /ai/reload             — reload AI config from DB
 """
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
 from loguru import logger
 from datetime import timedelta
+from decimal import Decimal
 from sqlalchemy.orm import Session
 
-from app.services.ai_service import get_user_ai_service
+from app.services.ai_service import get_user_ai_service, run_pre_market_brief_for_user
 from app.db.database import SessionLocal, get_db
-from app.models.models import AISuggestion, User
+from app.models.models import AISuggestion, User, PreMarketBrief, StrategyConfig
 from app.core.time_rules import today_ist
 from app.api.routes.session import require_auth
 from app.core.engine_manager import engine_manager
 from app.services.kite_service import get_user_kite_service
+from app.core.safety_checks import run_safety_checks
+from app.api.routes.strategy import _run_mock_feed
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -98,32 +101,141 @@ async def get_pre_market_brief(
     db: Session = Depends(get_db),
     user: User = Depends(require_auth)
 ):
-    """Generate pre-market AI brief containing VIX analysis, expected range, optimal R/S suggest and quality score."""
-    ai_service = get_user_ai_service(user.id)
-    user_engine = engine_manager.get_engine(user.id)
-    user_status = user_engine.get_full_status()
-    nifty_ltp = user_status.get("nifty_ltp") or 23150.0  # fallback to mock close if none
+    """Generate or retrieve pre-market AI brief containing VIX, Expected Range, Level critiques and optimal configuration suggestions."""
+    today = today_ist()
     
-    # Load config from DB
-    from app.models.models import StrategyConfig
+    # Try fetching cached brief from DB first
+    brief_row = db.query(PreMarketBrief).filter(
+        PreMarketBrief.user_id == user.id,
+        PreMarketBrief.trade_date == today
+    ).first()
+    
+    if brief_row:
+        return {
+            "success": True,
+            "vix": float(brief_row.vix) if brief_row.vix else 13.5,
+            "vix_analysis": brief_row.vix_analysis,
+            "expected_range": brief_row.expected_range,
+            "level_assessment": brief_row.level_assessment,
+            "suggested_config": brief_row.suggested_config,
+            "quality_score": brief_row.quality_score,
+            "quality_reason": brief_row.quality_reason,
+            "pcr": float(brief_row.pcr) if brief_row.pcr else None,
+            "max_pain": float(brief_row.max_pain) if brief_row.max_pain else None,
+            "ce_wall": float(brief_row.ce_wall) if brief_row.ce_wall else None,
+            "pe_wall": float(brief_row.pe_wall) if brief_row.pe_wall else None,
+            "opening_gap": float(brief_row.opening_gap) if brief_row.opening_gap else 0.0,
+            "approved": brief_row.approved
+        }
+        
+    # Fallback: run generation dynamically if not already cached
+    brief = await run_pre_market_brief_for_user(db, user.id, today)
+    if brief.get("success"):
+        brief["approved"] = False
+    return brief
+
+
+@router.post("/brief/pre-market/approve")
+async def approve_pre_market_brief(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth)
+):
+    """Approve suggested configurations and arm the strategy engine."""
+    today = today_ist()
+    
+    brief = db.query(PreMarketBrief).filter(
+        PreMarketBrief.user_id == user.id,
+        PreMarketBrief.trade_date == today
+    ).first()
+    
+    if not brief:
+        raise HTTPException(status_code=400, detail="No pre-market AI brief found for today. Generate or view it first.")
+        
+    if not brief.suggested_config:
+        raise HTTPException(status_code=400, detail="No suggested configuration levels found in today's brief.")
+        
+    # Mark as approved
+    brief.approved = True
+    
+    # Load and update active StrategyConfig
     cfg = db.query(StrategyConfig).filter(
         StrategyConfig.user_id == user.id,
         StrategyConfig.is_active == True
     ).first()
     
     if not cfg:
-        config_dict = {"s1": 23100.0, "s2": 23050.0, "s3": 23000.0, "r1": 23200.0, "r2": 23250.0, "r3": 23300.0}
-    else:
-        config_dict = {
-            "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
-            "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
+        raise HTTPException(status_code=400, detail="No active strategy config found to update.")
+        
+    sugg = brief.suggested_config
+    cfg.s1 = Decimal(str(sugg["s1"]))
+    cfg.s2 = Decimal(str(sugg["s2"]))
+    cfg.s3 = Decimal(str(sugg["s3"]))
+    cfg.r1 = Decimal(str(sugg["r1"]))
+    cfg.r2 = Decimal(str(sugg["r2"]))
+    cfg.r3 = Decimal(str(sugg["r3"]))
+    if "recommended_lots" in sugg:
+        cfg.lot_size = int(sugg["recommended_lots"])
+        
+    db.commit()
+    logger.info(f"User {user.username} approved pre-market levels. StrategyConfig updated.")
+    
+    # Arm the Strategy Engine
+    user_engine = engine_manager.get_engine(user.id)
+    if user_engine.is_running:
+        return {
+            "success": True,
+            "message": "Suggested configurations applied. Strategy was already running.",
+            "strategy_status": "running",
+            "approved": True
         }
         
-    user_kite = get_user_kite_service(user.id)
-    vix = user_kite.get_india_vix()
+    config_dict = {
+        "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
+        "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
+        "lot_size": cfg.lot_size,
+        "target_points": float(cfg.target_points),
+        "sl_points": float(cfg.sl_points),
+        "paper_trade": cfg.paper_trade,
+    }
     
-    brief = await ai_service.generate_pre_market_brief(nifty_ltp, vix, config_dict)
-    return brief
+    user_kite = get_user_kite_service(user.id)
+    passed, errors, warnings = run_safety_checks(
+        paper_trade=cfg.paper_trade,
+        kite_service=user_kite,
+        strategy_config=config_dict,
+    )
+    
+    if not passed:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Safety checks failed — cannot arm strategy", "errors": errors},
+        )
+        
+    user_engine.order_manager.paper_trade = cfg.paper_trade
+    if not cfg.paper_trade:
+        user_engine.order_manager.kite = user_kite
+    else:
+        user_engine.order_manager.kite = None
+        
+    user_engine.mock_mode = cfg.paper_trade
+    user_engine.load_config(config_dict)
+    user_engine.start()
+    
+    # Broadcast strategy status
+    nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
+    await user_engine._broadcast_status(nifty_price)
+    
+    if cfg.paper_trade and not user_kite._ticker_running:
+        background_tasks.add_task(_run_mock_feed, user.id)
+        
+    return {
+        "success": True,
+        "message": "Suggested configurations applied and strategy armed successfully!",
+        "strategy_status": "started",
+        "warnings": warnings,
+        "approved": True
+    }
 
 
 @router.get("/brief/post-session")

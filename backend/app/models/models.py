@@ -118,3 +118,29 @@ class AuditLog(Base):
     nifty_price = Column(Numeric(10, 2))
     details = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class PreMarketBrief(Base):
+    __tablename__ = "pre_market_briefs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    trade_date = Column(Date, nullable=False, index=True)
+    vix = Column(Numeric(10, 2))
+    vix_analysis = Column(Text)
+    expected_range = Column(Text)
+    level_assessment = Column(Text)
+    suggested_config = Column(JSON)  # {"s1": float, "s2": float, ..., "recommended_lots": int}
+    quality_score = Column(Integer)
+    quality_reason = Column(Text)
+    pcr = Column(Numeric(6, 2))
+    max_pain = Column(Numeric(10, 2))
+    ce_wall = Column(Numeric(10, 2))
+    pe_wall = Column(Numeric(10, 2))
+    opening_gap = Column(Numeric(10, 2))
+    approved = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "trade_date", name="uq_user_premarket_trade_date"),
+    )

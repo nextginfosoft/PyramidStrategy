@@ -106,7 +106,7 @@ class AIService:
             logger.warning(f"User {self.user_id}: AI analyze failed: {e}")
             return None
 
-    async def generate_pre_market_brief(self, current_ltp: float, vix: float, config: dict) -> dict:
+    async def generate_pre_market_brief(self, current_ltp: float, vix: float, config: dict, oi_data: dict = None, prev_ohlcv: dict = None, opening_gap: float = 0.0) -> dict:
         """Evaluate pre-market NIFTY setups, score level spacing, and suggest optimal levels using LLM."""
         if not self.is_enabled():
             return {
@@ -121,14 +121,28 @@ class AIService:
             f"Market Context:\n"
             f"- Current NIFTY Price: {current_ltp:.2f}\n"
             f"- Current INDIA VIX: {vix:.2f}%\n"
-            f"- Configured Levels: S1={config.get('s1')}, S2={config.get('s2')}, S3={config.get('s3')} | R1={config.get('r1')}, R2={config.get('r2')}, R3={config.get('r3')}\n\n"
-            "Analyze these parameters and return a strict JSON object (no markdown, no backticks, just raw JSON) with the following structure:\n"
+            f"- Configured Levels: S1={config.get('s1')}, S2={config.get('s2')}, S3={config.get('s3')} | R1={config.get('r1')}, R2={config.get('r2')}, R3={config.get('r3')}\n"
+        )
+        
+        if prev_ohlcv:
+            prompt += (
+                f"- Previous Session Spot Candle: Open={prev_ohlcv.get('open')}, High={prev_ohlcv.get('high')}, Low={prev_ohlcv.get('low')}, Close={prev_ohlcv.get('close')}\n"
+            )
+        if oi_data:
+            prompt += (
+                f"- Option Chain OI Profile: PCR={oi_data.get('pcr')}, Max Pain Strike={oi_data.get('max_pain')}, CE Wall (heavy resistance)={oi_data.get('ce_wall')}, PE Wall (heavy support)={oi_data.get('pe_wall')}\n"
+            )
+        if opening_gap != 0.0:
+            prompt += f"- Gift Nifty Opening Indication: {'Gap Up' if opening_gap > 0 else 'Gap Down'} of {abs(opening_gap):.1f} points.\n"
+
+        prompt += (
+            "\nAnalyze these parameters and return a strict JSON object (no markdown, no backticks, just raw JSON) with the following structure:\n"
             "{\n"
             '  "vix_analysis": "2-sentence summary of what this VIX means for option pricing and today\'s trading speed.",\n'
             '  "expected_range": "1-sentence NIFTY price expected range calculated using Spot * VIX / 100 / sqrt(252).",\n'
-            '  "level_assessment": "2-sentence critique on whether current levels are too narrow/wide for this VIX.",\n'
-            '  "suggested_config": {"s1": float, "s2": float, "s3": float, "r1": float, "r2": float, "r3": float},\n'
-            '  "quality_score": integer (1 to 100 representing spacing quality relative to volatility),\n'
+            '  "level_assessment": "2-sentence critique on whether current levels are too narrow/wide for this VIX and if they align with the OI Walls and previous OHLCV pivots.",\n'
+            '  "suggested_config": {"s1": float, "s2": float, "s3": float, "r1": float, "r2": float, "r3": float, "recommended_lots": integer (default lot size adjusted for volatility: e.g. reduce by 50% if VIX > 18 or high risk)},\n'
+            '  "quality_score": integer (1 to 100 representing spacing quality relative to volatility and support/resistance alignment),\n'
             '  "quality_reason": "1-sentence explanation of the quality score."\n'
             "}"
         )
@@ -163,7 +177,8 @@ class AIService:
                     "s3": round(current_ltp - 150, 1),
                     "r1": round(current_ltp + 50, 1),
                     "r2": round(current_ltp + 100, 1),
-                    "r3": round(current_ltp + 150, 1)
+                    "r3": round(current_ltp + 150, 1),
+                    "recommended_lots": config.get("lot_size", 75)
                 },
                 "quality_score": 80,
                 "quality_reason": "Default config fallback evaluation."
@@ -372,3 +387,178 @@ def get_user_ai_service(user_id: int) -> AIService:
 
 # Global singleton (defaults to user_id=1 for backward compatibility/tests)
 ai_service = get_user_ai_service(1)
+
+
+async def run_pre_market_brief_for_user(db, user_id: int, today) -> dict:
+    """Orchestrate the pull of VIX, daily spot candle, option chain snapshot, GIFT Nifty gap, trigger LLM synthesis, and Telegram alert."""
+    from app.models.models import StrategyConfig, PreMarketBrief
+    from app.services.kite_service import get_user_kite_service
+    from app.services.ai_service import get_user_ai_service
+    from app.services.notification import get_user_notification_service
+    import datetime
+    import httpx
+    
+    kite_serv = get_user_kite_service(user_id)
+    ai_serv = get_user_ai_service(user_id)
+    ns = get_user_notification_service(user_id)
+    
+    cfg = db.query(StrategyConfig).filter(
+        StrategyConfig.user_id == user_id,
+        StrategyConfig.is_active == True
+    ).first()
+    if not cfg:
+        logger.warning(f"User {user_id}: No active StrategyConfig. Skipping pre-market brief.")
+        return {"success": False, "error": "No active strategy config"}
+        
+    if not kite_serv.is_authenticated():
+        logger.warning(f"User {user_id}: Cannot pull pre-market brief -- Kite not authenticated")
+        if ns.is_enabled():
+            await ns._send("⚠️ *Pre-market AI Alert* — Kite session is not authenticated. Please log in on the Dashboard before 9:00 AM to generate today's level recommendations.")
+        return {"success": False, "error": "Kite not authenticated"}
+        
+    # 1. Fetch India VIX
+    vix = kite_serv.get_india_vix()
+    
+    # 2. Fetch Spot LTP & OHLCV daily pivots
+    nifty_spot_token = 256265
+    prev_close = None
+    prev_ohlcv = None
+    try:
+        to_dt = datetime.datetime.now()
+        from_dt = to_dt - datetime.timedelta(days=5)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        candles = await loop.run_in_executor(
+            None,
+            lambda: kite_serv._kite.historical_data(nifty_spot_token, from_dt, to_dt, "day")
+        )
+        valid_candles = [c for c in candles if c["date"].date() < today]
+        if valid_candles:
+            candle = valid_candles[-1]
+            prev_ohlcv = {
+                "open": float(candle["open"]),
+                "high": float(candle["high"]),
+                "low": float(candle["low"]),
+                "close": float(candle["close"])
+            }
+            prev_close = prev_ohlcv["close"]
+    except Exception as e:
+        logger.warning(f"User {user_id}: Failed to fetch historical daily candle for Nifty spot: {e}")
+    
+    if not prev_close:
+        try:
+            q = kite_serv._kite.quote(["NSE:NIFTY 50"])
+            prev_close = float(q.get("NSE:NIFTY 50", {}).get("last_price") or 23150.0)
+        except Exception:
+            prev_close = 23150.0
+            
+    # 3. Fetch Option Chain OI Profile
+    oi_data = None
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        oi_data = await loop.run_in_executor(
+            None,
+            lambda: kite_serv.get_option_chain_snapshot(prev_close)
+        )
+    except Exception as e:
+        logger.warning(f"User {user_id}: Failed to compute option chain snapshot: {e}")
+        
+    # 4. Fetch GIFT Nifty / SGX Nifty Price
+    gift_nifty_price = None
+    opening_gap = 0.0
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        async with httpx.AsyncClient(timeout=10, headers=headers) as client:
+            resp = await client.get("https://nepsealpha.com/api/free-data/index/GLX")
+            if resp.status_code == 200:
+                val = resp.json().get("lastPrice")
+                if val:
+                    gift_nifty_price = float(val)
+            
+            if not gift_nifty_price:
+                resp_mc = await client.get("https://www.moneycontrol.com/")
+                import re
+                match = re.search(r"GIFT Nifty.*?(\d{4,5}\.\d{2})", resp_mc.text, re.DOTALL | re.IGNORECASE)
+                if match:
+                    gift_nifty_price = float(match.group(1))
+    except Exception as e:
+        logger.warning(f"User {user_id}: Failed to fetch GIFT Nifty price: {e}")
+        
+    if gift_nifty_price:
+        opening_gap = gift_nifty_price - prev_close
+        
+    # 5. Synthesize LLM brief
+    config_dict = {
+        "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
+        "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
+        "lot_size": cfg.lot_size
+    }
+    
+    brief = await ai_serv.generate_pre_market_brief(
+        current_ltp=prev_close,
+        vix=vix,
+        config=config_dict,
+        oi_data=oi_data,
+        prev_ohlcv=prev_ohlcv,
+        opening_gap=opening_gap
+    )
+    
+    # 6. Save in DB
+    if brief.get("success"):
+        # Delete old brief if exists for today
+        db.query(PreMarketBrief).filter(
+            PreMarketBrief.user_id == user_id,
+            PreMarketBrief.trade_date == today
+        ).delete()
+        
+        brief_row = PreMarketBrief(
+            user_id=user_id,
+            trade_date=today,
+            vix=vix,
+            vix_analysis=brief.get("vix_analysis"),
+            expected_range=brief.get("expected_range"),
+            level_assessment=brief.get("level_assessment"),
+            suggested_config=brief.get("suggested_config"),
+            quality_score=brief.get("quality_score"),
+            quality_reason=brief.get("quality_reason"),
+            pcr=oi_data.get("pcr") if oi_data else None,
+            max_pain=oi_data.get("max_pain") if oi_data else None,
+            ce_wall=oi_data.get("ce_wall") if oi_data else None,
+            pe_wall=oi_data.get("pe_wall") if oi_data else None,
+            opening_gap=opening_gap,
+            approved=False
+        )
+        db.add(brief_row)
+        db.commit()
+        logger.info(f"User {user_id}: Saved Pre-Market brief suggestion to DB")
+        
+        # 7. Telegram alert
+        if ns.is_enabled():
+            def show_gap(g):
+                if g > 5: return f"+{g:.1f} pts (Gap Up)"
+                elif g < -5: return f"{g:.1f} pts (Gap Down)"
+                else: return "Flat Open"
+                
+            tg_message = (
+                f"🌅 *Pre-Market AI Briefing* ({today.strftime('%d-%b-%Y')})\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• *NIFTY Spot Close:* {prev_close:.1f}\n"
+                f"• *GIFT Nifty Gap:* {show_gap(opening_gap)}\n"
+                f"• *INDIA VIX:* {vix:.2f}% (Quality Score: *{brief.get('quality_score')}/100*)\n"
+                f"• *PCR:* {oi_data.get('pcr') if oi_data else 'N/A'} | *Max Pain:* {oi_data.get('max_pain') if oi_data else 'N/A'}\n"
+                f"• *OI Walls:* PE Wall Support: *{oi_data.get('pe_wall') if oi_data else 'N/A'}* | CE Wall Resistance: *{oi_data.get('ce_wall') if oi_data else 'N/A'}*\n\n"
+                f"*VIX Analysis:*\n_{brief.get('vix_analysis')}_\n\n"
+                f"*Expected Range:*\n_{brief.get('expected_range')}_\n\n"
+                f"*Level Critique:*\n_{brief.get('level_assessment')}_\n\n"
+                f"*Suggested Levels:*\n"
+                f"• Supports (S1/S2/S3): {brief['suggested_config'].get('s1')} / {brief['suggested_config'].get('s2')} / {brief['suggested_config'].get('s3')}\n"
+                f"• Resistances (R1/R2/R3): {brief['suggested_config'].get('r1')} / {brief['suggested_config'].get('r2')} / {brief['suggested_config'].get('r3')}\n"
+                f"• Recommended Lots: *{brief['suggested_config'].get('recommended_lots')} lots*\n\n"
+                f"📢 *Action Required:* Go to the Web Dashboard to *Approve & Arm* the strategy before market open at 9:15 AM IST."
+            )
+            await ns._send(tg_message)
+            
+    return brief

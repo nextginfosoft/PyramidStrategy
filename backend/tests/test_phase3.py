@@ -305,6 +305,10 @@ class TestSessionAuth:
 # ── API Route Integration Tests ───────────────────────────────────────────────
 
 class TestAIRoutes:
+    def setup_method(self):
+        from app.db.database import init_db
+        init_db()
+
     @pytest.fixture
     def client(self):
         from fastapi.testclient import TestClient
@@ -342,12 +346,14 @@ class TestAIRoutes:
         assert isinstance(resp.json(), list)
 
     def test_get_pre_market_brief(self, client):
+        from app.db.database import SessionLocal
+        from app.models.models import PreMarketBrief
+        with SessionLocal() as db:
+            db.query(PreMarketBrief).delete()
+            db.commit()
+
         mock_brief = {"success": True, "vix": 14.2, "quality_score": 90}
-        with patch("app.api.routes.ai.get_user_ai_service") as mock_get_service:
-            mock_service = MagicMock()
-            mock_service.generate_pre_market_brief = AsyncMock(return_value=mock_brief)
-            mock_get_service.return_value = mock_service
-            
+        with patch("app.api.routes.ai.run_pre_market_brief_for_user", new=AsyncMock(return_value=mock_brief)):
             resp = client.get("/ai/brief/pre-market")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
@@ -364,6 +370,56 @@ class TestAIRoutes:
         assert resp.status_code == 200
         assert resp.json()["success"] is True
         assert resp.json()["what_worked"] == "Perfect execution"
+
+    def test_approve_pre_market_brief_endpoint(self, client):
+        from app.db.database import SessionLocal
+        from app.models.models import PreMarketBrief, StrategyConfig
+        import datetime
+        
+        with SessionLocal() as db:
+            db.query(PreMarketBrief).delete()
+            db.query(StrategyConfig).delete()
+            
+            cfg = StrategyConfig(
+                user_id=1,
+                r1=23000.0, r2=23050.0, r3=23100.0,
+                s1=22900.0, s2=22850.0, s3=22800.0,
+                lot_size=75,
+                is_active=True
+            )
+            brief = PreMarketBrief(
+                user_id=1,
+                trade_date=datetime.date.today(),
+                vix=13.5,
+                suggested_config={
+                    "s1": 23100.0, "s2": 23050.0, "s3": 23000.0,
+                    "r1": 23200.0, "r2": 23250.0, "r3": 23300.0,
+                    "recommended_lots": 150
+                },
+                approved=False
+            )
+            db.add(cfg)
+            db.add(brief)
+            db.commit()
+            
+        with patch("app.api.routes.ai.run_safety_checks", return_value=(True, [], [])):
+            with patch("app.core.strategy_engine.StrategyEngine.start") as mock_start:
+                with patch("app.api.routes.ai._run_mock_feed", new=AsyncMock()) as mock_mock_feed:
+                    resp = client.post("/ai/brief/pre-market/approve")
+                
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["strategy_status"] == "started"
+        assert data["approved"] is True
+        
+        with SessionLocal() as db:
+            updated_cfg = db.query(StrategyConfig).filter(StrategyConfig.user_id == 1).first()
+            updated_brief = db.query(PreMarketBrief).filter(PreMarketBrief.user_id == 1).first()
+            assert float(updated_cfg.s1) == 23100.0
+            assert float(updated_cfg.r1) == 23200.0
+            assert updated_cfg.lot_size == 150
+            assert updated_brief.approved is True
 
 
 class TestSessionRoutes:

@@ -278,3 +278,49 @@ class TestStatus:
         """Should not raise even when ticker was never started."""
         kite_svc.stop_ticker()  # no exception
         assert kite_svc._ticker_running is False
+
+
+class TestOptionChain:
+    def test_get_option_chain_snapshot_unauthenticated(self, kite_svc):
+        res = kite_svc.get_option_chain_snapshot(23150.0)
+        assert res["pcr"] == 1.0
+        assert res["max_pain"] == 23150
+        assert res["ce_wall"] == 23300
+        assert res["pe_wall"] == 23000
+        assert res["spot"] == 23150.0
+
+    def test_get_option_chain_snapshot_authenticated(self, authenticated_svc):
+        # We mock the quote return to simulate options chain calculations
+        # ATM at 23150
+        mock_quote_data = {}
+        # Let's mock a few strikes around 23150
+        # For instance, high CE OI at 23250, high PE OI at 23050
+        for strike in [22850, 22900, 22950, 23000, 23050, 23100, 23150, 23200, 23250, 23300, 23350, 23400, 23450]:
+            # Let's say CE OI is standard, but CE Wall at 23250 has 100000 OI
+            ce_oi = 100000 if strike == 23250 else 1000
+            # PE Wall at 23050 has 150000 OI
+            pe_oi = 150000 if strike == 23050 else 1500
+            
+            # Format YYMDD monthly / weekly symbols
+            # For simplicity, we can mock selector functions or just assume the symbols are resolved
+            # We can mock build_option_symbol or just let it generate real weekly symbols
+            # To know what symbols get_option_chain_snapshot generates, we look up how they are built:
+            # build_option_symbol(side, strike, expiry)
+            from app.core.option_selector import get_expiry_date, build_option_symbol
+            from app.core.time_rules import today_ist
+            expiry = get_expiry_date(today_ist())
+            ce_sym = build_option_symbol("CE", strike, expiry)
+            pe_sym = build_option_symbol("PE", strike, expiry)
+            
+            mock_quote_data[f"NFO:{ce_sym}"] = {"oi": ce_oi, "last_price": 50.0}
+            mock_quote_data[f"NFO:{pe_sym}"] = {"oi": pe_oi, "last_price": 50.0}
+            
+        authenticated_svc._kite.quote.return_value = mock_quote_data
+        
+        res = authenticated_svc.get_option_chain_snapshot(23150.0)
+        assert res["spot"] == 23150.0
+        assert res["ce_wall"] == 23250
+        assert res["pe_wall"] == 23050
+        assert res["pcr"] > 1.0  # Put OI (150k+) > Call OI (100k+)
+        # Check max pain is calculated
+        assert res["max_pain"] in [23050, 23100, 23150, 23200, 23250]

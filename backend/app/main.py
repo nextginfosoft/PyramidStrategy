@@ -84,6 +84,25 @@ def schedule_jobs():
 
     scheduler.add_job(daily_startup, "cron", hour=9, minute=0, id="daily_reset")
 
+    # 8:45 AM — pre-market brief job
+    async def pre_market_brief_job():
+        from app.db.database import SessionLocal
+        from app.models.models import StrategyConfig
+        from app.services.ai_service import run_pre_market_brief_for_user
+        from app.core.time_rules import today_ist
+        
+        today = today_ist()
+        logger.info(f"⏳ Running Pre-market AI Brief job at 8:45 AM for date: {today}")
+        try:
+            with SessionLocal() as db:
+                configs = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).all()
+                for cfg in configs:
+                    await run_pre_market_brief_for_user(db, cfg.user_id, today)
+        except Exception as e:
+            logger.error(f"Scheduled pre-market brief job failed: {e}")
+
+    scheduler.add_job(pre_market_brief_job, "cron", day_of_week="mon-fri", hour=8, minute=45, id="pre_market_brief")
+
     # 11:15 AM — log warning, entries blocked
     scheduler.add_job(
         lambda: logger.warning("🕐 11:15 AM — No more fresh entries allowed today"),
