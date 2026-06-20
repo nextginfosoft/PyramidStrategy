@@ -222,10 +222,22 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     const seconds = Math.floor((Date.now() - lastTime) / 1000)
     if (seconds < 1) return 'just now'
     if (seconds < 60) return `${seconds}s ago`
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-    if (remainingSeconds === 0) return `${minutes} min ago`
-    return `${minutes} min ${remainingSeconds}s ago`
+    
+    if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60)
+      const remainingSeconds = seconds % 60
+      if (remainingSeconds === 0) return `${minutes} min ago`
+      return `${minutes} min ${remainingSeconds}s ago`
+    } else {
+      const hours = Math.floor(seconds / 3600)
+      const remainingMinutes = Math.floor((seconds % 3600) / 60)
+      const remainingSeconds = seconds % 60
+      
+      const parts: string[] = [`${hours} hr`]
+      if (remainingMinutes > 0) parts.push(`${remainingMinutes} min`)
+      if (remainingSeconds > 0) parts.push(`${remainingSeconds}s`)
+      return `${parts.join(' ')} ago`
+    }
   }
 
   return (
