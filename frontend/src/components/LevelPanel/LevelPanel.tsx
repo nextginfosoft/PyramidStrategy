@@ -4,6 +4,7 @@ import clsx from 'clsx'
 interface Props {
   status: StrategyStatus | null
   config: StrategyConfig | null
+  isLoading?: boolean
 }
 
 const STATE_COLORS: Record<string, string> = {
@@ -23,7 +24,28 @@ function formatState(state: string | undefined, side: 'CE' | 'PE'): string {
   return state
 }
 
-export function LevelPanel({ status, config }: Props) {
+export function LevelPanel({ status, config, isLoading }: Props) {
+  if (isLoading || (!config && !status)) {
+    return (
+      <div className="space-y-1">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between px-3 py-2.5 rounded border border-navy-800 bg-navy-900/40 animate-pulse h-[34px]"
+          >
+            <div className="h-3.5 w-8 bg-navy-850 rounded" />
+            <div className="h-3.5 w-16 bg-navy-850 rounded" />
+            <div className="h-3.5 w-3 bg-navy-850 rounded" />
+          </div>
+        ))}
+        <div className="flex gap-2 mt-3">
+          <div className="flex-1 py-3 rounded border border-navy-800 bg-navy-900/40 animate-pulse h-[26px]" />
+          <div className="flex-1 py-3 rounded border border-navy-800 bg-navy-900/40 animate-pulse h-[26px]" />
+        </div>
+      </div>
+    )
+  }
+
   if (!config) return <div className="text-navy-300 text-sm">No config — set levels in Settings</div>
 
   const pe = status?.pe

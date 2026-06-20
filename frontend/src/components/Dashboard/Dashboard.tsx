@@ -125,7 +125,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     }
   }
 
-  const { data: config } = useQuery({
+  const { data: config, isLoading: isConfigLoading } = useQuery({
     queryKey: ['strategy-config'],
     queryFn: configApi.getStrategy,
     retry: false,
@@ -137,7 +137,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     refetchInterval: wsConnected ? 15000 : 3000,
   })
 
-  const { data: pnl } = useQuery({
+  const { data: pnl, isLoading: isPnlLoading } = useQuery({
     queryKey: ['pnl-today'],
     queryFn: tradesApi.getTodayPnl,
     refetchInterval: wsConnected ? 15000 : 3000,
@@ -340,9 +340,13 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
             </div>
             
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-white font-mono tracking-tight">
-                {niftyLtp ? niftyLtp.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
-              </span>
+              {niftyLtp ? (
+                <span className="text-3xl font-extrabold text-white font-mono tracking-tight">
+                  {niftyLtp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              ) : (
+                <div className="h-9 w-44 bg-navy-800 rounded animate-pulse" />
+              )}
             </div>
 
             {/* Point / % change pill badge */}
@@ -367,7 +371,9 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
                 </span>
                 <span className="text-[10px] text-navy-300 font-medium">today</span>
               </div>
-            ) : null}
+            ) : (
+              <div className="h-6 w-32 bg-navy-800 rounded-full animate-pulse my-0.5" />
+            )}
 
             {/* Market timestamp */}
             <div className="mt-1 pt-2 border-t border-navy-800 flex items-center justify-between text-[10px] text-navy-300">
@@ -385,7 +391,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           {/* Level panel */}
           <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
             <div className="text-xs text-navy-300 mb-2 font-semibold">LEVELS</div>
-            <LevelPanel status={status} config={config ?? null} />
+            <LevelPanel status={status} config={config ?? null} isLoading={isConfigLoading} />
           </div>
 
           {/* Paper trade simulator */}
@@ -417,14 +423,22 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-navy-300 font-semibold">TODAY'S P&L</span>
-              <span className="text-xs text-navy-300 font-mono">{pnl?.total_exits ?? 0} exits | {pnl?.winning_trades ?? 0} wins</span>
+              {isPnlLoading ? (
+                <div className="h-3.5 w-24 bg-navy-850 rounded animate-pulse" />
+              ) : (
+                <span className="text-xs text-navy-300 font-mono">{pnl?.total_exits ?? 0} exits | {pnl?.winning_trades ?? 0} wins</span>
+              )}
             </div>
-            <div className="flex items-end justify-between">
-              <div className={clsx('text-2xl font-bold font-mono',
-                todayPnl > 0 ? 'text-green-400' : todayPnl < 0 ? 'text-red-400' : 'text-navy-300')}>
-                {todayPnl >= 0 ? '+' : ''}₹{todayPnl.toFixed(0)}
-              </div>
-              {lastPnlTime && (
+            <div className="flex items-end justify-between h-[32px]">
+              {isPnlLoading ? (
+                <div className="h-8 w-28 bg-navy-800 rounded animate-pulse" />
+              ) : (
+                <div className={clsx('text-2xl font-bold font-mono',
+                  todayPnl > 0 ? 'text-green-400' : todayPnl < 0 ? 'text-red-400' : 'text-navy-300')}>
+                  {todayPnl >= 0 ? '+' : ''}₹{todayPnl.toFixed(0)}
+                </div>
+              )}
+              {lastPnlTime && !isPnlLoading && (
                 <span className="text-[10px] text-navy-300 font-mono">
                   {formatTimeAgo(lastPnlTime)}
                 </span>
