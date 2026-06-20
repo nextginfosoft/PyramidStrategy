@@ -15,6 +15,7 @@ import { LiveLogModal } from '../LiveLogModal/LiveLogModal'
 import { PDFReportsModal } from '../PDFReportsModal/PDFReportsModal'
 import { BacktestModal } from '../BacktestModal/BacktestModal'
 import { Notification } from '../Notification/Notification'
+import { UserGuide } from '../UserGuide/UserGuide'
 
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
@@ -22,6 +23,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const { status, wsConnected } = useStrategyStore()
   const addToast = useToastStore(state => state.addToast)
   const [showSettings, setShowSettings] = useState(false)
+  const [showUserGuide, setShowUserGuide] = useState(false)
   const [showLiveLogs, setShowLiveLogs] = useState(false)
   const [showPDFReports, setShowPDFReports] = useState(false)
   const [showBacktest, setShowBacktest] = useState(false)
@@ -282,6 +284,10 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
             className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
             <span aria-hidden="true">📊</span> Backtest
           </button>
+          <button onClick={() => setShowUserGuide(true)}
+            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
+            <span aria-hidden="true">📖</span> User Guide
+          </button>
           <button onClick={() => setShowSettings(true)}
             className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
             <span aria-hidden="true">⚙</span> Settings
@@ -541,6 +547,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
       {showLiveLogs && <LiveLogModal onClose={() => setShowLiveLogs(false)} />}
       {showPDFReports && <PDFReportsModal onClose={() => setShowPDFReports(false)} />}
       {showBacktest && <BacktestModal onClose={() => setShowBacktest(false)} />}
+      {showUserGuide && <UserGuide onClose={() => setShowUserGuide(false)} />}
 
       {confirmAction && (
         <ConfirmModal
