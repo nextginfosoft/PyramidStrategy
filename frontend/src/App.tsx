@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Dashboard } from './components/Dashboard/Dashboard'
 import { Login } from './components/Login/Login'
 import { sessionApi } from './services/api'
+import { ToastContainer } from './components/Toast/Toast'
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
@@ -39,8 +40,18 @@ export default function App() {
   }
 
   if (!authenticated) {
-    return <Login onLogin={handleLogin} />
+    return (
+      <>
+        <Login onLogin={handleLogin} />
+        <ToastContainer />
+      </>
+    )
   }
 
-  return <Dashboard onLogout={handleLogout} />
+  return (
+    <>
+      <Dashboard onLogout={handleLogout} />
+      <ToastContainer />
+    </>
+  )
 }

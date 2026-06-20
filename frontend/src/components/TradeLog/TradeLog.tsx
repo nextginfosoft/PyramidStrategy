@@ -30,7 +30,7 @@ export function TradeLog({ trades }: Props) {
                 {format(new Date(t.created_at), 'HH:mm:ss')}
               </td>
               <td className={clsx('pr-2 font-bold', t.side === 'CE' ? 'text-green-400' : 'text-red-400')}>
-                {t.side}
+                {t.side === 'CE' ? '▲ CE' : '▼ PE'}
               </td>
               <td className="pr-2 text-navy-200">
                 {t.level === 'L1'

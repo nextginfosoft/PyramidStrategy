@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { configApi, backtestApi } from '../../services/api'
 import clsx from 'clsx'
+import { useToastStore } from '../../store/toastStore'
 
 interface Props {
   onClose: () => void
@@ -54,6 +55,7 @@ type BacktestResult = {
 }
 
 export function BacktestModal({ onClose }: Props) {
+  const addToast = useToastStore(state => state.addToast)
   const { data: cfg } = useQuery({
     queryKey: ['strategy-config'],
     queryFn: configApi.getStrategy,
@@ -120,7 +122,7 @@ export function BacktestModal({ onClose }: Props) {
 
   const handleAddComparison = () => {
     if (comparisons.length >= 2) {
-      alert('You can compare a maximum of 2 alternative configurations.')
+      addToast('You can compare a maximum of 2 alternative configurations.', 'warning')
       return
     }
     setComparisons([

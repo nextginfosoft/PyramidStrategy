@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { tradesApi } from '../../services/api'
+import { useToastStore } from '../../store/toastStore'
 
 type PDFReportFile = {
   filename: string
@@ -10,6 +11,7 @@ type PDFReportFile = {
 }
 
 export function PDFReportsModal({ onClose }: { onClose: () => void }) {
+  const addToast = useToastStore(state => state.addToast)
   const [reports, setReports] = useState<PDFReportFile[]>([])
   const [loading, setLoading] = useState(false)
   const [triggering, setTriggering] = useState(false)
@@ -41,9 +43,10 @@ export function PDFReportsModal({ onClose }: { onClose: () => void }) {
       link.click()
       link.parentNode?.removeChild(link)
       window.URL.revokeObjectURL(url)
+      addToast('PDF report downloaded successfully.', 'success')
     } catch (err) {
       console.error(err)
-      alert('Failed to download PDF report.')
+      addToast('Failed to download PDF report.', 'error')
     }
   }
 
@@ -51,13 +54,13 @@ export function PDFReportsModal({ onClose }: { onClose: () => void }) {
     setTriggering(true)
     try {
       await tradesApi.triggerReport(triggerDate)
-      alert('PDF EOD report generation triggered successfully.')
+      addToast('PDF EOD report generation triggered successfully.', 'success')
       // Refresh after a short delay
       setTimeout(fetchReports, 1500)
     } catch (err: any) {
       console.error(err)
       const detail = err.response?.data?.detail || 'Failed to trigger report generation.'
-      alert(detail)
+      addToast(detail, 'error')
     } finally {
       setTriggering(false)
     }

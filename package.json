@@ -1,4 +1,9 @@
 {
+  "name": "pyramid-strategy-root",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "start.bat"
+  },
   "dependencies": {
     "playwright": "^1.60.0"
   }

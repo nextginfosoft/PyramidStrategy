@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { kiteApi } from "../../services/api";
+import { useToastStore } from "../../store/toastStore";
 
 interface KiteStatusData {
   authenticated: boolean;
@@ -19,7 +20,7 @@ interface KiteStatusData {
 export default function KiteStatus() {
   const [status, setStatus] = useState<KiteStatusData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const addToast = useToastStore(state => state.addToast);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -38,15 +39,14 @@ export default function KiteStatus() {
 
   const handleLogin = async () => {
     setLoading(true);
-    setMessage(null);
     try {
       const data = await kiteApi.getLoginUrl();
       if (!data.login_url) throw new Error("No login URL returned");
       // Open Kite login in new tab
       window.open(data.login_url, "_blank", "noopener,noreferrer");
-      setMessage("Kite login page opened. Complete login and return here.");
+      addToast("Kite login page opened. Complete login and return here.", "info");
     } catch (err: any) {
-      setMessage(`Error: ${err.response?.data?.detail || err.message || "Failed"}`);
+      addToast(`Error: ${err.response?.data?.detail || err.message || "Failed"}`, "error");
     } finally {
       setLoading(false);
     }
@@ -54,13 +54,12 @@ export default function KiteStatus() {
 
   const handleStartFeed = async () => {
     setLoading(true);
-    setMessage(null);
     try {
       const data = await kiteApi.startFeed();
-      setMessage(data.message);
+      addToast(data.message || "Live feed started successfully.", "success");
       await fetchStatus();
     } catch (err: any) {
-      setMessage(`Error: ${err.response?.data?.detail || err.message || "Failed"}`);
+      addToast(`Error: ${err.response?.data?.detail || err.message || "Failed"}`, "error");
     } finally {
       setLoading(false);
     }
@@ -70,10 +69,10 @@ export default function KiteStatus() {
     setLoading(true);
     try {
       const data = await kiteApi.validateToken();
-      setMessage(data.message);
+      addToast(data.message || "Token is valid.", "success");
       await fetchStatus();
     } catch {
-      setMessage("Validation check failed");
+      addToast("Validation check failed", "error");
     } finally {
       setLoading(false);
     }
@@ -83,10 +82,10 @@ export default function KiteStatus() {
     setLoading(true);
     try {
       const data = await kiteApi.loadInstruments();
-      setMessage(data.message);
+      addToast(data.message || "Instruments loaded successfully.", "success");
       await fetchStatus();
     } catch {
-      setMessage("Failed to load instruments");
+      addToast("Failed to load instruments", "error");
     } finally {
       setLoading(false);
     }
@@ -155,7 +154,7 @@ export default function KiteStatus() {
           <button
             onClick={handleLogin}
             disabled={loading}
-            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-blue-950/20"
+            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-blue-950/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {loading ? "Opening..." : "Login to Kite"}
           </button>
@@ -165,16 +164,16 @@ export default function KiteStatus() {
               <button
                 onClick={handleStartFeed}
                 disabled={loading}
-                className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-green-950/20"
+                className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-green-950/20 focus:outline-none focus:ring-2 focus:ring-green-500"
               >
-                {loading ? "Starting..." : "▶ Start Live Feed"}
+                {loading ? "Starting..." : <><span aria-hidden="true">▶</span> Start Live Feed</>}
               </button>
             )}
             {!status.instruments_loaded && (
               <button
                 onClick={handleLoadInstruments}
                 disabled={loading}
-                className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-purple-950/20"
+                className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 shadow-md shadow-purple-950/20 focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
                 Load Instruments
               </button>
@@ -182,30 +181,17 @@ export default function KiteStatus() {
             <button
               onClick={handleValidate}
               disabled={loading}
-              className="text-xs bg-navy-800 hover:bg-navy-700 text-navy-200 border border-navy-700 px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150"
+              className="text-xs bg-navy-800 hover:bg-navy-700 text-navy-200 border border-navy-700 px-3 py-1.5 rounded-lg font-medium disabled:opacity-50 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               Validate Token
             </button>
           </>
         )}
       </div>
-
-      {message && (
-        <p
-          className={`text-xs px-2 py-1.5 rounded ${
-            message.startsWith("Error")
-              ? "bg-red-900/40 text-red-300"
-              : "bg-blue-900/40 text-blue-300"
-          }`}
-        >
-          {message}
-        </p>
-      )}
-
       {/* Token expiry reminder banner */}
       {status?.authenticated && !status.ticker_connected && (
         <p className="text-xs text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded">
-          ⚠ Kite tokens expire daily at ~6 AM. Re-login if token is expired.
+          <span role="img" aria-label="Warning">⚠</span> Kite tokens expire daily at ~6 AM. Re-login if token is expired.
         </p>
       )}
     </div>

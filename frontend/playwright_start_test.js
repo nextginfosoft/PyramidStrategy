@@ -69,6 +69,14 @@ async function run() {
         console.log('Clicking the STOP button...');
         await stopButton.click();
 
+        // Wait for confirmation modal to appear
+        console.log('Waiting for confirmation modal...');
+        await page.waitForTimeout(500);
+
+        // Click the confirm stop button
+        console.log('Confirming STOP action...');
+        await page.locator('#confirm-stop-btn').click();
+
         // Wait for state transition
         await page.waitForTimeout(2000);
 
