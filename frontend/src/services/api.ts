@@ -67,6 +67,8 @@ export const aiApi = {
   testConnection: () => api.post('/ai/test').then(r => r.data),
   reload: () => api.post('/ai/reload').then(r => r.data),
   getStatus: () => api.get('/ai/status').then(r => r.data),
+  getPreMarketBrief: () => api.get('/ai/brief/pre-market').then(r => r.data),
+  getPostSessionReview: () => api.get('/ai/brief/post-session').then(r => r.data),
 }
 
 export const backtestApi = {

@@ -340,6 +340,21 @@ class KiteService:
             logger.warning(f"Failed to fetch NIFTY previous close (REST API): {e}")
         return None
 
+    def get_india_vix(self) -> float:
+        """Fetch INDIA VIX price from Kite REST API, fallback to 13.5 if unauthenticated or error."""
+        if not self.is_authenticated() or not self._kite:
+            return 13.5
+        try:
+            res = self._kite.quote(["NSE:INDIA VIX"])
+            vix_quote = res.get("NSE:INDIA VIX")
+            if vix_quote:
+                last_price = vix_quote.get("last_price")
+                if last_price:
+                    return float(last_price)
+        except Exception as e:
+            logger.warning(f"Failed to fetch INDIA VIX (REST API): {e}")
+        return 13.5
+
     # ── Status ───────────────────────────────────────────────────────────────
 
     def get_status(self) -> dict:

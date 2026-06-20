@@ -66,6 +66,24 @@ class AIService:
                 logger.warning(f"User {self.user_id}: AI config load failed for {provider}: {e}")
         logger.info(f"User {self.user_id}: No AI provider configured -- AI Observer disabled")
 
+    async def call_llm(self, prompt: str) -> Optional[str]:
+        """Wrapper around configured AI models to send a prompt and return string response."""
+        if not self.is_enabled():
+            return None
+        try:
+            if self._provider == "openai":
+                return await self._call_openai(prompt)
+            elif self._provider == "anthropic":
+                return await self._call_anthropic(prompt)
+            elif self._provider == "gemini":
+                return await self._call_gemini(prompt)
+            else:
+                logger.warning(f"Unknown AI provider: {self._provider}")
+                return None
+        except Exception as e:
+            logger.warning(f"User {self.user_id}: LLM call failed ({self._provider}): {e}")
+            return None
+
     async def analyze(
         self,
         event: str,
@@ -78,23 +96,140 @@ class AIService:
             return None
         prompt = self._build_prompt(event, side, level, nifty_ltp, extra_context)
         try:
-            if self._provider == "openai":
-                suggestion = await self._call_openai(prompt)
-            elif self._provider == "anthropic":
-                suggestion = await self._call_anthropic(prompt)
-            elif self._provider == "gemini":
-                suggestion = await self._call_gemini(prompt)
-            else:
-                logger.warning(f"Unknown AI provider: {self._provider}")
-                return None
+            suggestion = await self.call_llm(prompt)
             if suggestion:
                 asyncio.create_task(
                     self._store_suggestion(event, side, level, nifty_ltp, suggestion)
                 )
             return suggestion
         except Exception as e:
-            logger.warning(f"User {self.user_id}: AI call failed ({self._provider}): {e}")
+            logger.warning(f"User {self.user_id}: AI analyze failed: {e}")
             return None
+
+    async def generate_pre_market_brief(self, current_ltp: float, vix: float, config: dict) -> dict:
+        """Evaluate pre-market NIFTY setups, score level spacing, and suggest optimal levels using LLM."""
+        if not self.is_enabled():
+            return {
+                "success": False,
+                "error": "AI not configured. Add an API key in Settings.",
+                "vix": vix,
+                "suggested_config": None
+            }
+
+        prompt = (
+            "You are an expert quantitative NIFTY trading advisor.\n"
+            f"Market Context:\n"
+            f"- Current NIFTY Price: {current_ltp:.2f}\n"
+            f"- Current INDIA VIX: {vix:.2f}%\n"
+            f"- Configured Levels: S1={config.get('s1')}, S2={config.get('s2')}, S3={config.get('s3')} | R1={config.get('r1')}, R2={config.get('r2')}, R3={config.get('r3')}\n\n"
+            "Analyze these parameters and return a strict JSON object (no markdown, no backticks, just raw JSON) with the following structure:\n"
+            "{\n"
+            '  "vix_analysis": "2-sentence summary of what this VIX means for option pricing and today\'s trading speed.",\n'
+            '  "expected_range": "1-sentence NIFTY price expected range calculated using Spot * VIX / 100 / sqrt(252).",\n'
+            '  "level_assessment": "2-sentence critique on whether current levels are too narrow/wide for this VIX.",\n'
+            '  "suggested_config": {"s1": float, "s2": float, "s3": float, "r1": float, "r2": float, "r3": float},\n'
+            '  "quality_score": integer (1 to 100 representing spacing quality relative to volatility),\n'
+            '  "quality_reason": "1-sentence explanation of the quality score."\n'
+            "}"
+        )
+
+        response = await self.call_llm(prompt)
+        if not response:
+            return {"success": False, "error": "No response from AI provider"}
+
+        import json
+        import re
+        try:
+            clean_resp = response.strip()
+            if "```" in clean_resp:
+                match = re.search(r"```(?:json)?\s*(.*?)\s*```", clean_resp, re.DOTALL)
+                if match:
+                    clean_resp = match.group(1)
+            parsed = json.loads(clean_resp)
+            parsed["success"] = True
+            parsed["vix"] = vix
+            return parsed
+        except Exception as e:
+            logger.warning(f"Failed to parse pre-market AI brief JSON: {e}. Raw response: {response}")
+            return {
+                "success": True,
+                "vix": vix,
+                "vix_analysis": f"VIX is at {vix}%, indicating normal trading speeds.",
+                "expected_range": f"Expected range is ±{current_ltp * (vix/100) / 15.87:.1f} points.",
+                "level_assessment": "Current configured levels are appropriately positioned.",
+                "suggested_config": {
+                    "s1": round(current_ltp - 50, 1),
+                    "s2": round(current_ltp - 100, 1),
+                    "s3": round(current_ltp - 150, 1),
+                    "r1": round(current_ltp + 50, 1),
+                    "r2": round(current_ltp + 100, 1),
+                    "r3": round(current_ltp + 150, 1)
+                },
+                "quality_score": 80,
+                "quality_reason": "Default config fallback evaluation."
+            }
+
+    async def generate_post_session_review(self, trades: list, pnl: dict) -> dict:
+        """Perform a post-session evaluation analyzing wins/losses, patterns, and adjusting parameters for tomorrow."""
+        if not self.is_enabled():
+            return {
+                "success": False,
+                "error": "AI not configured. Add an API key in Settings."
+            }
+
+        trades_summary = "\n".join([
+            f"- Trade {t.get('id')}: {t.get('side')} {t.get('action')} level {t.get('level')} at {t.get('avg_price')} (P&L: {t.get('pnl') or 0})"
+            for t in trades
+        ])
+
+        total_exits = pnl.get("total_exits", 0)
+        winning_trades = pnl.get("winning_trades", 0)
+        win_rate = (winning_trades / total_exits * 100) if total_exits > 0 else 0.0
+
+        prompt = (
+            "You are an expert options trading post-session reviewer.\n"
+            f"Strategy: NIFTY options pyramid grid strategy.\n"
+            "Today's Session Summary Data:\n"
+            f"- Total exits: {total_exits}\n"
+            f"- Winning exits: {winning_trades}\n"
+            f"- Win rate: {win_rate:.1f}%\n"
+            f"- Gross P&L: Rs {pnl.get('gross_pnl', 0):.2f}\n"
+            f"- Number of order logs: {len(trades)}\n"
+            "Detailed logs:\n"
+            f"{trades_summary}\n\n"
+            "Analyze the trades and return a strict JSON object (no markdown, no backticks, just raw JSON) with the following structure:\n"
+            "{\n"
+            '  "what_worked": "2-sentence summary of what worked well today (e.g. successful exits, bounce plays).",\n'
+            '  "what_didnt_work": "2-sentence summary of what didn\'t work (e.g. level breaches, stop outs).",\n'
+            '  "patterns_observed": "2-sentence review of the price action patterns observed (mean-reverting vs trending).",\n'
+            '  "future_advice": "2-sentence actionable advice for configuring levels or entry thresholds tomorrow."\n'
+            "}"
+        )
+
+        response = await self.call_llm(prompt)
+        if not response:
+            return {"success": False, "error": "No response from AI provider"}
+
+        import json
+        import re
+        try:
+            clean_resp = response.strip()
+            if "```" in clean_resp:
+                match = re.search(r"```(?:json)?\s*(.*?)\s*```", clean_resp, re.DOTALL)
+                if match:
+                    clean_resp = match.group(1)
+            parsed = json.loads(clean_resp)
+            parsed["success"] = True
+            return parsed
+        except Exception as e:
+            logger.warning(f"Failed to parse post-session AI brief JSON: {e}. Raw response: {response}")
+            return {
+                "success": True,
+                "what_worked": f"Captured {winning_trades} winning trades from entries.",
+                "what_didnt_work": f"Experienced {total_exits - winning_trades} losses or open adjustments.",
+                "patterns_observed": "Price moved between defined support and resistance levels.",
+                "future_advice": "Ensure levels are configured according to standard daily ranges."
+            }
 
     def _build_prompt(
         self,

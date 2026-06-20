@@ -102,6 +102,72 @@ class TestAIService:
         assert success is True
         assert "OK" in msg
 
+    @pytest.mark.asyncio
+    async def test_generate_pre_market_brief_disabled(self):
+        res = await self.ai.generate_pre_market_brief(23150.0, 13.5, {})
+        assert res["success"] is False
+        assert "AI not configured" in res["error"]
+
+    @pytest.mark.asyncio
+    async def test_generate_pre_market_brief_enabled_success(self):
+        self.ai.configure("openai", "sk-key", enabled=True)
+        json_resp = (
+            "{\n"
+            '  "vix_analysis": "VIX analysis text",\n'
+            '  "expected_range": "Expected range text",\n'
+            '  "level_assessment": "Critique text",\n'
+            '  "suggested_config": {"s1": 23100.0, "s2": 23050.0, "s3": 23000.0, "r1": 23200.0, "r2": 23250.0, "r3": 23300.0},\n'
+            '  "quality_score": 85,\n'
+            '  "quality_reason": "Reason text"\n'
+            "}"
+        )
+        with patch.object(self.ai, "call_llm", new=AsyncMock(return_value=json_resp)):
+            res = await self.ai.generate_pre_market_brief(23150.0, 13.5, {})
+        assert res["success"] is True
+        assert res["vix"] == 13.5
+        assert res["quality_score"] == 85
+        assert res["vix_analysis"] == "VIX analysis text"
+
+    @pytest.mark.asyncio
+    async def test_generate_pre_market_brief_fallback_on_error(self):
+        self.ai.configure("openai", "sk-key", enabled=True)
+        with patch.object(self.ai, "call_llm", new=AsyncMock(return_value="bad response that is not json")):
+            res = await self.ai.generate_pre_market_brief(23150.0, 13.5, {})
+        assert res["success"] is True  # returns fallback structure
+        assert res["vix"] == 13.5
+        assert res["quality_score"] == 80
+        assert "Default config fallback evaluation" in res["quality_reason"]
+
+    @pytest.mark.asyncio
+    async def test_generate_post_session_review_disabled(self):
+        res = await self.ai.generate_post_session_review([], {})
+        assert res["success"] is False
+        assert "AI not configured" in res["error"]
+
+    @pytest.mark.asyncio
+    async def test_generate_post_session_review_enabled_success(self):
+        self.ai.configure("openai", "sk-key", enabled=True)
+        json_resp = (
+            "{\n"
+            '  "what_worked": "What worked text",\n'
+            '  "what_didnt_work": "What didnt work text",\n'
+            '  "patterns_observed": "Patterns text",\n'
+            '  "future_advice": "Advice text"\n'
+            "}"
+        )
+        with patch.object(self.ai, "call_llm", new=AsyncMock(return_value=json_resp)):
+            res = await self.ai.generate_post_session_review([], {})
+        assert res["success"] is True
+        assert res["what_worked"] == "What worked text"
+
+    @pytest.mark.asyncio
+    async def test_generate_post_session_review_fallback_on_error(self):
+        self.ai.configure("openai", "sk-key", enabled=True)
+        with patch.object(self.ai, "call_llm", new=AsyncMock(return_value="bad response")):
+            res = await self.ai.generate_post_session_review([], {})
+        assert res["success"] is True
+        assert "Ensure levels are configured according to standard daily ranges" in res["future_advice"]
+
 
 # ── Notification Service Tests ────────────────────────────────────────────────
 
@@ -274,6 +340,30 @@ class TestAIRoutes:
             resp = client.get("/ai/suggestions")
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
+
+    def test_get_pre_market_brief(self, client):
+        mock_brief = {"success": True, "vix": 14.2, "quality_score": 90}
+        with patch("app.api.routes.ai.get_user_ai_service") as mock_get_service:
+            mock_service = MagicMock()
+            mock_service.generate_pre_market_brief = AsyncMock(return_value=mock_brief)
+            mock_get_service.return_value = mock_service
+            
+            resp = client.get("/ai/brief/pre-market")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        assert resp.json()["vix"] == 14.2
+
+    def test_get_post_session_review(self, client):
+        mock_review = {"success": True, "what_worked": "Perfect execution"}
+        with patch("app.api.routes.ai.get_user_ai_service") as mock_get_service:
+            mock_service = MagicMock()
+            mock_service.generate_post_session_review = AsyncMock(return_value=mock_review)
+            mock_get_service.return_value = mock_service
+            
+            resp = client.get("/ai/brief/post-session")
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        assert resp.json()["what_worked"] == "Perfect execution"
 
 
 class TestSessionRoutes:
