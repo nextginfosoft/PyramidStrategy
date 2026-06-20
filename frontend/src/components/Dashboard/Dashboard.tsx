@@ -14,6 +14,7 @@ import KiteStatus from '../KiteStatus/KiteStatus'
 import { LiveLogModal } from '../LiveLogModal/LiveLogModal'
 import { PDFReportsModal } from '../PDFReportsModal/PDFReportsModal'
 import { BacktestModal } from '../BacktestModal/BacktestModal'
+import { Notification } from '../Notification/Notification'
 
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
@@ -282,34 +283,43 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
 
       {/* Error messages */}
       {startMut.isError && (
-        <div className="bg-red-900/60 border-b border-red-800 px-4 py-2 text-xs text-red-200 flex items-center justify-between">
-          <div className="flex-1 text-center font-medium">
-            <span role="img" aria-label="Error Warning">⚠️</span> Safety Checks Failed: {(() => {
-              const errData = (startMut.error as any)?.response?.data?.detail;
-              if (errData?.errors && Array.isArray(errData.errors)) {
-                return errData.errors.join('; ');
-              }
-              return errData?.message || errData || startMut.error?.message;
-            })()}
-          </div>
-          <button 
-            onClick={() => startMut.reset()} 
-            className="text-red-300 hover:text-white ml-2 px-1.5 py-0.5 rounded border border-red-800 hover:border-red-600 bg-red-950/40 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-red-500"
-          >
-            Clear
-          </button>
+        <div className="px-4 py-2 border-b border-red-800 bg-red-950/20">
+          <Notification
+            type="error"
+            message={
+              <span>
+                Safety Checks Failed: {(() => {
+                  const errData = (startMut.error as any)?.response?.data?.detail;
+                  if (errData?.errors && Array.isArray(errData.errors)) {
+                    return errData.errors.join('; ');
+                  }
+                  return errData?.message || errData || startMut.error?.message;
+                })()}
+              </span>
+            }
+            onClose={() => startMut.reset()}
+          />
         </div>
       )}
 
       {/* Time warnings */}
       {status && !status.entries_allowed && (
-        <div className="bg-yellow-900/30 border-b border-yellow-800 px-4 py-1 text-xs text-yellow-400 text-center">
-          <span role="img" aria-label="Warning">⚠</span> 11:15 AM passed — No new entries allowed
+        <div className="px-4 py-1.5 border-b border-yellow-800 bg-yellow-950/20">
+          <Notification
+            type="warning"
+            message="11:15 AM passed — No new entries allowed"
+            className="justify-center"
+          />
         </div>
       )}
       {status?.squareoff_triggered && (
-        <div className="bg-red-900/40 border-b border-red-800 px-4 py-1 text-xs text-red-400 text-center font-bold animate-pulse">
-          <span role="img" aria-label="Squareoff Bell">🔔</span> 11:30 AM — SQUAREOFF TRIGGERED
+        <div className="px-4 py-1.5 border-b border-red-800 bg-red-950/20">
+          <Notification
+            type="error"
+            pulse
+            message="11:30 AM — SQUAREOFF TRIGGERED"
+            className="justify-center font-bold"
+          />
         </div>
       )}
 

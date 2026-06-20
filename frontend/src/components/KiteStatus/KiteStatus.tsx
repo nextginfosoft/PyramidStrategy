@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { kiteApi } from "../../services/api";
 import { useToastStore } from "../../store/toastStore";
+import { Notification } from "../Notification/Notification";
 
 interface KiteStatusData {
   authenticated: boolean;
@@ -190,9 +191,10 @@ export default function KiteStatus() {
       </div>
       {/* Token expiry reminder banner */}
       {status?.authenticated && !status.ticker_connected && (
-        <p className="text-xs text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded">
-          <span role="img" aria-label="Warning">⚠</span> Kite tokens expire daily at ~6 AM. Re-login if token is expired.
-        </p>
+        <Notification
+          type="warning"
+          message="Kite tokens expire daily at ~6 AM. Re-login if token is expired."
+        />
       )}
     </div>
 

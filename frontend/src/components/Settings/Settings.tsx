@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { configApi, aiApi, notificationApi } from '../../services/api'
+import { Notification } from '../Notification/Notification'
 
 type StatusMsg = { text: string; ok: boolean }
 
@@ -353,14 +354,11 @@ export function Settings({ onClose }: { onClose: () => void }) {
         {/* Status Alert Notification Bar */}
         {status && (
           <div className="px-5 pt-4">
-            <div className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 border transition-all ${
-              status.ok 
-                ? 'bg-green-950/30 border-green-800/50 text-green-300' 
-                : 'bg-red-950/30 border-red-800/50 text-red-300'
-            }`}>
-              <span>{status.ok ? '✓' : '⚠️'}</span>
-              <span>{status.text}</span>
-            </div>
+            <Notification
+              type={status.ok ? 'success' : 'error'}
+              message={status.text}
+              onClose={() => setStatus(null)}
+            />
           </div>
         )}
 
