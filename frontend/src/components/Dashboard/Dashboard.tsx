@@ -316,7 +316,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
       {/* Main grid */}
       <div className="grid grid-cols-12 gap-3 p-3">
         {/* Left: NIFTY + Levels */}
-        <div className="col-span-3 space-y-3">
+        <div className="col-span-12 lg:col-span-3 space-y-3">
           {/* NIFTY price */}
           <div className="bg-navy-900 border border-navy-700/60 rounded-xl p-4 shadow-lg flex flex-col gap-2 relative overflow-hidden transition-all duration-300 hover:border-navy-600">
             <div className="flex items-center justify-between">
@@ -402,7 +402,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         </div>
 
         {/* Center: P&L + Trade Log */}
-        <div className="col-span-5 space-y-3">
+        <div className="col-span-12 lg:col-span-5 space-y-3">
           {/* P&L Summary */}
           <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
             <div className="flex items-center justify-between mb-2">
@@ -464,7 +464,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         </div>
 
         {/* Right: AI Observer + Open Positions */}
-        <div className="col-span-4 space-y-3">
+        <div className="col-span-12 lg:col-span-4 space-y-3">
           {/* Open Positions */}
           <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
             <div className="text-xs text-navy-300 mb-2 font-semibold">OPEN POSITIONS</div>
