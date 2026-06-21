@@ -146,7 +146,11 @@ ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa"
 
 ## 4. Docker Compose Override Configuration (Next Step)
 
-To route Staging and Production frontends to ports **8080** and **8000** without changing the main `docker-compose.yml` file, configure Docker Compose Overrides directly on the VPS.
+To route Staging and Production frontends to ports **8080** and **8000** without conflicts, we have removed the default `ports` mapping (`80:80`) from the base `docker-compose.yml`. 
+
+> [!NOTE]
+> **Why are overrides needed?**
+> Docker Compose merges list fields (like `ports`) by **appending** instead of overwriting them. If `80:80` remained in the base file, the containers would attempt to bind to *both* port 80 and the override port. Delegating port mappings entirely to `docker-compose.override.yml` resolves this.
 
 ### 4.1 On Staging Server (`/opt/pyramidstrategy-test`)
 Create `docker-compose.override.yml`:

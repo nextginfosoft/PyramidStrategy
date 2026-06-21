@@ -45,8 +45,6 @@ services:
         - VITE_WS_URL=wss://pyramid.nextginfosoft.com/ws
     container_name: pyramid_frontend
     restart: always
-    ports:
-      - "80:80"
     depends_on:
       - backend
 
