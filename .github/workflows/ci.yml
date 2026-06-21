@@ -1,0 +1,51 @@
+name: CI — Test and Validate
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: pyramid
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          POSTGRES_DB: pyramid_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx flake8
+
+      - name: Lint check
+        run: flake8 app/ --max-line-length=100
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://pyramid:${{ secrets.DB_PASSWORD }}@localhost/pyramid_test
+          REDIS_URL: redis://localhost:6379
+          ENVIRONMENT: test
+        run: pytest tests/ -v --tb=short
