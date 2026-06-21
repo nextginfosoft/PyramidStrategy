@@ -1,7 +1,6 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: pyramid_db
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -9,22 +8,14 @@ services:
       POSTGRES_DB: pyramidstrategy
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
 
   redis:
     image: redis:7-alpine
-    container_name: pyramid_redis
     restart: always
-    ports:
-      - "6379:6379"
 
   backend:
     build: ./backend
-    container_name: pyramid_backend
     restart: always
-    ports:
-      - "8000:8000"
     environment:
       - APP_ENV=production
       - DATABASE_URL=postgresql://postgres:password@db:5432/pyramidstrategy
@@ -43,7 +34,6 @@ services:
       args:
         - VITE_API_BASE_URL=https://pyramid.nextginfosoft.com/api
         - VITE_WS_URL=wss://pyramid.nextginfosoft.com/ws
-    container_name: pyramid_frontend
     restart: always
     depends_on:
       - backend
