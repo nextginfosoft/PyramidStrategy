@@ -239,7 +239,7 @@ jobs:
 
       - name: Run Backend Tests
         env:
-          DATABASE_URL: sqlite:///:memory:
+          DATABASE_URL: "sqlite:///:memory:"
           USE_FAKE_REDIS: true
           ENVIRONMENT: test
         run: |
