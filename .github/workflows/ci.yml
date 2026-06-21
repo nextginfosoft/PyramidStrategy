@@ -1,0 +1,86 @@
+name: CI/CD — Staging Pipeline
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-validate:
+    runs-on: ubuntu-latest
+    name: test-and-validate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- BACKEND ---
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt flake8
+
+      - name: Backend Lint Check
+        run: flake8 backend/app/ --max-line-length=120 --ignore=E501,W293,W291,W503,W292,E712,E302,E303,E305,E402,E701,E127,E261,F401,F811,F841,F541
+
+      - name: Run Backend Tests
+        env:
+          DATABASE_URL: "sqlite:///:memory:"
+          USE_FAKE_REDIS: true
+          ENVIRONMENT: test
+          MOCK_TIME: "10:00"
+        run: |
+          cd backend
+          pytest tests/ -v --tb=short
+
+      # --- FRONTEND ---
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Frontend Build check
+        run: |
+          cd frontend
+          npm run build
+
+      # --- DOCKER BUILD CHECKS ---
+      - name: Docker build backend check
+        run: docker build -t pyramid-backend ./backend
+
+      - name: Docker build frontend check
+        run: docker build -t pyramid-frontend ./frontend
+
+  deploy-staging:
+    needs: test-and-validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Staging VPS via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TEST_VPS_HOST }}
+          username: ${{ secrets.TEST_VPS_USER }}
+          key: ${{ secrets.TEST_VPS_SSH_KEY }}
+          script: |
+            cd /opt/pyramidstrategy-test
+            git pull origin dev
+            docker compose build --no-cache
+            docker compose up -d
+            docker system prune -f
+            echo "✅ Deployed to Staging (test.nextginfosoft.com) at $(date)"
