@@ -325,3 +325,52 @@ jobs:
             docker system prune -f
             echo "✅ Deployed to Production (pyramid.nextginfosoft.com) at $(date)"
 ```
+
+---
+
+## 7. Troubleshooting & Common Gotchas
+
+These are the real-world formatting and configuration issues encountered during the setting up of the Staging environment and their permanent fixes.
+
+### 7.1 Nginx Startup Crash: `host not found in upstream "backend"`
+* **Symptoms**: The `pyramid_frontend` container keeps restarting and logs `[emerg] host not found in upstream "backend"`.
+* **Cause**: Nginx starts up so fast that it attempts to resolve the Docker hostname `backend` before the internal Docker DNS resolver has initialized it on the network. If Nginx fails to resolve it at start, it immediately crashes.
+* **Fix**: Change `frontend/nginx.conf` to resolve the host dynamically using variables and specifying the Docker resolver (`127.0.0.11`):
+  ```nginx
+  location /api/ {
+      resolver 127.0.0.11 ipv6=off valid=30s;
+      set $upstream_api http://backend:8000/;
+      proxy_pass $upstream_api;
+  }
+  ```
+
+### 7.2 Docker Compose Port Concatenation (Port 80 address already in use)
+* **Symptoms**: Running `docker compose up -d` fails with `failed to bind host port 0.0.0.0:80/tcp: address already in use` even though the override lists `"8080:80"`.
+* **Cause**: Docker Compose merges arrays/lists (like `ports:`) by **concatenating (appending)** them instead of overwriting them. Therefore, Nginx tries to bind to both `80:80` and `8080:80`.
+* **Fix**: Remove the default `ports: - "80:80"` section from the base `docker-compose.yml`. Keep the port mappings completely isolated in the staging/production `docker-compose.override.yml` files.
+
+### 7.3 Invalid Indentation in `docker-compose.override.yml`
+* **Symptoms**: Docker compose up throws `services must be a mapping` or silently ignores overrides.
+* **Cause**: YAML requires root-level keywords (such as `services:`) to have **0 indentation spaces** at the start of the line.
+* **Fix**: Ensure the override file starts with `services:` aligned to column 0:
+  ```yaml
+  services:
+    frontend:
+      ports:
+        - "8080:80"
+  ```
+  *(To write the override file cleanly from terminal without copy-paste formatting issues, run: `printf "services:\n  frontend:\n    ports:\n      - \"8080:80\"\n" > docker-compose.override.yml`)*
+
+### 7.4 Invalid YAML Workflow File Syntax: Colons in Unquoted Strings
+* **Symptoms**: GitHub Actions throws `Invalid workflow file: You have an error in your yaml syntax`.
+* **Cause**: The YAML parser interprets unquoted colons inside strings (such as `sqlite:///:memory:`) as keys/delimiters, failing the parsing check.
+* **Fix**: Wrap strings containing colons in double quotes:
+  ```yaml
+  DATABASE_URL: "sqlite:///:memory:"
+  ```
+
+### 7.5 GitHub Secret Names Error
+* **Symptoms**: GitHub throws validation error: `Secret names can only contain alphanumeric characters...`.
+* **Cause**: Pasting the entire multiline SSH key block in the **Name** input field instead of the **Value (Secret)** field, or having trailing/leading spaces in the secret name.
+* **Fix**: Type the secret name (e.g., `TEST_VPS_SSH_KEY`) manually in the Name field without copy-pasting to prevent copying trailing spaces, and paste the actual key block in the large Secret/Value input area.
+
