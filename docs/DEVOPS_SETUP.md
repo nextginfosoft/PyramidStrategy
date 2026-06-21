@@ -338,9 +338,9 @@ These are the real-world formatting and configuration issues encountered during 
 * **Fix**: Change `frontend/nginx.conf` to resolve the host dynamically using variables and specifying the Docker resolver (`127.0.0.11`):
   ```nginx
   location /api/ {
-      rewrite ^/api/(.*)$ /$1 break;
       resolver 127.0.0.11 ipv6=off valid=30s;
       set $upstream_api http://backend:8000;
+      rewrite ^/api/(.*)$ /$1 break;
       proxy_pass $upstream_api;
   }
   ```
