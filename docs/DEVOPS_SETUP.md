@@ -242,6 +242,7 @@ jobs:
           DATABASE_URL: "sqlite:///:memory:"
           USE_FAKE_REDIS: true
           ENVIRONMENT: test
+          MOCK_TIME: "10:00"
         run: |
           cd backend
           pytest tests/ -v --tb=short
