@@ -144,23 +144,28 @@ ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa"
 
 ---
 
-## 4. Docker Compose Override Configuration (Next Step)
+## 4. Docker Compose Override Configuration
 
-To route Staging and Production frontends to ports **8080** and **8000** without conflicts, we have removed the default `ports` mapping (`80:80`) from the base `docker-compose.yml`. 
+To route Staging and Production frontends to ports **8080** and **8000** without conflicts, we have removed the default `ports` mapping (`80:80`) from the base `docker-compose.yml`. In addition, we removed hardcoded `container_name` attributes and database/redis `ports` mapping from the base configuration so multiple environments can run on the same Docker host concurrently.
 
 > [!NOTE]
 > **Why are overrides needed?**
-> Docker Compose merges list fields (like `ports`) by **appending** instead of overwriting them. If `80:80` remained in the base file, the containers would attempt to bind to *both* port 80 and the override port. Delegating port mappings entirely to `docker-compose.override.yml` resolves this.
+> Docker Compose merges list fields (like `ports`) by **appending** instead of overwriting them. Removing host-bound ports (like 5432, 6379, 8000) and using `docker-compose.override.yml` for host-facing HTTP ports prevents port conflicts between instances. Deleting the `container_name` entries allows Docker to automatically namespace container names dynamically.
 
 ### 4.1 On Staging Server (`/opt/pyramidstrategy-test`)
 Create `docker-compose.override.yml`:
 ```bash
 nano /opt/pyramidstrategy-test/docker-compose.override.yml
 ```
-Add the following content:
+Add the following content (specifying the staging API URLs to build with):
 ```yaml
 services:
   frontend:
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_BASE_URL=https://test.nextginfosoft.com/api
+        - VITE_WS_URL=wss://test.nextginfosoft.com/ws
     ports:
       - "8080:80"
 ```
