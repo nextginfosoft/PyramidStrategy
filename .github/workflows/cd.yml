@@ -1,0 +1,24 @@
+name: CD — Production Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Production VPS via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_VPS_HOST }}
+          username: ${{ secrets.PROD_VPS_USER }}
+          key: ${{ secrets.PROD_VPS_SSH_KEY }}
+          script: |
+            cd /opt/pyramidstrategy
+            git pull origin main
+            docker compose build --no-cache
+            docker compose up -d
+            docker system prune -f
+            echo "✅ Deployed to Production (pyramid.nextginfosoft.com) at $(date)"
