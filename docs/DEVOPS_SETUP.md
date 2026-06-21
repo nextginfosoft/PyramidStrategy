@@ -56,11 +56,17 @@ systemctl enable nginx
 systemctl start nginx
 ```
 
-### 2.3 Create Deployment Directories
+### 2.3 Create Deployment Directories and Initial Clone
+Create the workspaces on the VPS and perform the initial one-time git clones to establish the tracking repositories:
 ```bash
-mkdir -p /opt/pyramidstrategy      # Production workspace
-mkdir -p /opt/pyramidstrategy-test # Staging workspace
+mkdir -p /opt/pyramidstrategy
+mkdir -p /opt/pyramidstrategy-test
+
+# Initial one-time git clones (run these on your VPS):
+git clone -b dev https://github.com/nextginfosoft/PyramidStrategy.git /opt/pyramidstrategy-test
+git clone -b main https://github.com/nextginfosoft/PyramidStrategy.git /opt/pyramidstrategy
 ```
+
 
 ### 2.4 Configure Nginx Reverse Proxy
 Created `/etc/nginx/sites-available/pyramid` to route staging and production traffic to respective host ports:
