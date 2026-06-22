@@ -57,3 +57,14 @@ def init_db():
     from app.models import models  # noqa: F401 — import to register models
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
+    
+    # Self-healing migration for squareoff_time
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE strategy_config ADD COLUMN squareoff_time VARCHAR(5) DEFAULT '11:30'"))
+            conn.commit()
+            logger.info("Database migration: Added squareoff_time to strategy_config")
+    except Exception as e:
+        # Expected error if column already exists
+        logger.debug(f"Database migration (squareoff_time check/add): {e}")

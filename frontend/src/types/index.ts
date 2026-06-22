@@ -47,6 +47,7 @@ export interface StrategyConfig {
   target_points: number
   sl_points: number
   paper_trade: boolean
+  squareoff_time?: string
   is_active: boolean
 }
 

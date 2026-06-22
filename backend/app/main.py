@@ -103,39 +103,63 @@ def schedule_jobs():
 
     scheduler.add_job(pre_market_brief_job, "cron", day_of_week="mon-fri", hour=8, minute=45, id="pre_market_brief")
 
-    # 11:15 AM — log warning, entries blocked
-    scheduler.add_job(
-        lambda: logger.warning("🕐 11:15 AM — No more fresh entries allowed today"),
-        "cron", hour=11, minute=15, id="entry_cutoff_log"
-    )
-
-    # 11:30 AM — force squareoff
-    async def scheduled_squareoff():
-        for uid, eng in list(engine_manager._engines.items()):
-            if eng.is_running:
-                try:
-                    logger.warning(f"🔔 11:30 AM scheduler — triggering force squareoff for User {uid}")
-                    await eng._force_squareoff()
-                except Exception as e:
-                    logger.error(f"Scheduled squareoff failed for User {uid}: {e}")
-
-    scheduler.add_job(scheduled_squareoff, "cron", hour=11, minute=30, id="squareoff")
-
-    # 12:30 PM — Automated Daily EOD Report
-    async def daily_reporting():
+    # Unified Minute-by-Minute Time Trigger Checker
+    async def check_time_triggers():
         from app.db.database import SessionLocal
-        from app.models.models import User
+        from app.models.models import User, StrategyConfig
         from app.services.reporting import send_daily_report
-        from datetime import date
+        from app.core.time_rules import now_ist
+        from datetime import date, timedelta
+        
+        now = now_ist()
+        current_time_str = now.strftime("%H:%M")
+        today = now.date()
+        
         try:
             with SessionLocal() as db:
                 users = db.query(User).all()
                 for u in users:
-                    await send_daily_report(u.id, date.today())
+                    # Get active strategy config
+                    cfg = db.query(StrategyConfig).filter(
+                        StrategyConfig.user_id == u.id, 
+                        StrategyConfig.is_active == True
+                    ).first()
+                    
+                    sq_time_str = "11:30"
+                    if cfg and cfg.squareoff_time:
+                        sq_time_str = cfg.squareoff_time
+                        
+                    try:
+                        h, m = map(int, sq_time_str.split(":"))
+                        sq_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                        
+                        cutoff_dt = sq_dt - timedelta(minutes=15)
+                        cutoff_time_str = cutoff_dt.strftime("%H:%M")
+                        
+                        report_dt = sq_dt + timedelta(minutes=15)
+                        report_time_str = report_dt.strftime("%H:%M")
+                        
+                        # 1. Entry Cutoff Check
+                        if current_time_str == cutoff_time_str:
+                            logger.warning(f"🕐 {cutoff_time_str} — No more fresh entries allowed today for User {u.id}")
+                            
+                        # 2. Square-off Check
+                        if current_time_str == sq_time_str:
+                            eng = engine_manager._engines.get(u.id)
+                            if eng and eng.is_running:
+                                logger.warning(f"🔔 {sq_time_str} scheduler — triggering force squareoff for User {u.id}")
+                                await eng._force_squareoff()
+                                
+                        # 3. Daily Report Check
+                        if current_time_str == report_time_str:
+                            logger.info(f"📊 {report_time_str} — Triggering automated EOD Daily Report for User {u.id}")
+                            await send_daily_report(u.id, today)
+                    except Exception as ex:
+                        logger.error(f"Error parsing/triggering scheduler times for User {u.id}: {ex}")
         except Exception as e:
-            logger.error(f"Daily reporting job failed: {e}")
+            logger.error(f"Error in unified time triggers check job: {e}")
 
-    scheduler.add_job(daily_reporting, "cron", hour=12, minute=30, id="daily_report")
+    scheduler.add_job(check_time_triggers, "cron", minute="*", id="check_time_triggers")
 
     # Monday 9:00 AM — Weekly Summary Report
     async def weekly_reporting():

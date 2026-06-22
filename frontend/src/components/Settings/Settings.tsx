@@ -26,6 +26,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     lot_size: cfg?.lot_size ?? 65,
     target_points: cfg?.target_points ?? 20,
     sl_points: cfg?.sl_points ?? 10,
+    squareoff_time: cfg?.squareoff_time ?? '11:30',
   })
 
   const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '' })
@@ -96,6 +97,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         lot_size: cfg.lot_size,
         target_points: cfg.target_points,
         sl_points: cfg.sl_points,
+        squareoff_time: cfg.squareoff_time ?? '11:30',
       })
       if (cfg.paper_trade !== undefined) {
         setPaperTrade(cfg.paper_trade)
@@ -462,7 +464,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 {/* Core Parameters card */}
                 <div className="bg-navy-900/20 border border-navy-700 rounded-xl p-4">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-navy-300 block mb-3">⚙ Core Parameters</span>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-3">
                     <div className="block space-y-1">
                       <span className="text-[10px] text-navy-300 font-medium">Lot Size (Lots)</span>
                       <div className="relative">
@@ -513,6 +515,23 @@ export function Settings({ onClose }: { onClose: () => void }) {
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">🛑</span>
                       </div>
                       <span className="text-[9px] text-navy-400 block">Active at Level 3</span>
+                    </div>
+
+                    <div className="block space-y-1">
+                      <span className="text-[10px] text-navy-300 font-medium">Squareoff Time</span>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          pattern="^(0[9]|1[0-5]):[0-5][0-9]$"
+                          placeholder="11:30"
+                          required
+                          className="w-full bg-navy-900 border border-navy-700 focus:border-orange-500 rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono"
+                          value={levels.squareoff_time}
+                          onChange={e => setLevels(p => ({ ...p, squareoff_time: e.target.value }))}
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">⏰</span>
+                      </div>
+                      <span className="text-[9px] text-navy-400 block">Cutoff = 15m prior</span>
                     </div>
                   </div>
                 </div>

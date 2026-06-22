@@ -44,6 +44,7 @@ async def start_strategy(
         "target_points": float(cfg.target_points),
         "sl_points": float(cfg.sl_points),
         "paper_trade": cfg.paper_trade,
+        "squareoff_time": cfg.squareoff_time or "11:30",
     }
 
     # Run safety checks before starting (especially important for live mode)
@@ -140,6 +141,7 @@ def safety_check(db: Session = Depends(get_db), user: User = Depends(require_aut
             "target_points": float(cfg.target_points),
             "sl_points": float(cfg.sl_points),
             "paper_trade": cfg.paper_trade,
+            "squareoff_time": cfg.squareoff_time or "11:30",
         }
     elif user_engine.config:
         cfg_dict = user_engine.config

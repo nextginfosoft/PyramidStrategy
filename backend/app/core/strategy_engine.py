@@ -139,7 +139,7 @@ class StrategyEngine:
             return
 
         # Check squareoff first (highest priority)
-        if should_squareoff():
+        if should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
             self.last_nifty_price = nifty_ltp
             await self._force_squareoff()
             return
@@ -178,7 +178,7 @@ class StrategyEngine:
 
     async def _check_level_entry(self, sm: StateMachine, side: str, nifty_ltp: Decimal, prev_nifty: Optional[Decimal]):
         """Check if NIFTY has hit a trigger level and entry is warranted."""
-        if not is_entry_allowed():
+        if not is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
             return
 
         cfg = self.config
@@ -312,11 +312,12 @@ class StrategyEngine:
         asyncio.create_task(self._notify_ai("EXIT", sm.side, reason, nifty_ltp))
 
     async def _force_squareoff(self):
-        """Force close all open positions at 11:30 AM."""
+        """Force close all open positions at configured squareoff time."""
+        sq_time_str = self.config.get("squareoff_time", "11:30") if self.config else "11:30"
         for sm in (self.ce, self.pe):
             if sm.state not in (State.IDLE, State.BLOCKED):
                 option_ltp = self.get_option_ltp(sm.locked_instrument) or sm.entry_avg_price
-                logger.warning(f"User {self.user_id} [{sm.side}] FORCE SQUAREOFF at 11:30 AM")
+                logger.warning(f"User {self.user_id} [{sm.side}] FORCE SQUAREOFF at {sq_time_str}")
                 await self._execute_exit(sm, option_ltp, "SQUAREOFF", Decimal("0"))
 
         self.stop()
@@ -379,8 +380,8 @@ class StrategyEngine:
                 "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
                 "is_running": self.is_running,
                 "paper_trade": self.mock_mode,
-                "entries_allowed": is_entry_allowed(),
-                "squareoff_triggered": should_squareoff(),
+                "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
+                "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
                 "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
                 "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
             },
@@ -444,8 +445,8 @@ class StrategyEngine:
             "paper_trade": self.mock_mode,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
-            "entries_allowed": is_entry_allowed(),
-            "squareoff_triggered": should_squareoff(),
+            "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
+            "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
             "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
         }

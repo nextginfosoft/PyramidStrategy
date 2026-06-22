@@ -14,12 +14,12 @@ Checks:
   7. No existing open positions from a previous session (CAUTION flag)
 """
 
-from datetime import time
+from datetime import time, datetime, date, timedelta
 from decimal import Decimal
 from loguru import logger
 import pytz
 
-from app.core.time_rules import now_ist  # module-level so tests can patch it
+from app.core.time_rules import now_ist, get_entry_cutoff_time, get_time_from_str  # module-level so tests can patch it
 
 IST = pytz.timezone("Asia/Kolkata")
 MIN_REQUIRED_MARGIN = Decimal("50000")  # ₹50,000 minimum
@@ -52,13 +52,18 @@ def run_safety_checks(
 
     # ── 2. Time check ─────────────────────────────────────────────────────
     current = now_ist().time()
-    cutoff = time(11, 0)
+    sq_time_str = strategy_config.get("squareoff_time", "11:30") if strategy_config else "11:30"
+    cutoff = get_entry_cutoff_time(sq_time_str)
+    
+    # Warning cutoff is 15 minutes before entry cutoff (or 30 mins before square-off)
+    warning_cutoff_dt = datetime.combine(date.min, cutoff) - timedelta(minutes=15)
+    warning_cutoff = warning_cutoff_dt.time()
     market_open = time(9, 15)
 
-    if current >= time(11, 15):
-        errors.append("Cannot start after 11:15 AM IST — no entries allowed after this time")
-    elif current >= cutoff:
-        warnings.append(f"⚠️ Starting at {current.strftime('%H:%M')} IST — limited time before 11:15 AM cutoff")
+    if current >= cutoff:
+        errors.append(f"Cannot start after {cutoff.strftime('%H:%M')} IST — no entries allowed after this time")
+    elif current >= warning_cutoff:
+        warnings.append(f"⚠️ Starting at {current.strftime('%H:%M')} IST — limited time before {cutoff.strftime('%H:%M')} cutoff")
     elif current < market_open:
         warnings.append(f"Market not open yet ({current.strftime('%H:%M')} IST). Strategy will activate at 9:15 AM.")
 

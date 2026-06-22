@@ -17,6 +17,37 @@ import { BacktestModal } from '../BacktestModal/BacktestModal'
 import { Notification } from '../Notification/Notification'
 import { UserGuide } from '../UserGuide/UserGuide'
 
+const formatTimeTo12Hour = (timeStr: string): string => {
+  try {
+    const [hStr, mStr] = timeStr.split(':')
+    const h = parseInt(hStr, 10)
+    const m = parseInt(mStr, 10)
+    const period = h >= 12 ? 'PM' : 'AM'
+    const displayH = h % 12 === 0 ? 12 : h % 12
+    const displayM = m < 10 ? `0${m}` : m
+    return `${displayH}:${displayM} ${period}`
+  } catch (e) {
+    return timeStr
+  }
+}
+
+const getCutoffTimeStr = (squareoffTime: string): string => {
+  try {
+    const [hStr, mStr] = squareoffTime.split(':')
+    const h = parseInt(hStr, 10)
+    const m = parseInt(mStr, 10)
+    const totalMinutes = h * 60 + m - 15
+    const cutoffH = Math.floor(totalMinutes / 60)
+    const cutoffM = totalMinutes % 60
+    const period = cutoffH >= 12 ? 'PM' : 'AM'
+    const displayH = cutoffH % 12 === 0 ? 12 : cutoffH % 12
+    const displayM = cutoffM < 10 ? `0${cutoffM}` : cutoffM
+    return `${displayH}:${displayM} ${period}`
+  } catch (e) {
+    return '11:15 AM'
+  }
+}
+
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
   const qc = useQueryClient()
@@ -354,7 +385,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         <div className="px-4 py-1.5 border-b border-yellow-800 bg-yellow-950/20">
           <Notification
             type="warning"
-            message="11:15 AM passed — No new entries allowed"
+            message={`${getCutoffTimeStr(config?.squareoff_time ?? '11:30')} passed — No new entries allowed`}
             className="justify-center"
           />
         </div>
@@ -364,7 +395,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           <Notification
             type="error"
             pulse
-            message="11:30 AM — SQUAREOFF TRIGGERED"
+            message={`${formatTimeTo12Hour(config?.squareoff_time ?? '11:30')} — SQUAREOFF TRIGGERED`}
             className="justify-center font-bold"
           />
         </div>
