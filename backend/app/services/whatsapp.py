@@ -122,34 +122,48 @@ class WhatsAppService:
     # ── Meta Implementation ───────────────────────────────────────────────────
 
     async def _send_meta_message(self, text: str) -> bool:
+        if not self._recipient_phone:
+            return False
+        recipients = [r.strip() for r in self._recipient_phone.split(",") if r.strip()]
+        if not recipients:
+            return False
+
         url = f"https://graph.facebook.com/v18.0/{self._phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {self._access_token}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": self._recipient_phone,
-            "type": "text",
-            "text": {
-                "body": text
-            }
-        }
+        success = True
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-                if resp.status_code == 200:
-                    logger.info(f"User {self.user_id}: WhatsApp Meta message sent successfully")
-                    return True
-                else:
-                    logger.warning(f"User {self.user_id}: WhatsApp Meta send failed: {resp.status_code} {resp.text}")
-                    return False
+                for recipient in recipients:
+                    payload = {
+                        "messaging_product": "whatsapp",
+                        "recipient_type": "individual",
+                        "to": recipient,
+                        "type": "text",
+                        "text": {
+                            "body": text
+                        }
+                    }
+                    resp = await client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        logger.info(f"User {self.user_id}: WhatsApp Meta message sent successfully to {recipient}")
+                    else:
+                        logger.warning(f"User {self.user_id}: WhatsApp Meta send failed to {recipient}: {resp.status_code} {resp.text}")
+                        success = False
         except Exception as e:
             logger.error(f"User {self.user_id}: WhatsApp Meta failed: {e}")
-            return False
+            success = False
+        return success
 
     async def _send_meta_document(self, file_path: str, caption: str) -> bool:
+        if not self._recipient_phone:
+            return False
+        recipients = [r.strip() for r in self._recipient_phone.split(",") if r.strip()]
+        if not recipients:
+            return False
+
         # Step 1: Upload Media to get Media ID
         upload_url = f"https://graph.facebook.com/v18.0/{self._phone_number_id}/media"
         headers = {
@@ -180,28 +194,30 @@ class WhatsAppService:
                     
                 # Step 2: Send Message referencing the Media ID
                 msg_url = f"https://graph.facebook.com/v18.0/{self._phone_number_id}/messages"
-                msg_payload = {
-                    "messaging_product": "whatsapp",
-                    "recipient_type": "individual",
-                    "to": self._recipient_phone,
-                    "type": "document",
-                    "document": {
-                        "id": media_id,
-                        "caption": caption,
-                        "filename": filename
-                    }
-                }
                 msg_headers = {
                     "Authorization": f"Bearer {self._access_token}",
                     "Content-Type": "application/json"
                 }
-                resp = await client.post(msg_url, json=msg_payload, headers=msg_headers)
-                if resp.status_code == 200:
-                    logger.info(f"User {self.user_id}: WhatsApp Meta document sent successfully")
-                    return True
-                else:
-                    logger.warning(f"User {self.user_id}: WhatsApp Meta document send failed: {resp.status_code} {resp.text}")
-                    return False
+                success = True
+                for recipient in recipients:
+                    msg_payload = {
+                        "messaging_product": "whatsapp",
+                        "recipient_type": "individual",
+                        "to": recipient,
+                        "type": "document",
+                        "document": {
+                            "id": media_id,
+                            "caption": caption,
+                            "filename": filename
+                        }
+                    }
+                    resp = await client.post(msg_url, json=msg_payload, headers=msg_headers)
+                    if resp.status_code == 200:
+                        logger.info(f"User {self.user_id}: WhatsApp Meta document sent successfully to {recipient}")
+                    else:
+                        logger.warning(f"User {self.user_id}: WhatsApp Meta document send failed to {recipient}: {resp.status_code} {resp.text}")
+                        success = False
+                return success
         except Exception as e:
             logger.error(f"User {self.user_id}: WhatsApp Meta document send exception: {e}")
             return False
@@ -209,25 +225,33 @@ class WhatsAppService:
     # ── Twilio Implementation ─────────────────────────────────────────────────
 
     async def _send_twilio_message(self, text: str) -> bool:
+        if not self._twilio_to:
+            return False
+        recipients = [r.strip() for r in self._twilio_to.split(",") if r.strip()]
+        if not recipients:
+            return False
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self._twilio_sid}/Messages.json"
         auth = (self._twilio_sid, self._twilio_auth_token)
-        data = {
-            "To": f"whatsapp:{self._twilio_to}",
-            "From": f"whatsapp:{self._twilio_from}",
-            "Body": text
-        }
+        success = True
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(url, auth=auth, data=data)
-                if resp.status_code in (200, 201):
-                    logger.info(f"User {self.user_id}: WhatsApp Twilio message sent successfully")
-                    return True
-                else:
-                    logger.warning(f"User {self.user_id}: WhatsApp Twilio send failed: {resp.status_code} {resp.text}")
-                    return False
+                for recipient in recipients:
+                    clean_recipient = recipient.replace("whatsapp:", "").strip()
+                    data = {
+                        "To": f"whatsapp:{clean_recipient}",
+                        "From": f"whatsapp:{self._twilio_from}",
+                        "Body": text
+                    }
+                    resp = await client.post(url, auth=auth, data=data)
+                    if resp.status_code in (200, 201):
+                        logger.info(f"User {self.user_id}: WhatsApp Twilio message sent successfully to {clean_recipient}")
+                    else:
+                        logger.warning(f"User {self.user_id}: WhatsApp Twilio send failed to {clean_recipient}: {resp.status_code} {resp.text}")
+                        success = False
         except Exception as e:
             logger.error(f"User {self.user_id}: WhatsApp Twilio failed: {e}")
-            return False
+            success = False
+        return success
 
 # Global user instance cache for WhatsApp
 _whatsapp_instances: dict[int, WhatsAppService] = {}
