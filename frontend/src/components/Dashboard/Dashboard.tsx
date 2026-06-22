@@ -20,7 +20,7 @@ import { UserGuide } from '../UserGuide/UserGuide'
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
   const qc = useQueryClient()
-  const { status, wsConnected } = useStrategyStore()
+  const { status, wsConnected, setStatus } = useStrategyStore()
   const addToast = useToastStore(state => state.addToast)
   const [showSettings, setShowSettings] = useState(false)
   const [showUserGuide, setShowUserGuide] = useState(false)
@@ -144,6 +144,18 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     queryFn: tradesApi.getTodayPnl,
     refetchInterval: wsConnected ? 15000 : 3000,
   })
+
+  const { data: queryStatus } = useQuery({
+    queryKey: ['strategy-status'],
+    queryFn: strategyApi.getStatus,
+    refetchInterval: wsConnected ? 15000 : 3000,
+  })
+
+  useEffect(() => {
+    if (queryStatus) {
+      setStatus(queryStatus)
+    }
+  }, [queryStatus, setStatus])
 
   const startMut = useMutation({
     mutationFn: strategyApi.start,
@@ -306,16 +318,33 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
             type="error"
             message={
               <span>
-                Safety Checks Failed: {(() => {
+                {(() => {
                   const errData = (startMut.error as any)?.response?.data?.detail;
                   if (errData?.errors && Array.isArray(errData.errors)) {
-                    return errData.errors.join('; ');
+                    return `Safety Checks Failed: ${errData.errors.join('; ')}`;
                   }
                   return errData?.message || errData || startMut.error?.message;
                 })()}
               </span>
             }
             onClose={() => startMut.reset()}
+          />
+        </div>
+      )}
+
+      {stopMut.isError && (
+        <div className="px-4 py-2 border-b border-red-800 bg-red-950/20">
+          <Notification
+            type="error"
+            message={
+              <span>
+                Failed to stop strategy: {(() => {
+                  const errData = (stopMut.error as any)?.response?.data?.detail;
+                  return errData?.message || errData || stopMut.error?.message;
+                })()}
+              </span>
+            }
+            onClose={() => stopMut.reset()}
           />
         </div>
       )}
