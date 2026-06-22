@@ -8,7 +8,9 @@ from app.core.state_machine import State
 
 @pytest.fixture
 def engine():
-    with patch("app.core.strategy_engine.SessionLocal") as mock_session_local:
+    with patch("app.core.strategy_engine.SessionLocal") as mock_session_local, \
+         patch("app.core.strategy_engine.should_squareoff", return_value=False), \
+         patch("app.core.strategy_engine.is_entry_allowed", return_value=True):
         mock_db = MagicMock()
         mock_session_local.return_value.__enter__.return_value = mock_db
 
