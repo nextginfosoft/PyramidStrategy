@@ -112,4 +112,3 @@ def estimate_option_price(symbol: str, nifty_ltp: Decimal) -> Decimal:
     except Exception as e:
         logger.warning(f"Error estimating option price for {symbol}: {e}")
         return Decimal("100.00")
-
