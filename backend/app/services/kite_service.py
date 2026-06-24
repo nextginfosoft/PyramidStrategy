@@ -6,6 +6,7 @@ Multi-User version: cached per user_id.
 """
 
 import asyncio
+import time
 import threading
 from decimal import Decimal
 from typing import Optional, Callable
@@ -35,6 +36,10 @@ class KiteService:
         self._is_connected: bool = False
         self._ticker_running: bool = False
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+        self._last_api_error: Optional[str] = None
+        self._last_ticker_error: Optional[str] = None
+        self._last_nifty_tick_time: Optional[float] = None
 
         # Async callbacks injected by strategy engine
         self._on_nifty_tick: Optional[Callable] = None   # async (ltp: Decimal)
@@ -134,10 +139,12 @@ class KiteService:
                     loaded += 1
 
             self._instruments_loaded = True
+            self._last_api_error = None
             logger.info(f"User {self.user_id}: Loaded {loaded} NIFTY NFO instruments into cache")
 
         except Exception as e:
             logger.error(f"User {self.user_id}: Failed to load NFO instruments: {e}")
+            self._last_api_error = f"Instruments load failed: {str(e)}"
 
     def get_instrument_token(self, symbol: str) -> Optional[int]:
         """Resolve option symbol → Kite instrument token (in-memory + Redis fallback)."""
@@ -190,6 +197,12 @@ class KiteService:
                     continue
 
                 if token == NIFTY_SPOT_TOKEN:
+                    # Cache Nifty LTP in Redis with a 5s TTL
+                    try:
+                        get_redis_client().setex("nifty:ltp", 5, str(ltp))
+                    except Exception:
+                        pass
+                    self._last_nifty_tick_time = time.time()
                     # Dispatch NIFTY tick to strategy engine
                     asyncio.run_coroutine_threadsafe(
                         self._on_nifty_tick(ltp), loop
@@ -208,6 +221,7 @@ class KiteService:
         def on_connect(ws, response):
             logger.info(f"✅ User {self.user_id}: KiteTicker connected — subscribing to NIFTY 50 spot")
             self._is_connected = True
+            self._last_ticker_error = None
             ws.subscribe([NIFTY_SPOT_TOKEN])
             ws.set_mode(ws.MODE_LTP, [NIFTY_SPOT_TOKEN])
             # Re-subscribe to open option positions (e.g. after reconnect)
@@ -220,16 +234,20 @@ class KiteService:
         def on_disconnect(ws, code, reason):
             logger.warning(f"User {self.user_id}: KiteTicker disconnected — code={code} reason={reason}")
             self._is_connected = False
+            self._last_ticker_error = f"Disconnected (code={code}): {reason or 'Unknown reason'}"
 
         def on_error(ws, code, reason):
             logger.error(f"User {self.user_id}: KiteTicker error — code={code} reason={reason}")
+            self._last_ticker_error = f"Connection error: {reason or 'Unknown connection error'}"
 
         def on_reconnect(ws, attempts_count):
             logger.info(f"User {self.user_id}: KiteTicker reconnecting... attempt #{attempts_count}")
+            self._last_ticker_error = f"Reconnecting... attempt #{attempts_count}"
 
         def on_noreconnect(ws):
             logger.error(f"User {self.user_id}: KiteTicker: max reconnect attempts reached — manual restart needed")
             self._ticker_running = False
+            self._last_ticker_error = "Failed to connect: Max reconnect attempts reached"
 
         self._ticker.on_ticks = on_ticks
         self._ticker.on_connect = on_connect
@@ -305,9 +323,11 @@ class KiteService:
             ltp = resp.get(f"NFO:{symbol}", {}).get("last_price")
             val = Decimal(str(ltp)) if ltp else None
             self._rest_ltp_cache[symbol] = (now, val)
+            self._last_api_error = None
             return val
         except Exception as e:
             logger.error(f"User {self.user_id}: REST LTP fetch failed for {symbol}: {e}")
+            self._last_api_error = f"LTP fetch failed: {str(e)}"
             self._rest_ltp_cache[symbol] = (now, None)
             return None
 
@@ -335,9 +355,11 @@ class KiteService:
                 if ohlc:
                     close = ohlc.get("close")
                     if close:
+                        self._last_api_error = None
                         return Decimal(str(close))
         except Exception as e:
             logger.warning(f"Failed to fetch NIFTY previous close (REST API): {e}")
+            self._last_api_error = f"Failed to fetch prev close: {str(e)}"
         return None
 
     def get_india_vix(self) -> float:
@@ -431,6 +453,7 @@ class KiteService:
                     min_pain = pain
                     max_pain_strike = k
             
+            self._last_api_error = None
             return {
                 "pcr": pcr,
                 "max_pain": max_pain_strike,
@@ -440,6 +463,7 @@ class KiteService:
             }
         except Exception as e:
             logger.error(f"User {self.user_id}: Failed to compute option chain snapshot: {e}")
+            self._last_api_error = f"Option chain snapshot failed: {str(e)}"
             return {
                 "pcr": 1.0,
                 "max_pain": int(round(current_ltp / 50) * 50),
@@ -451,6 +475,10 @@ class KiteService:
     # ── Status ───────────────────────────────────────────────────────────────
 
     def get_status(self) -> dict:
+        last_seconds = None
+        if self._last_nifty_tick_time:
+            last_seconds = int(time.time() - self._last_nifty_tick_time)
+
         return {
             "authenticated": self.is_authenticated(),
             "ticker_connected": self._is_connected,
@@ -458,6 +486,9 @@ class KiteService:
             "instruments_loaded": self._instruments_loaded,
             "subscribed_options": len(self._subscribed_option_tokens),
             "api_key_masked": mask_key(self._api_key) if self._api_key else None,
+            "last_nifty_tick_seconds_ago": last_seconds,
+            "last_api_error": self._last_api_error,
+            "last_ticker_error": self._last_ticker_error,
         }
 
     def clear_credentials(self):

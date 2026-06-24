@@ -16,6 +16,14 @@ import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
 
+def to_ist_str(dt: Optional[datetime], fmt: str = "%I:%M %p") -> str:
+    """Convert UTC or naive datetime to IST formatted string."""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = pytz.utc.localize(dt)
+    return dt.astimezone(IST).strftime(fmt)
+
 # Strategy time constants
 MARKET_OPEN = time(9, 15)     # NSE opens at 9:15 AM IST
 
@@ -117,7 +125,7 @@ def get_expiry_date(trade_date: Optional[date] = None) -> date:
 def format_expiry_for_symbol(expiry: date) -> str:
     """
     Formats expiry date in Kite's instrument symbol format.
-    - Monthly expiry (last Tuesday of the month): '27JUN24' (DDMMMYY)
+    - Monthly expiry (last Tuesday of the month): '24JUN' (YYMMM)
     - Weekly expiry (other Tuesdays): '24606' (YYMDD where M is 1-9, O, N, D)
     """
     # Check if this Tuesday is the last Tuesday of the month
@@ -130,7 +138,7 @@ def format_expiry_for_symbol(expiry: date) -> str:
             5: "MAY", 6: "JUN", 7: "JUL", 8: "AUG",
             9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC",
         }
-        return f"{expiry.day:02d}{month_map[expiry.month]}{str(expiry.year)[2:]}"
+        return f"{str(expiry.year)[2:]}{month_map[expiry.month]}"
     else:
         # Weekly expiry format: YY + M + DD
         yy = str(expiry.year)[2:]

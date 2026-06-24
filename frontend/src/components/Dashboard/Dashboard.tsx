@@ -16,6 +16,7 @@ import { PDFReportsModal } from '../PDFReportsModal/PDFReportsModal'
 import { BacktestModal } from '../BacktestModal/BacktestModal'
 import { Notification } from '../Notification/Notification'
 import { UserGuide } from '../UserGuide/UserGuide'
+import { StatusBar } from '../StatusBar/StatusBar'
 
 const formatTimeTo12Hour = (timeStr: string): string => {
   try {
@@ -51,7 +52,7 @@ const getCutoffTimeStr = (squareoffTime: string): string => {
 export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   useWebSocket()
   const qc = useQueryClient()
-  const { status, wsConnected, setStatus } = useStrategyStore()
+  const { status, wsConnected, setStatus, clearAISuggestions } = useStrategyStore()
   const addToast = useToastStore(state => state.addToast)
   const [showSettings, setShowSettings] = useState(false)
   const [showUserGuide, setShowUserGuide] = useState(false)
@@ -74,7 +75,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     confirmButtonId?: string
     cancelButtonId?: string
   } | null>(null)
-
+  
   const handleStopClick = () => {
     setConfirmAction({
       title: 'Stop Strategy Confirmation',
@@ -86,6 +87,22 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
       cancelButtonId: 'cancel-stop-btn',
       onConfirm: () => {
         stopMut.mutate()
+        setConfirmAction(null)
+      },
+    })
+  }
+
+  const handleResetClick = () => {
+    setConfirmAction({
+      title: 'Reset Daily Strategy State',
+      message: 'Are you sure you want to manually RESET the daily CE and PE state machines? This will clear all level monitoring, locked strikes, and set states to IDLE.',
+      confirmText: 'Yes, Reset Strategy',
+      cancelText: 'Cancel',
+      variant: 'warning',
+      confirmButtonId: 'confirm-reset-btn',
+      cancelButtonId: 'cancel-reset-btn',
+      onConfirm: () => {
+        resetMut.mutate()
         setConfirmAction(null)
       },
     })
@@ -204,6 +221,29 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     },
   })
 
+  const resetMut = useMutation({
+    mutationFn: strategyApi.reset,
+    onSuccess: (data) => {
+      // Clear client store states
+      clearAISuggestions()
+      
+      // Invalidate all daily data queries
+      qc.invalidateQueries({ queryKey: ['strategy-status'] })
+      qc.invalidateQueries({ queryKey: ['trades-today'] })
+      qc.invalidateQueries({ queryKey: ['pnl-today'] })
+      qc.invalidateQueries({ queryKey: ['ai-suggestions'] })
+      qc.invalidateQueries({ queryKey: ['trades-log-data'] })
+      qc.invalidateQueries({ queryKey: ['ai-pre-market'] })
+      qc.invalidateQueries({ queryKey: ['ai-post-session'] })
+      
+      addToast(data?.message || 'Daily reset successfully triggered.', 'success')
+    },
+    onError: (err: any) => {
+      const detail = err.response?.data?.detail
+      addToast(detail || 'Failed to trigger reset.', 'error')
+    }
+  })
+
   const pnlChartData = useMemo(() => {
     return trades
       .filter(t => t.action === 'EXIT' && t.pnl != null)
@@ -217,6 +257,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const paperTrade = status?.paper_trade ?? true
   const niftyLtp = status?.nifty_ltp
   const todayPnl = pnl?.gross_pnl ?? 0
+  const hasOpenPositions = (status?.ce?.lots ?? 0) > 0 || (status?.pe?.lots ?? 0) > 0
 
   const niftyPrevClose = status?.nifty_prev_close
   const niftyChange = useMemo(() => {
@@ -315,6 +356,12 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
               <span aria-hidden="true">▶</span> START
             </button>
           )}
+          <button onClick={handleResetClick}
+            disabled={isRunning || hasOpenPositions}
+            title={isRunning ? 'Stop strategy before resetting' : hasOpenPositions ? 'Cannot reset with active positions' : 'Reset daily strategy state'}
+            className="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 disabled:opacity-30 disabled:hover:bg-yellow-700 rounded text-xs font-bold shadow-md shadow-yellow-950/20 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-navy-950">
+            <span aria-hidden="true">🔄</span> RESET
+          </button>
           <button onClick={() => setShowLiveLogs(true)}
             className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
             <span aria-hidden="true">📄</span> Trade Log
@@ -341,6 +388,8 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           </button>
         </div>
       </header>
+
+      <StatusBar />
 
       {/* Error messages */}
       {startMut.isError && (

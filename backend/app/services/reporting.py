@@ -17,6 +17,7 @@ from app.models.models import User, Trade, DailyPnL, AISuggestion, AuditLog, Api
 from app.services.notification import get_user_notification_service
 from app.services.whatsapp import get_user_whatsapp_service
 from app.services.pdf_generator import build_daily_report_pdf, build_weekly_report_pdf
+from app.core.time_rules import to_ist_str
 
 
 def get_user_reporting_config(user_id: int, db: Session) -> dict:
@@ -121,7 +122,7 @@ def generate_daily_report(user_id: int, target_date: date, db: Session) -> str:
     if trades:
         msg += "📈 *Trades Log*:\n"
         for t in trades:
-            time_str = t.created_at.strftime("%I:%M %p") if t.created_at else ""
+            time_str = to_ist_str(t.created_at, "%I:%M %p")
             if t.action == "BUY":
                 msg += f"• `{time_str}` 🟢 *BUY* `{t.instrument}` | Lots: {t.lots} @ ₹{t.avg_price:.2f}\n"
             else:
@@ -134,7 +135,7 @@ def generate_daily_report(user_id: int, target_date: date, db: Session) -> str:
     if audit_logs:
         msg += "⚙️ *Strategy Decisions & Triggers*:\n"
         for log in audit_logs:
-            time_str = log.created_at.strftime("%I:%M %p") if log.created_at else ""
+            time_str = to_ist_str(log.created_at, "%I:%M %p")
             details_str = ""
             if log.details:
                 if "msg" in log.details:

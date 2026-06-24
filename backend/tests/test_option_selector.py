@@ -61,7 +61,7 @@ class TestSymbolBuilding:
     def test_ce_symbol(self):
         expiry = date(2024, 6, 27)
         symbol = build_option_symbol("CE", 23150, expiry)
-        assert symbol == "NIFTY27JUN2423150CE"
+        assert symbol == "NIFTY24JUN23150CE"
 
     def test_symbol_uppercase(self):
         expiry = date(2024, 6, 13)

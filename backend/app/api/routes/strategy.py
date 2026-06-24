@@ -102,11 +102,35 @@ async def stop_strategy(user: User = Depends(require_auth)):
 
 
 @router.post("/reset-daily")
-def daily_reset(user: User = Depends(require_auth)):
+def daily_reset(db: Session = Depends(get_db), user: User = Depends(require_auth)):
     """Manual daily reset."""
+    from app.models.models import Trade, DailyPnL, AISuggestion, AuditLog
+    from app.core.time_rules import today_ist
+    from sqlalchemy import func
+
+    # 1. Reset strategy engine in-memory state
     user_engine = engine_manager.get_engine(user.id)
     user_engine.daily_reset()
-    return {"status": "reset", "message": "Both CE and PE state machines reset for new day"}
+
+    # 2. Clear database records for today (to clear dashboard views)
+    today = today_ist()
+    try:
+        db.query(Trade).filter(Trade.user_id == user.id, Trade.trade_date == today).delete()
+        db.query(DailyPnL).filter(DailyPnL.user_id == user.id, DailyPnL.trade_date == today).delete()
+        db.query(AISuggestion).filter(AISuggestion.user_id == user.id, AISuggestion.trade_date == today).delete()
+        
+        # Clear audit logs created today for this user
+        db.query(AuditLog).filter(
+            AuditLog.user_id == user.id,
+            func.date(AuditLog.created_at) == today
+        ).delete()
+        
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database clear failed on reset: {str(e)}")
+
+    return {"status": "reset", "message": "Both CE and PE state machines reset and database records cleared for today"}
 
 
 @router.post("/simulate-tick")

@@ -40,4 +40,21 @@ body {
   animation: slideInRight 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+/* Custom marquee animation */
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 25s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+
 

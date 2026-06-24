@@ -33,13 +33,18 @@ def decrypt(ciphertext_b64: str) -> str:
     """Decrypt a base64-encoded ciphertext string."""
     if not ciphertext_b64:
         return ""
-    key = _get_key()
-    aesgcm = AESGCM(key)
-    combined = base64.b64decode(ciphertext_b64.encode("utf-8"))
-    nonce = combined[:12]
-    ciphertext = combined[12:]
-    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-    return plaintext.decode("utf-8")
+    from loguru import logger
+    try:
+        key = _get_key()
+        aesgcm = AESGCM(key)
+        combined = base64.b64decode(ciphertext_b64.encode("utf-8"))
+        nonce = combined[:12]
+        ciphertext = combined[12:]
+        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+        return plaintext.decode("utf-8")
+    except Exception as e:
+        logger.error(f"Decryption failed (possibly invalid signature, mismatched key, or corruption): {e}")
+        return ""
 
 
 def mask_key(key: str) -> str:

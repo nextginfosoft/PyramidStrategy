@@ -4,6 +4,7 @@ from decimal import Decimal
 from fpdf import FPDF
 from sqlalchemy.orm import Session
 from app.models.models import User, Trade, DailyPnL, AISuggestion, AuditLog
+from app.core.time_rules import to_ist_str
 
 class PDFReport(FPDF):
     def __init__(self, title_text: str, subtitle_text: str):
@@ -191,7 +192,7 @@ def build_daily_report_pdf(user_id: int, target_date: date, db: Session, output_
         pdf.cell(190, 8, "No trades executed today.", 1, 1, "C")
     else:
         for t in trades:
-            time_str = t.created_at.strftime("%I:%M %p") if t.created_at else ""
+            time_str = to_ist_str(t.created_at, "%I:%M %p")
             pdf.cell(20, 7, time_str, 1, 0, "C")
             pdf.cell(45, 7, t.instrument, 1, 0, "C")
             
@@ -238,7 +239,7 @@ def build_daily_report_pdf(user_id: int, target_date: date, db: Session, output_
         pdf.cell(190, 8, "No strategy rule triggers logged today.", 1, 1, "C")
     else:
         for log in audit_logs:
-            time_str = log.created_at.strftime("%I:%M:%S %p") if log.created_at else ""
+            time_str = to_ist_str(log.created_at, "%I:%M:%S %p")
             pdf.cell(20, 7, time_str, 1, 0, "C")
             pdf.cell(40, 7, log.event_type, 1, 0, "C")
             pdf.cell(25, 7, f"{log.side or ''} {log.level or ''}".strip() or "-", 1, 0, "C")
@@ -270,7 +271,7 @@ def build_daily_report_pdf(user_id: int, target_date: date, db: Session, output_
         for sugg in ai_suggestions:
             pdf.set_fill_color(241, 245, 249)
             pdf.set_font("helvetica", "B", 9)
-            time_str = sugg.created_at.strftime("%I:%M %p") if sugg.created_at else ""
+            time_str = to_ist_str(sugg.created_at, "%I:%M %p")
             pdf.cell(0, 6, f"  Robot Observer | {sugg.event} ({sugg.side or 'General'}) at {time_str} | Nifty: {sugg.nifty_ltp or '-'}", 0, 1, "L", True)
             
             pdf.set_font("helvetica", "", 9)

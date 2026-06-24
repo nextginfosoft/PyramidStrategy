@@ -120,7 +120,7 @@ class TestExpiryDate:
 class TestSymbolFormat:
     def test_expiry_format_monthly(self):
         d = date(2024, 6, 25) # Last Tuesday of June
-        assert format_expiry_for_symbol(d) == "25JUN24"
+        assert format_expiry_for_symbol(d) == "24JUN"
 
     def test_expiry_format_weekly(self):
         d = date(2024, 6, 11)

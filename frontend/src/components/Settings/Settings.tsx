@@ -86,6 +86,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
       if (reportingKey && reportingKey.extra_config) {
         setReportingFormat(reportingKey.extra_config.format || 'telegram');
       }
+
+      const activeAiKey = apiKeys.find((k: any) => ['openai', 'anthropic', 'gemini'].includes(k.provider) && k.is_active);
+      if (activeAiKey) {
+        setAi(p => ({
+          ...p,
+          provider: activeAiKey.provider
+        }));
+      }
     }
   }, [apiKeys]);
 
@@ -183,15 +191,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }
 
   const handleSaveAi = () => {
-    if (!ai.api_key) return
-    saveKey.mutate({ provider: ai.provider, api_key: ai.api_key })
+    saveKey.mutate({ provider: ai.provider, api_key: ai.api_key || undefined })
   }
 
   const handleSaveTelegram = () => {
-    if (!telegram.bot_token || !telegram.chat_id) return
+    if (!telegram.chat_id) return
     saveKey.mutate({
       provider: 'telegram',
-      api_key: telegram.bot_token,
+      api_key: telegram.bot_token || undefined,
       extra_config: { chat_id: telegram.chat_id },
     })
   }
@@ -699,7 +706,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     </button>
                     <button 
                       onClick={handleSaveAi}
-                      disabled={!ai.api_key}
+                      disabled={!isConfigured(ai.provider) && !ai.api_key}
                       className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
                     >
                       Save Key
@@ -777,7 +784,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     </button>
                     <button 
                       onClick={handleSaveTelegram}
-                      disabled={!telegram.bot_token || !telegram.chat_id}
+                      disabled={!telegram.chat_id || (!isConfigured('telegram') && !telegram.bot_token)}
                       className="px-5 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
                     >
                       Save Configuration

@@ -10,6 +10,7 @@ import asyncio
 from decimal import Decimal
 from loguru import logger
 import random
+from app.core.option_selector import estimate_option_price
 
 
 class MockDataFeed:
@@ -76,9 +77,12 @@ class MockDataFeed:
         """
         Simulate option LTPs based on NIFTY price.
         """
-        for symbol, base_price in list(self.engine._option_ltp.items()) or []:
-            new_ltp = base_price + Decimal(str(random.uniform(-2, 2)))
-            self.engine.update_option_ltp(symbol, max(Decimal("0.05"), new_ltp))
+        for symbol in list(self.engine._option_ltp.keys()):
+            estimated = estimate_option_price(symbol, nifty_ltp)
+            # Add a small random jitter of ±1 point to make the price look alive/active
+            jitter = Decimal(str(random.uniform(-1, 1)))
+            new_ltp = max(Decimal("0.05"), estimated + jitter)
+            self.engine.update_option_ltp(symbol, new_ltp)
 
         # Also initialize option LTP if a new instrument is being watched
         ce_symbol = self.engine.ce.locked_instrument
@@ -86,4 +90,5 @@ class MockDataFeed:
 
         for symbol in [ce_symbol, pe_symbol]:
             if symbol and symbol not in self.engine._option_ltp:
-                self.engine.update_option_ltp(symbol, Decimal("100.00"))  # Initial mock LTP
+                initial_ltp = estimate_option_price(symbol, nifty_ltp)
+                self.engine.update_option_ltp(symbol, initial_ltp)

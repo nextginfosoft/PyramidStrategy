@@ -163,6 +163,24 @@ class TestReportingService:
             assert os.path.exists(pdf_path)
             assert os.path.getsize(pdf_path) > 0
 
+    def test_timezone_conversion(self):
+        from app.core.time_rules import to_ist_str
+        import pytz
+        
+        # Test case 1: None or empty datetime
+        assert to_ist_str(None) == ""
+        
+        # Test case 2: Naive UTC datetime
+        # 2026-06-19 09:30 UTC should be 2026-06-19 15:00 IST (03:00 PM)
+        dt = datetime(2026, 6, 19, 9, 30)
+        assert to_ist_str(dt) == "03:00 PM"
+        
+        # Test case 3: Timezone-aware UTC datetime
+        dt_aware = datetime(2026, 6, 19, 9, 30, tzinfo=pytz.utc)
+        assert to_ist_str(dt_aware) == "03:00 PM"
+
+
+
 
 class TestWhatsAppService:
     def test_whatsapp_initial_state(self):

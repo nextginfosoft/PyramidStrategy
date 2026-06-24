@@ -64,6 +64,13 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         "squareoff_time": cfg.squareoff_time,
     })
 
+    # Dynamic log window config update
+    try:
+        from app.main import update_logging_window
+        update_logging_window()
+    except Exception as ex:
+        logger.error(f"Error updating logging window on config change: {ex}")
+
     logger.info(f"User {user.username} strategy config saved: R1={cfg.r1} R2={cfg.r2} R3={cfg.r3} | S1={cfg.s1} S2={cfg.s2} S3={cfg.s3} | paper_trade={cfg.paper_trade}")
     return cfg
 

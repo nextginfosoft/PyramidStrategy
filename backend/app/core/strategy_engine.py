@@ -13,7 +13,7 @@ from loguru import logger
 
 from app.core.state_machine import StateMachine, State
 from app.core.time_rules import is_entry_allowed, should_squareoff, today_ist
-from app.core.option_selector import get_option_details
+from app.core.option_selector import get_option_details, estimate_option_price
 from app.core.order_manager import OrderManager
 from app.db.database import SessionLocal, get_redis_client
 from app.config import settings
@@ -134,6 +134,11 @@ class StrategyEngine:
         Called on every NIFTY price tick.
         Processes CE and PE independently.
         """
+        try:
+            get_redis_client().setex("nifty:ltp", 5, str(nifty_ltp))
+        except Exception:
+            pass
+
         if not self.is_running or not self.config:
             self.last_nifty_price = nifty_ltp
             return
@@ -355,6 +360,8 @@ class StrategyEngine:
         ltp = self.get_option_ltp(symbol)
         if ltp is not None:
             return ltp
+        if self.last_nifty_price:
+            return estimate_option_price(symbol, self.last_nifty_price)
         return Decimal("100.00")
 
     # ── Broadcasting ─────────────────────────────────────────────────────────
@@ -362,10 +369,11 @@ class StrategyEngine:
     async def _broadcast_status(self, nifty_ltp: Decimal):
         if not self.broadcast_fn:
             return
+        from app.services.kite_service import get_user_kite_service
+        ks = get_user_kite_service(self.user_id)
+
         if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
             try:
-                from app.services.kite_service import get_user_kite_service
-                ks = get_user_kite_service(self.user_id)
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
@@ -384,6 +392,7 @@ class StrategyEngine:
                 "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
                 "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
                 "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
+                "health": ks.get_status(),
             },
         }
         await self.broadcast_fn(self.user_id, status)
@@ -430,10 +439,11 @@ class StrategyEngine:
         nifty_ltp_str = get_redis_client().get("nifty:ltp")
         nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else None
 
+        from app.services.kite_service import get_user_kite_service
+        ks = get_user_kite_service(self.user_id)
+
         if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
             try:
-                from app.services.kite_service import get_user_kite_service
-                ks = get_user_kite_service(self.user_id)
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
@@ -449,4 +459,5 @@ class StrategyEngine:
             "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
             "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
+            "health": ks.get_status(),
         }
