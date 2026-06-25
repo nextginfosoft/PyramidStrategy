@@ -306,6 +306,7 @@ class StrategyEngine:
                 entry_avg_price=sm.entry_avg_price,
                 mock_ltp=exit_price,
                 trigger_nifty=nifty_ltp,
+                lot_size=sm.lot_size,
             )
 
         # Unsubscribe from option ticks — position closed
