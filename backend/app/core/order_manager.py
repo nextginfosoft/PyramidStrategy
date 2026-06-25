@@ -164,8 +164,8 @@ class OrderManager:
         pnl_pts = exit_price - entry_avg_price
         pnl_rupees = pnl_pts * qty
 
-        # Update original OPEN trade record
-        open_trade = (
+        # Update original OPEN trade records
+        open_trades = (
             db.query(Trade)
             .filter(
                 Trade.user_id == self.user_id,
@@ -175,13 +175,15 @@ class OrderManager:
                 Trade.trade_date == today_ist(),
             )
             .order_by(Trade.created_at.desc())
-            .first()
+            .all()
         )
 
-        expiry_date = open_trade.expiry if open_trade else today_ist()
-        if open_trade:
-            open_trade.status = reason
-            open_trade.pnl = pnl_rupees
+        expiry_date = today_ist()
+        if open_trades:
+            expiry_date = open_trades[0].expiry or today_ist()
+            for ot in open_trades:
+                ot.status = reason
+            open_trades[0].pnl = pnl_rupees
 
         # Log the EXIT as a separate record
         exit_trade = Trade(
@@ -263,12 +265,14 @@ class OrderManager:
             except OrderError as e:
                 last_error = e
                 logger.error(f"Order rejected (attempt {attempt}/{max_retries}): {context} — {e}")
+                self.kite._last_api_error = f"Order rejected: {str(e)}"
                 self._alert_order_failure(context, str(e))
                 raise
 
             except Exception as e:
                 last_error = e
                 logger.warning(f"Order error (attempt {attempt}/{max_retries}): {context} — {e}")
+                self.kite._last_api_error = f"Order failed: {str(e)}"
 
             if attempt < max_retries:
                 time.sleep(_RETRY_DELAY * attempt)  # exponential backoff

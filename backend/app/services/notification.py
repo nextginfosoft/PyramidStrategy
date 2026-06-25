@@ -140,14 +140,14 @@ class NotificationService:
         )
         asyncio.create_task(self._send(msg))
 
-    def notify_squareoff(self, ce_pnl: Decimal, pe_pnl: Decimal):
-        """Notify: 11:30 AM force squareoff."""
+    def notify_squareoff(self, ce_pnl: Decimal, pe_pnl: Decimal, squareoff_time_str: str = "11:30"):
+        """Notify: force squareoff at configured time."""
         if not self._enabled or not self._notify_squareoff:
             return
         total = ce_pnl + pe_pnl
         sign = "+" if total >= 0 else ""
         msg = (
-            f"⏰ *SQUAREOFF — 11:30 AM*\n"
+            f"⏰ *SQUAREOFF — {squareoff_time_str}*\n"
             f"All positions closed.\n"
             f"CE P&L: ₹{ce_pnl:.0f} | PE P&L: ₹{pe_pnl:.0f}\n"
             f"*Total: {sign}₹{total:.0f}*"

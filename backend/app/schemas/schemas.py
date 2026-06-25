@@ -16,6 +16,25 @@ class StrategyConfigBase(BaseModel):
     target_points: float = 20.0
     sl_points: float = 10.0
     paper_trade: bool = True
+    squareoff_time: str = "11:30"
+
+    @field_validator("squareoff_time")
+    @classmethod
+    def validate_squareoff_time(cls, v):
+        try:
+            h, m = map(int, v.split(":"))
+            if not (0 <= h < 24 and 0 <= m < 60):
+                raise ValueError("Invalid time format")
+            minutes = h * 60 + m
+            min_bound = 9 * 60 + 30  # 09:30 AM
+            max_bound = 15 * 60 + 30  # 03:30 PM
+            if not (min_bound <= minutes <= max_bound):
+                raise ValueError("Square-off time must be between 09:30 AM and 03:30 PM")
+        except Exception as e:
+            if "must be between" in str(e):
+                raise ValueError(str(e))
+            raise ValueError("Square-off time must be in HH:MM format between 09:30 and 15:30")
+        return v
 
     @model_validator(mode="after")
     def validate_levels(self):

@@ -79,3 +79,36 @@ def get_option_details(side: str, nifty_ltp: Decimal, trade_date: date | None = 
         "expiry": expiry,
         "side": side,
     }
+
+
+def estimate_option_price(symbol: str, nifty_ltp: Decimal) -> Decimal:
+    """
+    Dynamically estimate option price based on NIFTY LTP and strike.
+    Uses intrinsic value + decaying time value (80 pts peak at ATM).
+    """
+    try:
+        side = symbol[-2:]
+        # Extract digits block before side
+        digits = ""
+        for char in reversed(symbol[:-2]):
+            if char.isdigit():
+                digits = char + digits
+            else:
+                break
+        strike = int(digits[-5:]) if len(digits) > 5 else int(digits)
+
+        # Calculate intrinsic value
+        if side == "CE":
+            intrinsic = max(Decimal("0"), nifty_ltp - Decimal(strike))
+        else:
+            intrinsic = max(Decimal("0"), Decimal(strike) - nifty_ltp)
+
+        # Calculate time value: peak of 80 points at ATM, decaying by 0.5 per point OTM/ITM
+        dist = abs(nifty_ltp - Decimal(strike))
+        time_val = max(Decimal("5.00"), Decimal("80.00") - dist * Decimal("0.5"))
+
+        price = intrinsic + time_val
+        return max(Decimal("0.05"), price.quantize(Decimal("0.01")))
+    except Exception as e:
+        logger.warning(f"Error estimating option price for {symbol}: {e}")
+        return Decimal("100.00")

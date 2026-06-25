@@ -12,6 +12,7 @@ interface StrategyStore {
   addAISuggestion: (s: string, side: string, event: string) => void
   setWsConnected: (v: boolean) => void
   handleWSMessage: (msg: WSMessage) => void
+  clearAISuggestions: () => void
 }
 
 export const useStrategyStore = create<StrategyStore>((set, get) => ({
@@ -24,6 +25,7 @@ export const useStrategyStore = create<StrategyStore>((set, get) => ({
   addTrade: (t) => set((st) => ({ trades: [t, ...st.trades].slice(0, 100) })),
   setTrades: (trades) => set({ trades }),
   setWsConnected: (v) => set({ wsConnected: v }),
+  clearAISuggestions: () => set({ aiSuggestions: [], trades: [] }),
 
   addAISuggestion: (text, side, event) =>
     set((st) => ({

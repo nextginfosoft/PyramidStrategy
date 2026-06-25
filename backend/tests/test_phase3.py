@@ -374,7 +374,7 @@ class TestAIRoutes:
     def test_approve_pre_market_brief_endpoint(self, client):
         from app.db.database import SessionLocal
         from app.models.models import PreMarketBrief, StrategyConfig
-        import datetime
+        from app.core.time_rules import today_ist
         
         with SessionLocal() as db:
             db.query(PreMarketBrief).delete()
@@ -389,7 +389,7 @@ class TestAIRoutes:
             )
             brief = PreMarketBrief(
                 user_id=1,
-                trade_date=datetime.date.today(),
+                trade_date=today_ist(),
                 vix=13.5,
                 suggested_config={
                     "s1": 23100.0, "s2": 23050.0, "s3": 23000.0,

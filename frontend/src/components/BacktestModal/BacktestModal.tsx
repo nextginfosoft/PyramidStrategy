@@ -15,6 +15,7 @@ type BacktestConfig = {
   lot_size: number
   target_points: number
   sl_points: number
+  squareoff_time?: string
 }
 
 type BacktestSummary = {
@@ -77,6 +78,7 @@ export function BacktestModal({ onClose }: Props) {
     lot_size: 75,
     target_points: 20,
     sl_points: 10,
+    squareoff_time: '11:30',
   })
 
   // Comparison Configs
@@ -97,6 +99,7 @@ export function BacktestModal({ onClose }: Props) {
         lot_size: cfg.lot_size,
         target_points: cfg.target_points,
         sl_points: cfg.sl_points,
+        squareoff_time: cfg.squareoff_time ?? '11:30',
       })
     }
   }, [cfg])
@@ -134,6 +137,7 @@ export function BacktestModal({ onClose }: Props) {
         lot_size: primaryConfig.lot_size,
         target_points: primaryConfig.target_points,
         sl_points: primaryConfig.sl_points,
+        squareoff_time: primaryConfig.squareoff_time,
       },
     ])
   }

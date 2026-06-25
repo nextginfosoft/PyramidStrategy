@@ -172,17 +172,38 @@ def export_trades(db: Session = Depends(get_db), user: User = Depends(require_au
 @router.get("/logs")
 def get_logs(
     start_time: str = Query(default="09:00", description="HH:MM format"),
-    end_time: str = Query(default="12:30", description="HH:MM format"),
+    end_time: str | None = Query(default=None, description="HH:MM format"),
+    trade_only: bool = Query(default=True, description="Filter for trade execution logs only"),
+    db: Session = Depends(get_db),
     user: User = Depends(require_auth)
 ):
     import os
     import re
-    from datetime import time
+    from datetime import time, timedelta, datetime
     from fastapi import HTTPException
+    from app.models.models import StrategyConfig
 
     log_path = "trade_engine.log"
     if not os.path.exists(log_path):
         return {"logs": []}
+
+    # Resolve default end_time dynamically based on user's square-off configuration
+    if not end_time:
+        cfg = db.query(StrategyConfig).filter(
+            StrategyConfig.user_id == user.id,
+            StrategyConfig.is_active == True
+        ).first()
+        if cfg and cfg.squareoff_time:
+            try:
+                # Add 1 hour buffer to square-off time to capture final square-off actions
+                h, m = map(int, cfg.squareoff_time.split(":"))
+                # Use a dummy date to handle time addition safely
+                dt = datetime.combine(datetime.min.date(), time(h, m)) + timedelta(hours=1)
+                end_time = dt.time().strftime("%H:%M")
+            except Exception:
+                end_time = "12:30"
+        else:
+            end_time = "12:30"
 
     try:
         sh, sm = map(int, start_time.split(":"))
@@ -207,6 +228,13 @@ def get_logs(
 
             if include_line:
                 filtered_lines.append(line.rstrip("\n"))
+
+    if trade_only:
+        trade_indicators = ["app.core", "BUY", "EXIT", "SQUAREOFF", "force squareoff", "Target", "Stop Loss", "entered", "reset_daily", "daily_reset"]
+        filtered_lines = [
+            line for line in filtered_lines
+            if any(ind.lower() in line.lower() for ind in trade_indicators)
+        ]
 
     return {"logs": filtered_lines}
 

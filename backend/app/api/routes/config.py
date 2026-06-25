@@ -26,6 +26,7 @@ def get_strategy_config(db: Session = Depends(get_db), user: User = Depends(requ
             target_points=20,
             sl_points=10,
             paper_trade=True,
+            squareoff_time="11:30",
             is_active=False
         )
     return cfg
@@ -44,6 +45,7 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         target_points=payload.target_points,
         sl_points=payload.sl_points,
         paper_trade=payload.paper_trade,
+        squareoff_time=payload.squareoff_time,
         is_active=True,
     )
     db.add(cfg)
@@ -59,7 +61,15 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         "target_points": float(cfg.target_points),
         "sl_points": float(cfg.sl_points),
         "paper_trade": cfg.paper_trade,
+        "squareoff_time": cfg.squareoff_time,
     })
+
+    # Dynamic log window config update
+    try:
+        from app.main import update_logging_window
+        update_logging_window()
+    except Exception as ex:
+        logger.error(f"Error updating logging window on config change: {ex}")
 
     logger.info(f"User {user.username} strategy config saved: R1={cfg.r1} R2={cfg.r2} R3={cfg.r3} | S1={cfg.s1} S2={cfg.s2} S3={cfg.s3} | paper_trade={cfg.paper_trade}")
     return cfg

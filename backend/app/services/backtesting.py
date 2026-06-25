@@ -150,6 +150,11 @@ def run_single_backtest(
     prev_nifty = None
     
     # Replay minute-by-minute
+    sq_time_str = config.get("squareoff_time", "11:30")
+    sq_h, sq_m = map(int, sq_time_str.split(":"))
+    sq_minutes = sq_h * 60 + sq_m
+    cutoff_minutes = sq_minutes - 15
+
     for minute_idx, price in enumerate(nifty_prices):
         nifty_ltp = Decimal(str(price))
         time_val = 915 + (minute_idx // 60) * 100 + (minute_idx % 60)
@@ -158,9 +163,10 @@ def run_single_backtest(
         hour = 9 + (minute_idx + 15) // 60
         minute = (minute_idx + 15) % 60
         time_str = f"{hour:02d}:{minute:02d}:00"
+        current_minutes = hour * 60 + minute
         
-        # 11:30 AM Force Squareoff
-        if hour == 11 and minute >= 30:
+        # Force Squareoff
+        if current_minutes >= sq_minutes:
             for sm in (ce_sm, pe_sm):
                 if sm.state not in (State.IDLE, State.BLOCKED):
                     opt_price = get_opt_ltp(sm.side, nifty_ltp)
@@ -224,8 +230,8 @@ def run_single_backtest(
                     })
                     l1_entry_nifty[side] = None
                     
-            # Check new entries (only before 11:15 AM)
-            if (hour < 11 or (hour == 11 and minute < 15)) and sm.state in (State.IDLE, State.L1_ENTERED, State.L2_ENTERED):
+            # Check new entries
+            if current_minutes < cutoff_minutes and sm.state in (State.IDLE, State.L1_ENTERED, State.L2_ENTERED):
                 # We need a 1-minute cooldown between entries
                 cooldown_elapsed = getattr(sm, "_last_entry_minute", -10) != minute_idx - 1
                 

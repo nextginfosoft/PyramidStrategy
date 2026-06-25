@@ -9,14 +9,48 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
-# Time filter to restrict logs to 9 AM - 12:30 PM IST
+# Global logging window variables (in IST)
+log_end_hour = 12
+log_end_minute = 30
+
+def update_logging_window():
+    """Dynamically scan active StrategyConfigs to extend log window up to squareoff_time + 1.5 hours."""
+    try:
+        from app.db.database import SessionLocal
+        from app.models.models import StrategyConfig
+        import datetime
+        with SessionLocal() as db:
+            configs = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).all()
+            max_minutes = 12 * 60 + 30 # Default 12:30 PM
+            for cfg in configs:
+                if cfg.squareoff_time:
+                    try:
+                        h, m = map(int, cfg.squareoff_time.split(":"))
+                        # Extend logging by 1.5 hours (90 mins) to capture force squareoff + EOD reports
+                        total_mins = h * 60 + m + 90
+                        if total_mins > max_minutes:
+                            max_minutes = total_mins
+                    except Exception:
+                        pass
+            
+            # Bound it to a maximum of 23:59
+            max_minutes = min(max_minutes, 23 * 60 + 59)
+            
+            global log_end_hour, log_end_minute
+            log_end_hour = max_minutes // 60
+            log_end_minute = max_minutes % 60
+            logger.info(f"🔄 Logging window extended to {log_end_hour:02d}:{log_end_minute:02d} IST based on active configurations.")
+    except Exception as e:
+        logger.error(f"Error dynamically updating logging window: {e}")
+
+# Time filter to restrict logs to 9 AM - dynamic end time IST
 def log_time_filter(record):
     try:
         import datetime
         # IST is UTC + 5:30
         ist_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         t = datetime.datetime.now(ist_tz).time()
-        return datetime.time(9, 0) <= t <= datetime.time(12, 30)
+        return datetime.time(9, 0) <= t <= datetime.time(log_end_hour, log_end_minute)
     except Exception:
         # Fallback to true on unexpected errors
         return True
@@ -103,39 +137,63 @@ def schedule_jobs():
 
     scheduler.add_job(pre_market_brief_job, "cron", day_of_week="mon-fri", hour=8, minute=45, id="pre_market_brief")
 
-    # 11:15 AM — log warning, entries blocked
-    scheduler.add_job(
-        lambda: logger.warning("🕐 11:15 AM — No more fresh entries allowed today"),
-        "cron", hour=11, minute=15, id="entry_cutoff_log"
-    )
-
-    # 11:30 AM — force squareoff
-    async def scheduled_squareoff():
-        for uid, eng in list(engine_manager._engines.items()):
-            if eng.is_running:
-                try:
-                    logger.warning(f"🔔 11:30 AM scheduler — triggering force squareoff for User {uid}")
-                    await eng._force_squareoff()
-                except Exception as e:
-                    logger.error(f"Scheduled squareoff failed for User {uid}: {e}")
-
-    scheduler.add_job(scheduled_squareoff, "cron", hour=11, minute=30, id="squareoff")
-
-    # 12:30 PM — Automated Daily EOD Report
-    async def daily_reporting():
+    # Unified Minute-by-Minute Time Trigger Checker
+    async def check_time_triggers():
         from app.db.database import SessionLocal
-        from app.models.models import User
+        from app.models.models import User, StrategyConfig
         from app.services.reporting import send_daily_report
-        from datetime import date
+        from app.core.time_rules import now_ist
+        from datetime import date, timedelta
+        
+        now = now_ist()
+        current_time_str = now.strftime("%H:%M")
+        today = now.date()
+        
         try:
             with SessionLocal() as db:
                 users = db.query(User).all()
                 for u in users:
-                    await send_daily_report(u.id, date.today())
+                    # Get active strategy config
+                    cfg = db.query(StrategyConfig).filter(
+                        StrategyConfig.user_id == u.id, 
+                        StrategyConfig.is_active == True
+                    ).first()
+                    
+                    sq_time_str = "11:30"
+                    if cfg and cfg.squareoff_time:
+                        sq_time_str = cfg.squareoff_time
+                        
+                    try:
+                        h, m = map(int, sq_time_str.split(":"))
+                        sq_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                        
+                        cutoff_dt = sq_dt - timedelta(minutes=15)
+                        cutoff_time_str = cutoff_dt.strftime("%H:%M")
+                        
+                        report_dt = sq_dt + timedelta(minutes=15)
+                        report_time_str = report_dt.strftime("%H:%M")
+                        
+                        # 1. Entry Cutoff Check
+                        if current_time_str == cutoff_time_str:
+                            logger.warning(f"🕐 {cutoff_time_str} — No more fresh entries allowed today for User {u.id}")
+                            
+                        # 2. Square-off Check
+                        if current_time_str == sq_time_str:
+                            eng = engine_manager._engines.get(u.id)
+                            if eng and eng.is_running:
+                                logger.warning(f"🔔 {sq_time_str} scheduler — triggering force squareoff for User {u.id}")
+                                await eng._force_squareoff()
+                                
+                        # 3. Daily Report Check
+                        if current_time_str == report_time_str:
+                            logger.info(f"📊 {report_time_str} — Triggering automated EOD Daily Report for User {u.id}")
+                            await send_daily_report(u.id, today)
+                    except Exception as ex:
+                        logger.error(f"Error parsing/triggering scheduler times for User {u.id}: {ex}")
         except Exception as e:
-            logger.error(f"Daily reporting job failed: {e}")
+            logger.error(f"Error in unified time triggers check job: {e}")
 
-    scheduler.add_job(daily_reporting, "cron", hour=12, minute=30, id="daily_report")
+    scheduler.add_job(check_time_triggers, "cron", minute="*", id="check_time_triggers")
 
     # Monday 9:00 AM — Weekly Summary Report
     async def weekly_reporting():
@@ -176,6 +234,9 @@ async def lifespan(app: FastAPI):
     schedule_jobs()
     scheduler.start()
     logger.info("Scheduler started")
+
+    # Dynamic log window config update
+    update_logging_window()
 
     # Load active strategy config into engines on startup
     _load_startup_config()

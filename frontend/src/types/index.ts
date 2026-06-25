@@ -10,6 +10,17 @@ export interface SideStatus {
   blocked_levels: string[]
 }
 
+export interface HealthStatus {
+  authenticated: boolean
+  ticker_connected: boolean
+  ticker_running: boolean
+  last_nifty_tick_seconds_ago: number | null
+  last_api_error: string | null
+  last_ticker_error: string | null
+  instruments_loaded: boolean
+  subscribed_options: number
+}
+
 export interface StrategyStatus {
   is_running: boolean
   paper_trade: boolean
@@ -19,6 +30,7 @@ export interface StrategyStatus {
   pe: SideStatus
   entries_allowed: boolean
   squareoff_triggered: boolean
+  health?: HealthStatus
 }
 
 export interface Trade {
@@ -47,6 +59,7 @@ export interface StrategyConfig {
   target_points: number
   sl_points: number
   paper_trade: boolean
+  squareoff_time?: string
   is_active: boolean
 }
 

@@ -19,6 +19,7 @@ class BacktestConfigSchema(BaseModel):
     lot_size: int = 75
     target_points: float = 20.0
     sl_points: float = 10.0
+    squareoff_time: Optional[str] = "11:30"
     name: Optional[str] = "Primary"
 
 class BacktestRequest(BaseModel):

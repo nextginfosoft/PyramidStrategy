@@ -236,10 +236,10 @@ class TestTradesRoutes:
     @patch("os.path.exists", return_value=True)
     def test_get_logs_filtered(self, mock_exists, client):
         dummy_log_content = (
-            "2026-06-18 08:30:00 | INFO | Early log\n"
-            "2026-06-18 09:30:00 | INFO | Log 1 inside\n"
-            "2026-06-18 11:15:00 | INFO | Log 2 inside\n"
-            "2026-06-18 12:45:00 | INFO | Late log\n"
+            "2026-06-18 08:30:00 | INFO | app.core: Early log\n"
+            "2026-06-18 09:30:00 | INFO | app.core: Log 1 inside\n"
+            "2026-06-18 11:15:00 | INFO | app.core: Log 2 inside\n"
+            "2026-06-18 12:45:00 | INFO | app.core: Late log\n"
         )
         from unittest.mock import mock_open
         with patch("builtins.open", mock_open(read_data=dummy_log_content)):
@@ -249,6 +249,30 @@ class TestTradesRoutes:
             assert len(data) == 2
             assert "Log 1 inside" in data[0]
             assert "Log 2 inside" in data[1]
+
+    @patch("os.path.exists", return_value=True)
+    def test_get_logs_trade_only_filter(self, mock_exists, client):
+        dummy_log_content = (
+            "2026-06-18 09:30:00 | INFO | app.core: Place BUY order\n"
+            "2026-06-18 09:35:00 | INFO | app.services.kite: connection heartbeats\n"
+            "2026-06-18 10:00:00 | INFO | app.core: Target achieved\n"
+        )
+        from unittest.mock import mock_open
+        with patch("builtins.open", mock_open(read_data=dummy_log_content)):
+            # With trade_only=True (default)
+            resp = client.get("/trades/logs?start_time=09:00&end_time=11:00")
+            assert resp.status_code == 200
+            data = resp.json()["logs"]
+            assert len(data) == 2
+            assert "Place BUY order" in data[0]
+            assert "Target achieved" in data[1]
+
+            # With trade_only=False
+            resp = client.get("/trades/logs?start_time=09:00&end_time=11:00&trade_only=false")
+            assert resp.status_code == 200
+            data_all = resp.json()["logs"]
+            assert len(data_all) == 3
+            assert "connection heartbeats" in data_all[1]
 
     @patch("os.path.exists", return_value=False)
     def test_export_logs_not_found(self, mock_exists, client):
@@ -270,3 +294,35 @@ class TestTradesRoutes:
         assert resp.headers["content-type"] == "text/plain; charset=utf-8"
         assert 'filename="trade_engine.log"' in resp.headers["content-disposition"]
         assert resp.text.replace("\r\n", "\n") == "Log line 1\nLog line 2\n"
+
+    @patch("os.path.exists", return_value=True)
+    def test_get_logs_dynamic_default(self, mock_exists, client, db_session):
+        from app.models.models import StrategyConfig
+        # Create strategy config for test user (user.id = 1)
+        cfg = StrategyConfig(
+            user_id=1,
+            r1=23170, r2=23220, r3=23250,
+            s1=23070, s2=23025, s3=22950,
+            lot_size=75,
+            target_points=20,
+            sl_points=10,
+            paper_trade=True,
+            squareoff_time="14:30",
+            is_active=True
+        )
+        db_session.add(cfg)
+        db_session.commit()
+
+        dummy_log_content = (
+            "2026-06-18 09:30:00 | INFO | app.core: Log 1 inside\n"
+            "2026-06-18 15:15:00 | INFO | app.core: Log 2 inside\n"
+            "2026-06-18 15:45:00 | INFO | app.core: Late log\n"
+        )
+        from unittest.mock import mock_open
+        with patch("builtins.open", mock_open(read_data=dummy_log_content)):
+            resp = client.get("/trades/logs?start_time=09:00")
+            assert resp.status_code == 200
+            data = resp.json()["logs"]
+            assert len(data) == 2
+            assert "Log 1 inside" in data[0]
+            assert "Log 2 inside" in data[1]

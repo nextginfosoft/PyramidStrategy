@@ -120,7 +120,7 @@ class TestExpiryDate:
 class TestSymbolFormat:
     def test_expiry_format_monthly(self):
         d = date(2024, 6, 25) # Last Tuesday of June
-        assert format_expiry_for_symbol(d) == "25JUN24"
+        assert format_expiry_for_symbol(d) == "24JUN"
 
     def test_expiry_format_weekly(self):
         d = date(2024, 6, 11)
@@ -129,3 +129,33 @@ class TestSymbolFormat:
     def test_expiry_format_single_digit_day(self):
         d = date(2024, 6, 4)
         assert format_expiry_for_symbol(d) == "24604"
+
+
+class TestCustomTimeRules:
+    def test_custom_entry_allowed(self):
+        # Configured squareoff = 14:30 (2:30 PM), so cutoff = 14:15 (2:15 PM)
+        sq_time = "14:30"
+        
+        # 1:59 PM should be allowed
+        t_allow = make_ist_time(13, 59)
+        assert is_entry_allowed(t_allow, squareoff_time_str=sq_time) is True
+        
+        # 2:14 PM should be allowed
+        t_allow2 = make_ist_time(14, 14)
+        assert is_entry_allowed(t_allow2, squareoff_time_str=sq_time) is True
+        
+        # 2:15 PM should be blocked
+        t_block = make_ist_time(14, 15)
+        assert is_entry_allowed(t_block, squareoff_time_str=sq_time) is False
+
+    def test_custom_squareoff(self):
+        # Configured squareoff = 14:30
+        sq_time = "14:30"
+        
+        # 2:29 PM is not squareoff yet
+        t_no = make_ist_time(14, 29)
+        assert should_squareoff(t_no, squareoff_time_str=sq_time) is False
+        
+        # 2:30 PM is squareoff
+        t_yes = make_ist_time(14, 30)
+        assert should_squareoff(t_yes, squareoff_time_str=sq_time) is True

@@ -13,7 +13,7 @@ from loguru import logger
 
 from app.core.state_machine import StateMachine, State
 from app.core.time_rules import is_entry_allowed, should_squareoff, today_ist
-from app.core.option_selector import get_option_details
+from app.core.option_selector import get_option_details, estimate_option_price
 from app.core.order_manager import OrderManager
 from app.db.database import SessionLocal, get_redis_client
 from app.config import settings
@@ -134,12 +134,17 @@ class StrategyEngine:
         Called on every NIFTY price tick.
         Processes CE and PE independently.
         """
+        try:
+            get_redis_client().setex("nifty:ltp", 5, str(nifty_ltp))
+        except Exception:
+            pass
+
         if not self.is_running or not self.config:
             self.last_nifty_price = nifty_ltp
             return
 
         # Check squareoff first (highest priority)
-        if should_squareoff():
+        if should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
             self.last_nifty_price = nifty_ltp
             await self._force_squareoff()
             return
@@ -178,7 +183,7 @@ class StrategyEngine:
 
     async def _check_level_entry(self, sm: StateMachine, side: str, nifty_ltp: Decimal, prev_nifty: Optional[Decimal]):
         """Check if NIFTY has hit a trigger level and entry is warranted."""
-        if not is_entry_allowed():
+        if not is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
             return
 
         cfg = self.config
@@ -301,6 +306,7 @@ class StrategyEngine:
                 entry_avg_price=sm.entry_avg_price,
                 mock_ltp=exit_price,
                 trigger_nifty=nifty_ltp,
+                lot_size=sm.lot_size,
             )
 
         # Unsubscribe from option ticks — position closed
@@ -312,11 +318,12 @@ class StrategyEngine:
         asyncio.create_task(self._notify_ai("EXIT", sm.side, reason, nifty_ltp))
 
     async def _force_squareoff(self):
-        """Force close all open positions at 11:30 AM."""
+        """Force close all open positions at configured squareoff time."""
+        sq_time_str = self.config.get("squareoff_time", "11:30") if self.config else "11:30"
         for sm in (self.ce, self.pe):
             if sm.state not in (State.IDLE, State.BLOCKED):
                 option_ltp = self.get_option_ltp(sm.locked_instrument) or sm.entry_avg_price
-                logger.warning(f"User {self.user_id} [{sm.side}] FORCE SQUAREOFF at 11:30 AM")
+                logger.warning(f"User {self.user_id} [{sm.side}] FORCE SQUAREOFF at {sq_time_str}")
                 await self._execute_exit(sm, option_ltp, "SQUAREOFF", Decimal("0"))
 
         self.stop()
@@ -354,6 +361,8 @@ class StrategyEngine:
         ltp = self.get_option_ltp(symbol)
         if ltp is not None:
             return ltp
+        if self.last_nifty_price:
+            return estimate_option_price(symbol, self.last_nifty_price)
         return Decimal("100.00")
 
     # ── Broadcasting ─────────────────────────────────────────────────────────
@@ -361,10 +370,11 @@ class StrategyEngine:
     async def _broadcast_status(self, nifty_ltp: Decimal):
         if not self.broadcast_fn:
             return
+        from app.services.kite_service import get_user_kite_service
+        ks = get_user_kite_service(self.user_id)
+
         if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
             try:
-                from app.services.kite_service import get_user_kite_service
-                ks = get_user_kite_service(self.user_id)
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
@@ -379,10 +389,11 @@ class StrategyEngine:
                 "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
                 "is_running": self.is_running,
                 "paper_trade": self.mock_mode,
-                "entries_allowed": is_entry_allowed(),
-                "squareoff_triggered": should_squareoff(),
+                "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
+                "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
                 "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
                 "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
+                "health": ks.get_status(),
             },
         }
         await self.broadcast_fn(self.user_id, status)
@@ -429,10 +440,11 @@ class StrategyEngine:
         nifty_ltp_str = get_redis_client().get("nifty:ltp")
         nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else None
 
+        from app.services.kite_service import get_user_kite_service
+        ks = get_user_kite_service(self.user_id)
+
         if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
             try:
-                from app.services.kite_service import get_user_kite_service
-                ks = get_user_kite_service(self.user_id)
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
@@ -444,8 +456,9 @@ class StrategyEngine:
             "paper_trade": self.mock_mode,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
-            "entries_allowed": is_entry_allowed(),
-            "squareoff_triggered": should_squareoff(),
+            "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
+            "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
             "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
+            "health": ks.get_status(),
         }
