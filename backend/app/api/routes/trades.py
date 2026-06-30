@@ -86,6 +86,15 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
     import pytz
     from datetime import datetime, timedelta
 
+    def to_ist_str(dt):
+        if dt is None:
+            return ""
+        if dt.tzinfo is not None:
+            dt_ist = dt.astimezone(pytz.timezone("Asia/Kolkata"))
+        else:
+            dt_ist = pytz.utc.localize(dt).astimezone(pytz.timezone("Asia/Kolkata"))
+        return dt_ist.strftime("%Y-%m-%d %H:%M:%S")
+
     query = db.query(Trade).filter(Trade.user_id == user.id)
 
     if period != "all":
@@ -143,15 +152,15 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
                 break
 
         if matching_exit:
-            exit_time_str = matching_exit.created_at.isoformat()
+            exit_time_str = to_ist_str(matching_exit.created_at)
             exit_price_val = float(matching_exit.avg_price) if matching_exit.avg_price is not None else ""
             exit_nifty_val = float(matching_exit.trigger_nifty_level) if matching_exit.trigger_nifty_level is not None else ""
             exit_reason_str = matching_exit.status
             pnl_val = float((matching_exit.avg_price - entry.avg_price) * entry.qty) if matching_exit.avg_price is not None and entry.avg_price is not None else ""
             post_exit_high = float(matching_exit.post_exit_high) if matching_exit.post_exit_high is not None else ""
-            post_exit_high_time = matching_exit.post_exit_high_time.isoformat() if matching_exit.post_exit_high_time is not None else ""
+            post_exit_high_time = to_ist_str(matching_exit.post_exit_high_time)
             post_exit_low = float(matching_exit.post_exit_low) if matching_exit.post_exit_low is not None else ""
-            post_exit_low_time = matching_exit.post_exit_low_time.isoformat() if matching_exit.post_exit_low_time is not None else ""
+            post_exit_low_time = to_ist_str(matching_exit.post_exit_low_time)
         else:
             exit_time_str = "OPEN"
             exit_price_val = ""
@@ -171,7 +180,7 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             entry.expiry.isoformat() if entry.expiry else "",
             entry.lots,
             entry.qty,
-            entry.created_at.isoformat() if entry.created_at else "",
+            to_ist_str(entry.created_at),
             float(entry.avg_price) if entry.avg_price is not None else "",
             float(entry.trigger_nifty_level) if entry.trigger_nifty_level is not None else "",
             exit_time_str,
