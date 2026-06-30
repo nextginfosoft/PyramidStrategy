@@ -89,6 +89,18 @@ def init_db():
             # Expected error if column already exists
             logger.debug(f"Database migration (users.{col} check/add): {e}")
     
+    # Auto-approve and promote SUPER_ADMIN_USERNAME if they exist
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text(
+                "UPDATE users SET is_approved = TRUE, is_admin = TRUE WHERE username = :username"
+            ), {"username": settings.SUPER_ADMIN_USERNAME})
+            conn.commit()
+            logger.info(f"Database migration: Auto-promoted super admin user '{settings.SUPER_ADMIN_USERNAME}'")
+    except Exception as e:
+        logger.warning(f"Failed to auto-promote super admin: {e}")
+    
     # Self-healing migration for squareoff_time
     try:
         from sqlalchemy import text
