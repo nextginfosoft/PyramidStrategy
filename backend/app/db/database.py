@@ -74,6 +74,21 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
     
+    # Self-healing migration for users table
+    for col, col_type in [
+        ("is_approved", "BOOLEAN DEFAULT FALSE NOT NULL"),
+        ("is_admin", "BOOLEAN DEFAULT FALSE NOT NULL")
+    ]:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                conn.commit()
+                logger.info(f"Database migration: Added {col} to users")
+        except Exception as e:
+            # Expected error if column already exists
+            logger.debug(f"Database migration (users.{col} check/add): {e}")
+    
     # Self-healing migration for squareoff_time
     try:
         from sqlalchemy import text
