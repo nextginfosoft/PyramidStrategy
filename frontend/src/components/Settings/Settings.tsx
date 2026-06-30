@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { configApi, aiApi, notificationApi } from '../../services/api'
+import { configApi, aiApi, notificationApi, kiteApi } from '../../services/api'
 import { Notification } from '../Notification/Notification'
+
 
 type StatusMsg = { text: string; ok: boolean }
 
@@ -29,7 +30,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     squareoff_time: cfg?.squareoff_time ?? '11:30',
   })
 
-  const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '' })
+  const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '', username: '', password: '', totp_secret: '' })
   const [ai, setAi] = useState({ provider: 'openai', api_key: '' })
   const [telegram, setTelegram] = useState({ bot_token: '', chat_id: '' })
   const [whatsapp, setWhatsapp] = useState({
@@ -50,10 +51,13 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [testingAi, setTestingAi] = useState(false)
   const [testingTelegram, setTestingTelegram] = useState(false)
   const [testingWhatsapp, setTestingWhatsapp] = useState(false)
+  const [testingAutoLogin, setTestingAutoLogin] = useState(false)
 
   // Password visibility states
   const [showZerodhaKey, setShowZerodhaKey] = useState(false)
   const [showZerodhaSecret, setShowZerodhaSecret] = useState(false)
+  const [showZerodhaPassword, setShowZerodhaPassword] = useState(false)
+  const [showZerodhaTotpSecret, setShowZerodhaTotpSecret] = useState(false)
   const [showAiKey, setShowAiKey] = useState(false)
   const [showTelegramToken, setShowTelegramToken] = useState(false)
   const [showWhatsappToken, setShowWhatsappToken] = useState(false)
@@ -61,6 +65,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (apiKeys) {
+      const zerodhaKey = apiKeys.find((k: any) => k.provider === 'zerodha');
+      if (zerodhaKey && zerodhaKey.extra_config) {
+        setZerodha(p => ({
+          ...p,
+          username: zerodhaKey.extra_config.username || ''
+        }));
+      }
+
       const telegramKey = apiKeys.find((k: any) => k.provider === 'telegram');
       if (telegramKey && telegramKey.extra_config) {
         setTelegram(p => ({
@@ -156,7 +168,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['api-keys'] })
       showStatus(`✓ ${vars.provider.toUpperCase()} credentials saved successfully`, true)
-      if (vars.provider === 'zerodha') setZerodha({ api_key: '', api_secret: '' })
+      if (vars.provider === 'zerodha') {
+        setZerodha(p => ({
+          ...p,
+          api_key: '',
+          api_secret: '',
+          password: '',
+          totp_secret: ''
+        }))
+      }
       if (vars.provider === ai.provider) setAi(p => ({ ...p, api_key: '' }))
       if (vars.provider === 'telegram') setTelegram(p => ({ ...p, bot_token: '' }))
       if (vars.provider === 'whatsapp') setWhatsapp(p => ({ ...p, access_token: '', twilio_auth_token: '' }))
@@ -186,8 +206,30 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }
 
   const handleSaveZerodha = () => {
-    if (!zerodha.api_key && !zerodha.api_secret) return
-    saveKey.mutate({ provider: 'zerodha', api_key: zerodha.api_key, api_secret: zerodha.api_secret })
+    if (!zerodha.api_key && !zerodha.api_secret && !zerodha.username && !zerodha.password && !zerodha.totp_secret) return
+    saveKey.mutate({
+      provider: 'zerodha',
+      api_key: zerodha.api_key || undefined,
+      api_secret: zerodha.api_secret || undefined,
+      extra_config: {
+        username: zerodha.username || undefined,
+        password: zerodha.password || undefined,
+        totp_secret: zerodha.totp_secret || undefined
+      }
+    })
+  }
+
+  const handleTestAutoLogin = async () => {
+    setTestingAutoLogin(true)
+    try {
+      const res = await kiteApi.autoLogin()
+      showStatus(res.message || '✓ Auto-login test passed!', true)
+    } catch (err: any) {
+      const detail = err.response?.data?.detail
+      showStatus(`✗ Auto-login failed: ${detail || err.message}`, false)
+    } finally {
+      setTestingAutoLogin(false)
+    }
   }
 
   const handleSaveAi = () => {
@@ -569,50 +611,110 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 </p>
 
                 <div className="space-y-3 pt-1">
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-navy-300 font-bold uppercase">API Key</span>
-                    <div className="relative">
-                      <input 
-                        type={showZerodhaKey ? "text" : "password"} 
-                        placeholder="Enter API Key"
-                        className="w-full bg-navy-900 border border-navy-700 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
-                        value={zerodha.api_key} 
-                        onChange={e => setZerodha(p => ({ ...p, api_key: e.target.value }))} 
-                      />
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">🔑</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowZerodhaKey(!showZerodhaKey)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-300 hover:text-white px-2 py-1 text-[10px] font-semibold"
-                      >
-                        {showZerodhaKey ? 'Hide' : 'Show'}
-                      </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-navy-300 font-bold uppercase">API Key</span>
+                      <div className="relative">
+                        <input 
+                          type={showZerodhaKey ? "text" : "password"} 
+                          placeholder="Enter API Key"
+                          className="w-full bg-navy-900 border border-navy-700 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                          value={zerodha.api_key} 
+                          onChange={e => setZerodha(p => ({ ...p, api_key: e.target.value }))} 
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">🔑</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowZerodhaKey(!showZerodhaKey)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-300 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                        >
+                          {showZerodhaKey ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-navy-300 font-bold uppercase">API Secret</span>
+                      <div className="relative">
+                        <input 
+                          type={showZerodhaSecret ? "text" : "password"} 
+                          placeholder="Enter API Secret"
+                          className="w-full bg-navy-900 border border-navy-700 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                          value={zerodha.api_secret} 
+                          onChange={e => setZerodha(p => ({ ...p, api_secret: e.target.value }))} 
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">🔒</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowZerodhaSecret(!showZerodhaSecret)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-300 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                        >
+                          {showZerodhaSecret ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                     </div>
                   </div>
+
                   <div className="space-y-1">
-                    <span className="text-[10px] text-navy-300 font-bold uppercase">API Secret</span>
+                    <span className="text-[10px] text-navy-300 font-bold uppercase">Zerodha User ID</span>
                     <div className="relative">
                       <input 
-                        type={showZerodhaSecret ? "text" : "password"} 
-                        placeholder="Enter API Secret"
-                        className="w-full bg-navy-900 border border-navy-700 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
-                        value={zerodha.api_secret} 
-                        onChange={e => setZerodha(p => ({ ...p, api_secret: e.target.value }))} 
+                        type="text" 
+                        placeholder="Enter User ID (e.g. AB1234)"
+                        className="w-full bg-navy-900 border border-navy-700 focus:border-blue-500 rounded pl-8 pr-3 py-2 text-xs text-white transition-all"
+                        value={zerodha.username} 
+                        onChange={e => setZerodha(p => ({ ...p, username: e.target.value }))} 
                       />
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">🔒</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowZerodhaSecret(!showZerodhaSecret)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-300 hover:text-white px-2 py-1 text-[10px] font-semibold"
-                      >
-                        {showZerodhaSecret ? 'Hide' : 'Show'}
-                      </button>
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">👤</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-navy-300 font-bold uppercase">Zerodha Password (for Auto-Login)</span>
+                      <div className="relative">
+                        <input 
+                          type={showZerodhaPassword ? "text" : "password"} 
+                          placeholder="Enter Password"
+                          className="w-full bg-navy-900 border border-navy-700 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white transition-all"
+                          value={zerodha.password} 
+                          onChange={e => setZerodha(p => ({ ...p, password: e.target.value }))} 
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">🔑</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowZerodhaPassword(!showZerodhaPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-300 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                        >
+                          {showZerodhaPassword ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-navy-300 font-bold uppercase">TOTP Secret Key (for Auto-2FA)</span>
+                      <div className="relative">
+                        <input 
+                          type={showZerodhaTotpSecret ? "text" : "password"} 
+                          placeholder="Enter TOTP Secret Seed"
+                          className="w-full bg-navy-900 border border-navy-700 focus:border-blue-500 rounded pl-8 pr-12 py-2 text-xs text-white font-mono transition-all"
+                          value={zerodha.totp_secret} 
+                          onChange={e => setZerodha(p => ({ ...p, totp_secret: e.target.value }))} 
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">⚡</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowZerodhaTotpSecret(!showZerodhaTotpSecret)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-300 hover:text-white px-2 py-1 text-[10px] font-semibold"
+                        >
+                          {showZerodhaTotpSecret ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center pt-2">
-                  <div className="text-[10px] text-navy-300">
+                <div className="flex justify-between items-center pt-2 border-t border-navy-800/40 mt-3">
+                  <div className="text-[10px] text-navy-300 flex flex-col">
                     {getMaskedKey('zerodha') ? (
                       <span>Active Key: <code className="text-blue-400 font-mono">{getMaskedKey('zerodha')}</code></span>
                     ) : (
@@ -620,14 +722,39 @@ export function Settings({ onClose }: { onClose: () => void }) {
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" /> No API Key Configured
                       </span>
                     )}
+                    {(() => {
+                      const key = apiKeys?.find((k: any) => k.provider === 'zerodha');
+                      const hasUser = !!key?.extra_config?.username;
+                      const hasPass = !!key?.extra_config?.has_password;
+                      const hasTotp = !!key?.extra_config?.has_totp;
+                      if (hasUser || hasPass || hasTotp) {
+                        return (
+                          <span className="text-[9px] text-green-400 block mt-0.5">
+                            Auto-Login Configured: {hasUser ? `User: ${key.extra_config.username}` : ''} {hasPass ? ' | Pass ✅' : ''} {hasTotp ? ' | TOTP ✅' : ''}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
-                  <button 
-                    onClick={handleSaveZerodha}
-                    disabled={!zerodha.api_key && !zerodha.api_secret}
-                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
-                  >
-                    Save API Credentials
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {getMaskedKey('zerodha') && apiKeys?.find((k: any) => k.provider === 'zerodha')?.extra_config?.has_totp && (
+                      <button
+                        onClick={handleTestAutoLogin}
+                        disabled={testingAutoLogin}
+                        className="px-3.5 py-2 bg-navy-800 hover:bg-navy-700 text-navy-200 border border-navy-700 disabled:opacity-40 font-semibold text-xs rounded-lg transition-all"
+                      >
+                        {testingAutoLogin ? 'Logging in...' : '⚡ Test Auto-Login'}
+                      </button>
+                    )}
+                    <button 
+                      onClick={handleSaveZerodha}
+                      disabled={!zerodha.api_key && !zerodha.api_secret && !zerodha.username && !zerodha.password && !zerodha.totp_secret}
+                      className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 transition-all font-bold text-xs uppercase tracking-wider text-white rounded-lg"
+                    >
+                      Save API Credentials
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

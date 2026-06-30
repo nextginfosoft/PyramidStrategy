@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { StrategyConfig, Trade } from '../types'
+import type { StrategyConfig, Trade, DailyPnL } from '../types'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
@@ -33,8 +33,9 @@ export const tradesApi = {
   getHistory: (params?: { from_date?: string; to_date?: string; side?: string; limit?: number }): Promise<Trade[]> =>
     api.get('/trades/history', { params }).then(r => r.data),
   getTodayPnl: () => api.get('/trades/pnl/today').then(r => r.data),
-  getPnlHistory: () => api.get('/trades/pnl/history').then(r => r.data),
-  exportTrades: (): Promise<Blob> => api.get('/trades/export', { responseType: 'blob' }).then(r => r.data),
+  getPnlHistory: (): Promise<DailyPnL[]> => api.get('/trades/pnl/history').then(r => r.data),
+  exportTrades: (period: string = 'all'): Promise<Blob> =>
+    api.get('/trades/export', { params: { period }, responseType: 'blob' }).then(r => r.data),
   exportLogs: (): Promise<Blob> => api.get('/trades/logs/export', { responseType: 'blob' }).then(r => r.data),
   getLogs: (start_time?: string, end_time?: string): Promise<{ logs: string[] }> =>
     api.get('/trades/logs', { params: { start_time, end_time } }).then(r => r.data),
@@ -57,6 +58,7 @@ export const kiteApi = {
   validateToken: () => api.post('/auth/kite/validate').then(r => r.data),
   loadInstruments: () => api.post('/auth/kite/load-instruments').then(r => r.data),
   logout: () => api.post('/auth/kite/logout').then(r => r.data),
+  autoLogin: () => api.post('/auth/kite/auto-login').then(r => r.data),
 }
 
 export const aiApi = {
@@ -131,6 +133,20 @@ export const notificationApi = {
   testWhatsapp: () => api.post('/notifications/whatsapp/test').then(r => r.data),
   getStatus: () => api.get('/notifications/status').then(r => r.data),
   reload: () => api.post('/notifications/reload').then(r => r.data),
+}
+
+export const analyticsApi = {
+  getPnlSummary: (startDate: string, endDate: string) =>
+    api.get('/analytics/pnl-summary', { params: { start_date: startDate, end_date: endDate } }).then(r => r.data),
+  exportCsv: (startDate: string, endDate: string): Promise<Blob> =>
+    api.get('/analytics/export-csv', { params: { start_date: startDate, end_date: endDate }, responseType: 'blob' }).then(r => r.data),
+}
+
+export const adminApi = {
+  getUsers: () => api.get('/admin/users').then(r => r.data),
+  approveUser: (id: number) => api.post(`/admin/users/${id}/approve`).then(r => r.data),
+  toggleAdmin: (id: number) => api.post(`/admin/users/${id}/toggle-admin`).then(r => r.data),
+  deleteUser: (id: number) => api.delete(`/admin/users/${id}`).then(r => r.data),
 }
 
 // Restore token on module load

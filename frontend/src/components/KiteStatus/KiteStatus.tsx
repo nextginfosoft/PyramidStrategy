@@ -94,15 +94,20 @@ export default function KiteStatus() {
 
 
   const Dot = ({ ok }: { ok: boolean }) => (
-    <span
-      className={`inline-block w-2.5 h-2.5 rounded-full mr-1.5 ${
-        ok ? "bg-green-400" : "bg-red-400"
-      }`}
-    />
+    <span className="inline-flex relative items-center justify-center mr-1.5 h-2 w-2">
+      {ok ? (
+        <>
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+        </>
+      ) : (
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+      )}
+    </span>
   );
 
   return (
-    <div className="bg-navy-900 border border-navy-700 rounded-xl p-4 space-y-3 shadow-lg">
+    <div className="glass-card rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-navy-100 uppercase tracking-wide">
           Zerodha Kite

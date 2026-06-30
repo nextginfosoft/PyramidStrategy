@@ -141,6 +141,63 @@ def validate_kite_token(user: User = Depends(require_auth)):
     }
 
 
+@router.post("/kite/auto-login")
+def kite_auto_login(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+    """
+    Attempt programmatic auto-login using stored username, password, and TOTP secret.
+    """
+    row = db.query(ApiConfig).filter(
+        ApiConfig.user_id == user.id,
+        ApiConfig.provider == "zerodha",
+        ApiConfig.is_active == True,
+    ).first()
+
+    if not row or not row.extra_config:
+        raise HTTPException(
+            status_code=400,
+            detail="Zerodha credentials not fully configured in settings."
+        )
+
+    extra = row.extra_config
+    username = extra.get("username")
+    password_enc = extra.get("password_encrypted")
+    totp_secret_enc = extra.get("totp_secret_encrypted")
+
+    if not username or not password_enc or not totp_secret_enc:
+        raise HTTPException(
+            status_code=400,
+            detail="Automated login requires Username, Password, and TOTP Secret Key."
+        )
+
+    if not _load_kite_credentials_from_db(user.id):
+        raise HTTPException(status_code=400, detail="Zerodha API key/secret not configured.")
+
+    try:
+        password = decrypt(password_enc)
+        totp_secret = decrypt(totp_secret_enc)
+        
+        user_kite = get_user_kite_service(user.id)
+        access_token = user_kite.auto_login(username, password, totp_secret)
+
+        # Store access token encrypted in DB
+        extra_updated = dict(row.extra_config or {})
+        extra_updated["access_token_encrypted"] = encrypt(access_token)
+        row.extra_config = extra_updated
+        db.commit()
+
+        logger.info(f"User {user.id}: Programmatic daily login successful!")
+        return {
+            "status": "authenticated",
+            "message": "Programmatic daily login successful! Access token updated.",
+        }
+    except Exception as e:
+        logger.error(f"User {user.id}: Programmatic login failed: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Automated login failed: {str(e)}"
+        )
+
+
 @router.post("/kite/start-feed")
 async def start_live_feed(user: User = Depends(require_auth)):
     """

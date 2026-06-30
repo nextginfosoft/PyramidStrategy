@@ -24,6 +24,7 @@ services:
       - PAPER_TRADE=true
       - SECRET_KEY=prod-secret-key-change-this-in-env
       - ENCRYPTION_KEY=prod-encryption-key-32-chars!!
+      - SUPER_ADMIN_USERNAME=${SUPER_ADMIN_USERNAME:-santosh}
     depends_on:
       - db
       - redis

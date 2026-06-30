@@ -98,6 +98,11 @@ def require_auth(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account pending administrator approval",
+        )
     return user
 
 
@@ -123,14 +128,48 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
             detail="Username already taken",
         )
 
+    # Determine automatic super admin promotion
+    is_admin = False
+    is_approved = False
+    if body.username == settings.SUPER_ADMIN_USERNAME:
+        is_admin = True
+        is_approved = True
+
     hashed = get_password_hash(body.password)
-    new_user = User(username=body.username, hashed_password=hashed)
+    new_user = User(
+        username=body.username,
+        hashed_password=hashed,
+        is_approved=is_approved,
+        is_admin=is_admin,
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    logger.info(f"New user registered: '{new_user.username}' (id={new_user.id})")
-    return {"status": "registered", "username": new_user.username}
+    logger.info(f"New user registered: '{new_user.username}' (id={new_user.id}, approved={is_approved}, admin={is_admin})")
+
+    # Send notification alert to the administrator for moderation
+    if not is_approved:
+        try:
+            from app.services.notification import get_user_notification_service
+            import asyncio
+            ns = get_user_notification_service(1)  # Admin channel
+            ns.load_from_db()
+            asyncio.create_task(ns._send(
+                f"🔔 *NEW USER SIGNUP PENDING*:\n"
+                f"• Username: `{new_user.username}`\n"
+                f"• User ID: `{new_user.id}`\n"
+                f"Awaiting administrator approval."
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to send admin signup notification: {e}")
+
+    return {
+        "status": "registered",
+        "username": new_user.username,
+        "is_approved": is_approved,
+        "is_admin": is_admin
+    }
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -157,7 +196,12 @@ def logout():
 @router.get("/me")
 def get_me(user: User = Depends(require_auth)):
     """Return current authenticated user info."""
-    return {"username": user.username, "authenticated": True}
+    return {
+        "username": user.username,
+        "authenticated": True,
+        "is_approved": user.is_approved,
+        "is_admin": user.is_admin
+    }
 
 
 @router.get("/check")
@@ -168,5 +212,10 @@ def check_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(sec
         users = db.query(User).filter(User.id == user_id).all()
         user = users[0] if users else None
         if user:
-            return {"authenticated": True, "username": user.username}
-    return {"authenticated": False, "username": None}
+            return {
+                "authenticated": True,
+                "username": user.username,
+                "is_approved": user.is_approved,
+                "is_admin": user.is_admin
+            }
+    return {"authenticated": False, "username": None, "is_approved": False, "is_admin": False}

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from sqlalchemy.pool import StaticPool
 from app.config import settings
@@ -7,11 +7,27 @@ from loguru import logger
 
 # ── Engine setup ──────────────────────────────────────────────────────────────
 if settings.is_sqlite:
-    engine = create_engine(
-        settings.DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    if ":memory:" in settings.DATABASE_URL:
+        engine = create_engine(
+            settings.DATABASE_URL,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+    else:
+        engine = create_engine(
+            settings.DATABASE_URL,
+            connect_args={"check_same_thread": False},
+        )
+        
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+        except Exception as e:
+            logger.debug(f"Failed to set sqlite pragma WAL: {e}")
 else:
     engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 
@@ -58,6 +74,33 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
     
+    # Self-healing migration for users table
+    for col, col_type in [
+        ("is_approved", "BOOLEAN DEFAULT FALSE NOT NULL"),
+        ("is_admin", "BOOLEAN DEFAULT FALSE NOT NULL")
+    ]:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                conn.commit()
+                logger.info(f"Database migration: Added {col} to users")
+        except Exception as e:
+            # Expected error if column already exists
+            logger.debug(f"Database migration (users.{col} check/add): {e}")
+    
+    # Auto-approve and promote SUPER_ADMIN_USERNAME if they exist
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text(
+                "UPDATE users SET is_approved = TRUE, is_admin = TRUE WHERE username = :username"
+            ), {"username": settings.SUPER_ADMIN_USERNAME})
+            conn.commit()
+            logger.info(f"Database migration: Auto-promoted super admin user '{settings.SUPER_ADMIN_USERNAME}'")
+    except Exception as e:
+        logger.warning(f"Failed to auto-promote super admin: {e}")
+    
     # Self-healing migration for squareoff_time
     try:
         from sqlalchemy import text
@@ -68,3 +111,20 @@ def init_db():
     except Exception as e:
         # Expected error if column already exists
         logger.debug(f"Database migration (squareoff_time check/add): {e}")
+
+    # Self-healing migration for post_exit columns
+    for col, col_type in [
+        ("post_exit_high", "NUMERIC(10, 2)"),
+        ("post_exit_high_time", "TIMESTAMP"),
+        ("post_exit_low", "NUMERIC(10, 2)"),
+        ("post_exit_low_time", "TIMESTAMP")
+    ]:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE trades ADD COLUMN {col} {col_type}"))
+                conn.commit()
+                logger.info(f"Database migration: Added {col} to trades")
+        except Exception as e:
+            # Expected error if column already exists
+            logger.debug(f"Database migration (trades.{col} check/add): {e}")

@@ -64,8 +64,11 @@ def today_ist() -> date:
 def is_entry_allowed(current_time: Optional[datetime] = None, squareoff_time_str: str = "11:30") -> bool:
     """
     Returns True if new entries are allowed (before the calculated entry cutoff).
+    Also strictly enforces that no new entries are allowed after 2:30 PM (14:30) IST.
     """
     t = current_time or now_ist()
+    if t.time() >= time(14, 30):
+        return False
     cutoff = get_entry_cutoff_time(squareoff_time_str)
     return t.time() < cutoff
 

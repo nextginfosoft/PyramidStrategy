@@ -9,6 +9,7 @@ from app.core.engine_manager import engine_manager
 from app.services.kite_service import get_user_kite_service
 from app.api.routes.session import require_auth
 from app.config import settings
+from loguru import logger
 
 router = APIRouter(prefix="/strategy", tags=["strategy"])
 
@@ -73,6 +74,15 @@ async def start_strategy(
     user_engine.mock_mode = cfg.paper_trade
     user_engine.load_config(config_dict)
     user_engine.start()
+
+    # Seed initial NIFTY price from REST API if not yet received via WebSocket ticks
+    if not user_engine.last_nifty_price and user_kite.is_authenticated():
+        try:
+            spot_price = user_kite.get_nifty_spot_ltp()
+            if spot_price:
+                await user_engine.on_nifty_tick(spot_price)
+        except Exception as seed_err:
+            logger.warning(f"Failed to seed initial NIFTY price on start: {seed_err}")
 
     # Broadcast status immediately so frontend updates state to running
     nifty_price = user_engine.last_nifty_price or Decimal("23200.00")

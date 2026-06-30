@@ -49,6 +49,21 @@ class TestEntryAllowed:
         t = make_ist_time(11, 45)
         assert is_entry_allowed(t) is False
 
+    def test_strict_230pm_cutoff_allowed_at_229(self):
+        # 2:29 PM is before 2:30 PM, and 15 mins before 3:00 PM squareoff, so allowed
+        t = make_ist_time(14, 29)
+        assert is_entry_allowed(t, squareoff_time_str="15:00") is True
+
+    def test_strict_230pm_cutoff_blocked_at_230(self):
+        # Exactly 2:30 PM must be strictly blocked even if square-off is 3:00 PM
+        t = make_ist_time(14, 30)
+        assert is_entry_allowed(t, squareoff_time_str="15:00") is False
+
+    def test_strict_230pm_cutoff_blocked_after_230(self):
+        # After 2:30 PM must be blocked
+        t = make_ist_time(14, 45)
+        assert is_entry_allowed(t, squareoff_time_str="15:00") is False
+
 
 class TestSquareoff:
     def test_no_squareoff_at_1000(self):

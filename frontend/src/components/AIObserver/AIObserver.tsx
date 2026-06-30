@@ -56,6 +56,16 @@ export function AIObserver() {
   const addToast = useToastStore((state) => state.addToast)
   const [isApproving, setIsApproving] = useState(false)
 
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text)
+    addToast("Copied suggestion to clipboard!", "success")
+  }
+
+  const handleShare = (text: string) => {
+    const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(text)}`
+    window.open(shareUrl, '_blank')
+  }
+
   const handleApprove = async () => {
     setIsApproving(true)
     try {
@@ -126,7 +136,7 @@ export function AIObserver() {
       </div>
 
       {/* Tab content */}
-      <div className="max-h-64 overflow-auto scrollbar-thin space-y-2.5 pr-0.5">
+      <div className="max-h-[35rem] overflow-auto scrollbar-thin space-y-2.5 pr-0.5">
         
         {/* TAB 1: LIVE SUGGESTIONS */}
         {activeTab === 'live' && (
@@ -147,47 +157,91 @@ export function AIObserver() {
             )}
 
             {/* Live WS suggestions */}
-            {wsSuggestions.map((s, i) => (
-              <div key={`ws-${i}`} className="bg-navy-850 border border-blue-900/40 rounded p-2.5 transition-colors">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">🤖 AI</span>
-                  {s.side && (
-                    <span className={clsx('text-[10px] font-bold px-1 rounded uppercase',
-                      s.side === 'CE' ? 'bg-green-950/40 text-green-400' : 'bg-red-950/40 text-red-400')}>
-                      {s.side}
-                    </span>
-                  )}
-                  <span className="text-[10px] text-navy-300 font-semibold">{s.event}</span>
-                  <span className="text-[9px] text-navy-400 font-mono ml-auto">
-                    {format(s.ts, 'HH:mm:ss')}
-                  </span>
+            {wsSuggestions.map((s, i) => {
+              const fullText = `[AI Observer Suggestion]\n• Event: ${s.event}\n• Side: ${s.side || 'N/A'}\n━━━━━━━━━━━━━━━━━━━━\n${s.text}`
+              return (
+                <div key={`ws-${i}`} className="flex gap-2.5 items-start">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-[11px] text-orange-400 select-none">
+                    🤖
+                  </div>
+                  <div className="flex-1 bg-navy-950/60 border border-navy-800/80 rounded-2xl rounded-tl-none p-3 shadow-md shadow-black/10 hover:border-navy-700/80 transition duration-150 group">
+                    <div className="flex items-center gap-1.5 mb-1 text-[9px] select-none text-navy-400">
+                      <span className="text-orange-400 font-bold uppercase tracking-wider">AI Observer</span>
+                      {s.side && (
+                        <span className={clsx('font-bold px-1 rounded uppercase text-[8px]',
+                          s.side === 'CE' ? 'bg-green-950/40 text-green-400' : 'bg-red-950/40 text-red-400')}>
+                          {s.side}
+                        </span>
+                      )}
+                      <span className="font-semibold text-navy-300 truncate max-w-[120px]">{s.event}</span>
+                      <span className="font-mono ml-auto">
+                        {format(s.ts, 'HH:mm')}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-navy-100 leading-relaxed font-mono select-text">{s.text}</p>
+                    <div className="flex items-center gap-2 pt-2 border-t border-navy-900 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none">
+                      <button
+                        onClick={() => handleCopy(fullText)}
+                        className="px-2 py-0.5 bg-navy-900 hover:bg-navy-850 border border-navy-800 hover:text-white rounded text-[9px] font-bold text-navy-300 flex items-center gap-1 transition focus:outline-none"
+                      >
+                        📋 Copy
+                      </button>
+                      <button
+                        onClick={() => handleShare(fullText)}
+                        className="px-2 py-0.5 bg-navy-900 hover:bg-navy-850 border border-navy-800 hover:text-white rounded text-[9px] font-bold text-navy-300 flex items-center gap-1 transition focus:outline-none"
+                      >
+                        ✈️ Telegram
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-[11px] text-navy-100 leading-relaxed font-mono">{s.text}</p>
-              </div>
-            ))}
+              )
+            })}
 
             {/* DB suggestions */}
-            {!hasWs && apiSuggestions?.map((s) => (
-              <div key={`api-${s.id}`} className="bg-navy-850 border border-navy-800 rounded p-2.5">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">🤖 {s.provider?.toUpperCase()}</span>
-                  {s.side && (
-                    <span className={clsx('text-[10px] font-bold px-1 rounded uppercase',
-                      s.side === 'CE' ? 'bg-green-950/40 text-green-400' : 'bg-red-950/40 text-red-400')}>
-                      {s.side}
-                    </span>
-                  )}
-                  <span className="text-[10px] text-navy-300 font-semibold">{s.event}</span>
-                  {s.nifty_ltp && (
-                    <span className="text-[9px] text-navy-400 font-mono">NIFTY: {s.nifty_ltp}</span>
-                  )}
-                  <span className="text-[9px] text-navy-400 font-mono ml-auto">
-                    {s.created_at ? format(new Date(s.created_at), 'HH:mm') : ''}
-                  </span>
+            {!hasWs && apiSuggestions?.map((s) => {
+              const fullText = `[AI Observer Suggestion]\n• Event: ${s.event}\n• Side: ${s.side || 'N/A'}\n• NIFTY: ${s.nifty_ltp || '—'}\n━━━━━━━━━━━━━━━━━━━━\n${s.suggestion}`
+              return (
+                <div key={`api-${s.id}`} className="flex gap-2.5 items-start">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-[11px] text-blue-400 select-none">
+                    🤖
+                  </div>
+                  <div className="flex-1 bg-navy-950/60 border border-navy-800/80 rounded-2xl rounded-tl-none p-3 shadow-md shadow-black/10 hover:border-navy-700/80 transition duration-150 group">
+                    <div className="flex items-center gap-1.5 mb-1 text-[9px] select-none text-navy-400">
+                      <span className="text-blue-400 font-bold uppercase tracking-wider">AI Observer ({s.provider})</span>
+                      {s.side && (
+                        <span className={clsx('font-bold px-1 rounded uppercase text-[8px]',
+                          s.side === 'CE' ? 'bg-green-950/40 text-green-400' : 'bg-red-950/40 text-red-400')}>
+                          {s.side}
+                        </span>
+                      )}
+                      <span className="font-semibold text-navy-300 truncate max-w-[120px]">{s.event}</span>
+                      {s.nifty_ltp && (
+                        <span className="font-mono">NIFTY: {s.nifty_ltp}</span>
+                      )}
+                      <span className="font-mono ml-auto">
+                        {s.created_at ? format(new Date(s.created_at), 'HH:mm') : ''}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-navy-100 leading-relaxed font-mono select-text">{s.suggestion}</p>
+                    <div className="flex items-center gap-2 pt-2 border-t border-navy-900 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none">
+                      <button
+                        onClick={() => handleCopy(fullText)}
+                        className="px-2 py-0.5 bg-navy-900 hover:bg-navy-850 border border-navy-800 hover:text-white rounded text-[9px] font-bold text-navy-300 flex items-center gap-1 transition focus:outline-none"
+                      >
+                        📋 Copy
+                      </button>
+                      <button
+                        onClick={() => handleShare(fullText)}
+                        className="px-2 py-0.5 bg-navy-900 hover:bg-navy-850 border border-navy-800 hover:text-white rounded text-[9px] font-bold text-navy-300 flex items-center gap-1 transition focus:outline-none"
+                      >
+                        ✈️ Telegram
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-[11px] text-navy-100 leading-relaxed font-mono">{s.suggestion}</p>
-              </div>
-            ))}
+              )
+            })}
           </>
         )}
 
@@ -263,7 +317,16 @@ export function AIObserver() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-navy-400 block uppercase tracking-wider text-[8px]">Put-Call Ratio (PCR)</span>
+                    <span className="text-navy-400 block uppercase tracking-wider text-[8px] flex items-center gap-1">
+                      Put-Call Ratio (PCR)
+                      <span className="group relative inline-block cursor-help select-none text-navy-500 hover:text-navy-300">
+                        ℹ️
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-48 -translate-x-1/2 rounded bg-navy-900 border border-navy-800 p-2 text-[9px] text-navy-200 opacity-0 transition-opacity duration-200 shadow-xl group-hover:opacity-100 leading-normal font-sans font-normal normal-case">
+                          <strong>Put-Call Ratio</strong><br/>
+                          Calculated from Open Interest. PCR &gt; 1.1 indicates bullish option writing bias, while PCR &lt; 0.9 suggests bearish bias.
+                        </span>
+                      </span>
+                    </span>
                     <span className="font-bold text-xs text-white">
                       {preMarket.pcr !== undefined && preMarket.pcr !== null ? preMarket.pcr.toFixed(2) : 'N/A'}{' '}
                       <span className="text-[9px] text-navy-400 font-semibold font-normal">
@@ -272,13 +335,31 @@ export function AIObserver() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-navy-400 block uppercase tracking-wider text-[8px]">Max Pain Strike</span>
+                    <span className="text-navy-400 block uppercase tracking-wider text-[8px] flex items-center gap-1">
+                      Max Pain Strike
+                      <span className="group relative inline-block cursor-help select-none text-navy-500 hover:text-navy-300">
+                        ℹ️
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-48 -translate-x-1/2 rounded bg-navy-900 border border-navy-800 p-2 text-[9px] text-navy-200 opacity-0 transition-opacity duration-200 shadow-xl group-hover:opacity-100 leading-normal font-sans font-normal normal-case">
+                          <strong>Max Pain Strike</strong><br/>
+                          The strike price at which option buyers would experience the maximum loss upon option expiry. Often acts as a price magnet.
+                        </span>
+                      </span>
+                    </span>
                     <span className="font-bold text-xs text-orange-400">
                       {preMarket.max_pain !== undefined && preMarket.max_pain !== null ? preMarket.max_pain.toLocaleString() : 'N/A'}
                     </span>
                   </div>
                   <div>
-                    <span className="text-navy-400 block uppercase tracking-wider text-[8px]">OI Walls (S/R)</span>
+                    <span className="text-navy-400 block uppercase tracking-wider text-[8px] flex items-center gap-1">
+                      OI Walls (S/R)
+                      <span className="group relative inline-block cursor-help select-none text-navy-500 hover:text-navy-300">
+                        ℹ️
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-48 -translate-x-1/2 rounded bg-navy-900 border border-navy-800 p-2 text-[9px] text-navy-200 opacity-0 transition-opacity duration-200 shadow-xl group-hover:opacity-100 leading-normal font-sans font-normal normal-case">
+                          <strong>OI Support / Resistance</strong><br/>
+                          Green represents Put OI Wall (highest support open interest); Red represents Call OI Wall (highest resistance open interest).
+                        </span>
+                      </span>
+                    </span>
                     <span className="font-bold text-xs text-white">
                       <span className="text-green-400">{preMarket.pe_wall ?? 'N/A'}</span>
                       <span className="text-navy-500 mx-1">/</span>

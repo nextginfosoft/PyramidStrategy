@@ -78,9 +78,13 @@ class TradeResponse(BaseModel):
     status: str
     pnl: Optional[float]
     is_paper_trade: bool
+    post_exit_high: Optional[float] = None
+    post_exit_high_time: Optional[datetime] = None
+    post_exit_low: Optional[float] = None
+    post_exit_low_time: Optional[datetime] = None
     created_at: datetime
 
-    @field_validator("created_at", mode="before")
+    @field_validator("created_at", "post_exit_high_time", "post_exit_low_time", mode="before")
     @classmethod
     def ensure_tz(cls, v):
         if isinstance(v, datetime):

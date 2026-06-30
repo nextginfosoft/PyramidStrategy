@@ -28,12 +28,17 @@ class StrategyEngine:
     def __init__(self, user_id: int):
         self.user_id = user_id
         self.is_running: bool = False
+        self.started_at: Optional[str] = None
+        self.stopped_at: Optional[str] = None
         self.last_nifty_price: Optional[Decimal] = None
         self.last_entry_time: dict[str, float] = {"CE": 0.0, "PE": 0.0}
 
         # Independent state machines per CLAUDE.md
         self.ce = StateMachine(side="CE")
         self.pe = StateMachine(side="PE")
+
+        # Post-exit target tracking trades (symbol -> list of trade IDs)
+        self.post_exit_trades: dict[str, list[int]] = {}
 
         # Config (loaded from DB)
         self.config: Optional[dict] = None
@@ -87,26 +92,80 @@ class StrategyEngine:
         self.ce.reset_daily()
         self.pe.reset_daily()
         self._option_ltp.clear()
+        self.post_exit_trades.clear()
         self.last_entry_time = {"CE": 0.0, "PE": 0.0}
+        self.started_at = None
+        self.stopped_at = None
         logger.info(f"User {self.user_id}: Daily reset complete — state machines reset")
 
     def start(self):
         self.is_running = True
-        logger.info(f"User {self.user_id}: Strategy engine STARTED")
+        from datetime import datetime
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        self.started_at = datetime.now(ist).strftime("%I:%M:%S %p")
+        self.stopped_at = None
+        logger.info(f"User {self.user_id}: Strategy engine STARTED at {self.started_at}")
+        
+        # Load any existing target trades for today to continue post-exit high/low tracking
+        self.load_post_exit_trades()
+
         try:
-            # Notifications are user-specific, but can fail gracefully if not configured
-            from app.services.notification import NotificationService
-            # We skip global notifications to avoid conflicts
-        except Exception:
-            pass
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_engine_started(paper_trade=self.mock_mode)
+        except Exception as e:
+            logger.warning(f"Failed to send engine started alert: {e}")
+
+    def load_post_exit_trades(self):
+        """Load today's TARGET trades to continue post-exit high/low tracking after restarts."""
+        self.post_exit_trades = {}
+        try:
+            with SessionLocal() as db:
+                from app.models.models import Trade
+                from app.core.time_rules import today_ist
+                target_trades = db.query(Trade).filter(
+                    Trade.user_id == self.user_id,
+                    Trade.trade_date == today_ist(),
+                    Trade.status == "TARGET"
+                ).all()
+                for trade in target_trades:
+                    symbol = trade.instrument
+                    if symbol not in self.post_exit_trades:
+                        self.post_exit_trades[symbol] = []
+                    if trade.id not in self.post_exit_trades[symbol]:
+                        self.post_exit_trades[symbol].append(trade.id)
+                    # Subscribe to live ticks for this instrument
+                    self._subscribe_option(symbol)
+            logger.info(f"User {self.user_id}: Loaded {len(self.post_exit_trades)} instruments for post-exit tracking")
+        except Exception as e:
+            logger.warning(f"Error loading post-exit trades: {e}")
 
     def stop(self):
         self.is_running = False
-        logger.info(f"User {self.user_id}: Strategy engine STOPPED")
+        from datetime import datetime
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        self.stopped_at = datetime.now(ist).strftime("%I:%M:%S %p")
+        logger.info(f"User {self.user_id}: Strategy engine STOPPED at {self.stopped_at}")
+        try:
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_engine_stopped()
+        except Exception as e:
+            logger.warning(f"Failed to send engine stopped alert: {e}")
 
     def update_option_ltp(self, symbol: str, ltp: Decimal):
         """Called by market data feed when option price updates."""
         self._option_ltp[symbol] = ltp
+        if self.is_running:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._process_post_exit_tick(symbol, ltp))
+            except RuntimeError:
+                pass
 
     def get_option_ltp(self, symbol: str) -> Optional[Decimal]:
         if not symbol:
@@ -126,6 +185,54 @@ class StrategyEngine:
     async def on_option_tick(self, symbol: str, ltp: Decimal):
         """Callback from KiteTicker for option price updates."""
         self._option_ltp[symbol] = ltp
+        await self._process_post_exit_tick(symbol, ltp)
+
+    async def _process_post_exit_tick(self, symbol: str, ltp: Decimal):
+        """Check and update post-exit high/low for completed target trades on this instrument."""
+        if not hasattr(self, "post_exit_trades") or not self.post_exit_trades:
+            return
+        
+        trade_ids = self.post_exit_trades.get(symbol)
+        if not trade_ids:
+            return
+
+        try:
+            import pytz
+            from datetime import datetime
+            ist = pytz.timezone("Asia/Kolkata")
+            now = datetime.now(ist)
+
+            updated_any = False
+            with SessionLocal() as db:
+                from app.models.models import Trade
+                trades = db.query(Trade).filter(Trade.id.in_(trade_ids)).all()
+                for trade in trades:
+                    updated_trade = False
+                    ltp_dec = Decimal(str(ltp))
+                    if trade.post_exit_high is None or ltp_dec > Decimal(str(trade.post_exit_high)):
+                        trade.post_exit_high = ltp_dec
+                        trade.post_exit_high_time = now
+                        updated_trade = True
+                    if trade.post_exit_low is None or ltp_dec < Decimal(str(trade.post_exit_low)):
+                        trade.post_exit_low = ltp_dec
+                        trade.post_exit_low_time = now
+                        updated_trade = True
+                    
+                    if updated_trade:
+                        updated_any = True
+                
+                if updated_any:
+                    db.commit()
+            
+            if updated_any:
+                await self._broadcast_trade_event(
+                    side="CE" if "CE" in symbol else "PE",
+                    level="EXIT",
+                    action="POST_EXIT_UPDATE",
+                    details={"instrument": symbol}
+                )
+        except Exception as e:
+            logger.warning(f"Error in _process_post_exit_tick: {e}")
 
     # ── Main Tick Processor ──────────────────────────────────────────────────
 
@@ -275,6 +382,33 @@ class StrategyEngine:
         # Broadcast trade event to frontend
         await self._broadcast_trade_event(side, level, "ENTRY", sm.get_status())
 
+        # Send Telegram / WhatsApp alerts
+        try:
+            def safe_decimal(v) -> Decimal:
+                if v is None:
+                    return Decimal("0")
+                s = str(v).strip()
+                if s.lower() in ("none", "null", "nan", ""):
+                    return Decimal("0")
+                try:
+                    return Decimal(s)
+                except Exception:
+                    return Decimal("0")
+
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_trade_entry(
+                side=side,
+                level=level,
+                instrument=sm.locked_instrument,
+                lots=1,
+                fill_price=safe_decimal(order.get("fill_price")),
+                nifty_ltp=safe_decimal(nifty_ltp),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send trade entry alert: {e}")
+
         # Fire AI analysis AFTER order — non-blocking
         asyncio.create_task(self._notify_ai("ENTRY", side, level, nifty_ltp))
 
@@ -295,11 +429,12 @@ class StrategyEngine:
     async def _execute_exit(self, sm: StateMachine, exit_price: Decimal,
                               reason: str, nifty_ltp: Decimal):
         """Execute full position exit."""
+        instrument = sm.locked_instrument
         with SessionLocal() as db:
-            self.order_manager.place_exit_order(
+            order_res = self.order_manager.place_exit_order(
                 db=db,
                 side=sm.side,
-                instrument=sm.locked_instrument,
+                instrument=instrument,
                 strike=sm.locked_strike,
                 qty=sm.total_qty,
                 reason=reason,
@@ -310,21 +445,95 @@ class StrategyEngine:
             )
 
         # Unsubscribe from option ticks — position closed
-        self._unsubscribe_option(sm.locked_instrument)
+        # Unless it hit TARGET, in which case we continue tracking post-exit high/low
+        if reason == "TARGET":
+            updated_trade_ids = order_res.get("updated_trade_ids", [])
+            if instrument:
+                if instrument not in self.post_exit_trades:
+                    self.post_exit_trades[instrument] = []
+                for tid in updated_trade_ids:
+                    if tid not in self.post_exit_trades[instrument]:
+                        self.post_exit_trades[instrument].append(tid)
+        else:
+            self._unsubscribe_option(instrument)
 
         exit_result = sm.exit_position(exit_price, reason)
         await self._broadcast_trade_event(sm.side, "EXIT", reason, exit_result)
+
+        # Send Telegram / WhatsApp alerts
+        try:
+            def safe_decimal(v) -> Decimal:
+                if v is None:
+                    return Decimal("0")
+                s = str(v).strip()
+                if s.lower() in ("none", "null", "nan", ""):
+                    return Decimal("0")
+                try:
+                    return Decimal(s)
+                except Exception:
+                    return Decimal("0")
+
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            
+            instrument_val = exit_result.get("instrument")
+            lots_val = exit_result.get("lots", 0)
+            entry_avg_val = exit_result.get("entry_avg_price")
+            pnl_rupees_val = exit_result.get("pnl_rupees", Decimal("0"))
+            
+            if reason == "TARGET":
+                ns.notify_target_hit(
+                    side=sm.side,
+                    instrument=instrument_val,
+                    lots=lots_val,
+                    exit_price=safe_decimal(exit_price),
+                    entry_avg=safe_decimal(entry_avg_val),
+                    pnl_rupees=safe_decimal(pnl_rupees_val),
+                )
+            elif reason == "SL":
+                ns.notify_sl_hit(
+                    side=sm.side,
+                    instrument=instrument_val,
+                    lots=lots_val,
+                    exit_price=safe_decimal(exit_price),
+                    entry_avg=safe_decimal(entry_avg_val),
+                    pnl_rupees=safe_decimal(pnl_rupees_val),
+                )
+        except Exception as e:
+            logger.warning(f"Failed to send trade exit alert: {e}")
 
         asyncio.create_task(self._notify_ai("EXIT", sm.side, reason, nifty_ltp))
 
     async def _force_squareoff(self):
         """Force close all open positions at configured squareoff time."""
         sq_time_str = self.config.get("squareoff_time", "11:30") if self.config else "11:30"
+        
+        # Collect total unrealized P&L before closing
+        ce_pnl = Decimal("0")
+        pe_pnl = Decimal("0")
+        
         for sm in (self.ce, self.pe):
             if sm.state not in (State.IDLE, State.BLOCKED):
                 option_ltp = self.get_option_ltp(sm.locked_instrument) or sm.entry_avg_price
+                if option_ltp is not None and sm.entry_avg_price is not None:
+                    pnl = (option_ltp - sm.entry_avg_price) * sm.total_qty
+                    if sm.side == "CE":
+                        ce_pnl = pnl
+                    else:
+                        pe_pnl = pnl
+                
                 logger.warning(f"User {self.user_id} [{sm.side}] FORCE SQUAREOFF at {sq_time_str}")
-                await self._execute_exit(sm, option_ltp, "SQUAREOFF", Decimal("0"))
+                await self._execute_exit(sm, option_ltp or Decimal("0"), "SQUAREOFF", Decimal("0"))
+
+        # Send Telegram / WhatsApp alerts
+        try:
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_squareoff(ce_pnl, pe_pnl, sq_time_str)
+        except Exception as e:
+            logger.warning(f"Failed to send squareoff alert: {e}")
 
         self.stop()
 
@@ -373,7 +582,7 @@ class StrategyEngine:
         from app.services.kite_service import get_user_kite_service
         ks = get_user_kite_service(self.user_id)
 
-        if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
+        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
             try:
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:
@@ -438,12 +647,12 @@ class StrategyEngine:
 
     def get_full_status(self) -> dict:
         nifty_ltp_str = get_redis_client().get("nifty:ltp")
-        nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else None
+        nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else self.last_nifty_price
 
         from app.services.kite_service import get_user_kite_service
         ks = get_user_kite_service(self.user_id)
 
-        if not self.mock_mode and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
+        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
             try:
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:
@@ -454,6 +663,8 @@ class StrategyEngine:
         return {
             "is_running": self.is_running,
             "paper_trade": self.mock_mode,
+            "started_at": self.started_at,
+            "stopped_at": self.stopped_at,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
             "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),

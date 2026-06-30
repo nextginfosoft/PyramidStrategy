@@ -67,7 +67,7 @@ logger.add(
 
 from app.config import settings
 from app.db.database import init_db, get_redis_client
-from app.api.routes import config, trades, strategy, auth, ai, session, notifications, backtest
+from app.api.routes import config, trades, strategy, auth, ai, session, notifications, backtest, analytics, admin
 from app.api.websocket import websocket_endpoint
 from app.core.engine_manager import engine_manager
 from app.core.time_rules import today_ist
@@ -78,22 +78,49 @@ scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
 
 def schedule_jobs():
-    # 8:00 AM — token expiry reminder + auto-validate Kite token
+    # 8:00 AM — token expiry validation + auto-login fallback
     async def token_check():
         from app.db.database import SessionLocal
         from app.models.models import ApiConfig
         from app.services.kite_service import get_user_kite_service
+        from app.services.encryption import decrypt, encrypt
         try:
             with SessionLocal() as db:
                 configs = db.query(ApiConfig).filter(ApiConfig.provider == "zerodha", ApiConfig.is_active == True).all()
                 for cfg in configs:
                     kite_serv = get_user_kite_service(cfg.user_id)
+                    from app.api.routes.auth import _load_kite_credentials_from_db
+                    _load_kite_credentials_from_db(cfg.user_id)
+                    
+                    is_valid = False
                     if kite_serv.is_authenticated():
-                        valid = kite_serv.validate_token()
-                        if not valid:
-                            logger.warning(f"⚠️ User {cfg.user_id}: Kite access token EXPIRED — re-login required")
+                        is_valid = kite_serv.validate_token()
+                    
+                    if is_valid:
+                        logger.info(f"✅ User {cfg.user_id}: Kite token valid at 8:00 AM check")
+                    else:
+                        logger.info(f"⏳ User {cfg.user_id}: Kite session invalid or expired. Attempting auto-login...")
+                        extra = cfg.extra_config or {}
+                        username = extra.get("username")
+                        password_enc = extra.get("password_encrypted")
+                        totp_secret_enc = extra.get("totp_secret_encrypted")
+                        
+                        if username and password_enc and totp_secret_enc:
+                            try:
+                                password = decrypt(password_enc)
+                                totp_secret = decrypt(totp_secret_enc)
+                                access_token = kite_serv.auto_login(username, password, totp_secret)
+                                
+                                # Store access token encrypted in DB
+                                extra_updated = dict(cfg.extra_config or {})
+                                extra_updated["access_token_encrypted"] = encrypt(access_token)
+                                cfg.extra_config = extra_updated
+                                db.commit()
+                                logger.info(f"⚡ User {cfg.user_id}: Automated daily session validation & login successful!")
+                            except Exception as autologin_ex:
+                                logger.error(f"❌ User {cfg.user_id}: Automated login failed: {autologin_ex}")
                         else:
-                            logger.info(f"✅ User {cfg.user_id}: Kite token valid at 8:00 AM check")
+                            logger.warning(f"⚠️ User {cfg.user_id}: Automated login credentials not fully configured in settings.")
         except Exception as e:
             logger.warning(f"Scheduler token check job failed: {e}")
 
@@ -118,7 +145,7 @@ def schedule_jobs():
 
     scheduler.add_job(daily_startup, "cron", hour=9, minute=0, id="daily_reset")
 
-    # 8:45 AM — pre-market brief job
+    # 9:30 AM — pre-market brief job
     async def pre_market_brief_job():
         from app.db.database import SessionLocal
         from app.models.models import StrategyConfig
@@ -126,7 +153,7 @@ def schedule_jobs():
         from app.core.time_rules import today_ist
         
         today = today_ist()
-        logger.info(f"⏳ Running Pre-market AI Brief job at 8:45 AM for date: {today}")
+        logger.info(f"⏳ Running Pre-market AI Brief job at 9:30 AM for date: {today}")
         try:
             with SessionLocal() as db:
                 configs = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).all()
@@ -135,7 +162,7 @@ def schedule_jobs():
         except Exception as e:
             logger.error(f"Scheduled pre-market brief job failed: {e}")
 
-    scheduler.add_job(pre_market_brief_job, "cron", day_of_week="mon-fri", hour=8, minute=45, id="pre_market_brief")
+    scheduler.add_job(pre_market_brief_job, "cron", day_of_week="mon-fri", hour=9, minute=30, id="pre_market_brief")
 
     # Unified Minute-by-Minute Time Trigger Checker
     async def check_time_triggers():
@@ -188,6 +215,11 @@ def schedule_jobs():
                         if current_time_str == report_time_str:
                             logger.info(f"📊 {report_time_str} — Triggering automated EOD Daily Report for User {u.id}")
                             await send_daily_report(u.id, today)
+                            try:
+                                from app.services.ai_service import run_post_session_review_for_user
+                                await run_post_session_review_for_user(db, u.id, today)
+                            except Exception as ai_ex:
+                                logger.error(f"Failed to trigger automated EOD AI post-session review: {ai_ex}")
                     except Exception as ex:
                         logger.error(f"Error parsing/triggering scheduler times for User {u.id}: {ex}")
         except Exception as e:
@@ -270,9 +302,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Notification service init failed (non-critical): {e}")
 
+    # Start Telegram Bot Service polling
+    try:
+        from app.services.telegram_bot import telegram_bot_service
+        await telegram_bot_service.start()
+    except Exception as e:
+        logger.warning(f"Telegram Bot service startup failed: {e}")
+
     yield
 
     # Shutdown
+    try:
+        from app.services.telegram_bot import telegram_bot_service
+        await telegram_bot_service.stop()
+    except Exception as e:
+        pass
     scheduler.shutdown(wait=False)
     engine_manager.stop_all()
     logger.info("PyramidStrategy Backend stopped")
@@ -310,6 +354,15 @@ def _load_kite_on_startup():
                             on_option_tick=user_engine.on_option_tick,
                             loop=loop,
                         )
+                        # Seed last closed NIFTY spot price if WebSocket is silent
+                        try:
+                            spot_price = kite_service.get_nifty_spot_ltp()
+                            if spot_price:
+                                asyncio.ensure_future(user_engine.on_nifty_tick(spot_price))
+                                logger.info(f"User {user_id}: Seeded initial startup NIFTY price: {spot_price}")
+                        except Exception as seed_err:
+                            logger.warning(f"Failed to seed initial NIFTY price on startup: {seed_err}")
+                        
                         # Load instruments in background (non-blocking)
                         asyncio.ensure_future(
                             loop.run_in_executor(None, kite_service.load_instruments)
@@ -378,6 +431,8 @@ app.include_router(strategy.router)
 app.include_router(ai.router)
 app.include_router(notifications.router)
 app.include_router(backtest.router)
+app.include_router(analytics.router)
+app.include_router(admin.router)
 
 # With /api prefix (supports direct requests to port 8000 using /api prefix, e.g. callback URLs)
 app.include_router(session.router, prefix="/api")
@@ -388,6 +443,8 @@ app.include_router(strategy.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(backtest.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 # ── Callback Route Aliases ───────────────────────────────────────────────────
 # Redirect/callback targets configured in the Zerodha Developer Console vary.

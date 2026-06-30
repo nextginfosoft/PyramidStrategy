@@ -48,11 +48,16 @@ class NotificationService:
         logger.info(f"NotificationService configured for User {self.user_id}: enabled={self._enabled}")
 
     def load_from_db(self):
-        """Load Telegram credentials from DB (called on startup and after Settings save)."""
+        """Load Telegram and WhatsApp credentials from DB (called on startup and after Settings save)."""
         try:
             from app.db.database import SessionLocal
             from app.models.models import ApiConfig
             from app.services.encryption import decrypt
+            from app.services.whatsapp import get_user_whatsapp_service
+
+            # Load WhatsApp config
+            self._ws = get_user_whatsapp_service(self.user_id)
+            self._ws.load_from_db()
 
             with SessionLocal() as db:
                 row = db.query(ApiConfig).filter(
@@ -66,11 +71,17 @@ class NotificationService:
                     chat_id = extra.get("chat_id", "")
                     if token and chat_id:
                         self.configure(token, chat_id)
+                        self._enabled = True
                         return
-            logger.info(f"User {self.user_id}: Telegram not configured — notifications disabled")
-            self._enabled = False
+
+            self._bot_token = None
+            self._chat_id = None
+            self._enabled = self._ws.is_enabled()
+            if not self._enabled:
+                logger.info(f"User {self.user_id}: Neither Telegram nor WhatsApp configured — notifications disabled")
         except Exception as e:
-            logger.warning(f"User {self.user_id}: Telegram config load failed: {e}")
+            logger.warning(f"User {self.user_id}: Config load failed: {e}")
+            self._enabled = False
 
     def is_enabled(self) -> bool:
         return self._enabled
@@ -196,21 +207,67 @@ class NotificationService:
     # ── Internal ─────────────────────────────────────────────────────────────
 
     async def _send(self, text: str):
-        """Send a message to Telegram. Fire-and-forget — logs errors but never raises."""
-        if not self._bot_token or not self._chat_id:
-            return
-        try:
-            url = TELEGRAM_API.format(token=self._bot_token)
-            async with httpx.AsyncClient(timeout=8) as client:
-                resp = await client.post(url, json={
-                    "chat_id": self._chat_id,
-                    "text": text,
-                    "parse_mode": "Markdown",
-                })
-                if resp.status_code != 200:
-                    logger.warning(f"User {self.user_id}: Telegram send failed: {resp.status_code} {resp.text[:100]}")
-        except Exception as e:
-            logger.warning(f"User {self.user_id}: Telegram notification failed (non-critical): {e}")
+        """Send message to Telegram and/or WhatsApp. Fire-and-forget — logs errors but never raises."""
+        # 1. Telegram
+        if self._bot_token and self._chat_id:
+            try:
+                url = TELEGRAM_API.format(token=self._bot_token)
+                async with httpx.AsyncClient(timeout=8) as client:
+                    resp = await client.post(url, json={
+                        "chat_id": self._chat_id,
+                        "text": text,
+                        "parse_mode": "Markdown",
+                    })
+                    if resp.status_code != 200:
+                        logger.warning(f"User {self.user_id}: Telegram send failed: {resp.status_code} {resp.text[:100]}")
+                        if resp.status_code == 400:
+                            try:
+                                resp_data = resp.json()
+                                new_chat_id = resp_data.get("parameters", {}).get("migrate_to_chat_id")
+                                if new_chat_id:
+                                    logger.info(f"User {self.user_id}: Migrating Telegram Chat ID from {self._chat_id} to supergroup ID {new_chat_id}...")
+                                    self._chat_id = str(new_chat_id)
+                                    
+                                    # Update in database
+                                    from app.db.database import SessionLocal
+                                    from app.models.models import ApiConfig
+                                    with SessionLocal() as db:
+                                        row = db.query(ApiConfig).filter(
+                                            ApiConfig.user_id == self.user_id,
+                                            ApiConfig.provider == "telegram",
+                                            ApiConfig.is_active == True,
+                                        ).first()
+                                        if row:
+                                            # We query directly to avoid state desync
+                                            db.refresh(row)
+                                            # Update extra config
+                                            from sqlalchemy.orm.attributes import flag_modified
+                                            extra = row.extra_config or {}
+                                            extra["chat_id"] = str(new_chat_id)
+                                            row.extra_config = extra
+                                            flag_modified(row, "extra_config")
+                                            db.commit()
+                                            logger.info(f"User {self.user_id}: Updated ApiConfig in DB with migrated Chat ID")
+                                            
+                                    # Re-send message to new chat_id
+                                    resp = await client.post(url, json={
+                                        "chat_id": self._chat_id,
+                                        "text": text,
+                                        "parse_mode": "Markdown",
+                                    })
+                                    if resp.status_code == 200:
+                                        logger.info(f"User {self.user_id}: Resent Telegram message to migrated supergroup successfully")
+                            except Exception as migrate_ex:
+                                logger.error(f"Error handling group chat migration: {migrate_ex}")
+            except Exception as e:
+                logger.warning(f"User {self.user_id}: Telegram notification failed (non-critical): {e}")
+
+        # 2. WhatsApp
+        if hasattr(self, "_ws") and self._ws.is_enabled():
+            try:
+                await self._ws.send_message(text)
+            except Exception as e:
+                logger.warning(f"User {self.user_id}: WhatsApp notification failed (non-critical): {e}")
 
     def _now_str(self) -> str:
         return datetime.now(IST).strftime("%I:%M %p IST")

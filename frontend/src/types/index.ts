@@ -24,6 +24,8 @@ export interface HealthStatus {
 export interface StrategyStatus {
   is_running: boolean
   paper_trade: boolean
+  started_at?: string | null
+  stopped_at?: string | null
   nifty_ltp: number | null
   nifty_prev_close: number | null
   ce: SideStatus
@@ -48,6 +50,10 @@ export interface Trade {
   status: string
   pnl: number | null
   is_paper_trade: boolean
+  post_exit_high?: number | null
+  post_exit_high_time?: string | null
+  post_exit_low?: number | null
+  post_exit_low_time?: string | null
   created_at: string
 }
 
@@ -69,3 +75,17 @@ export type WSMessage =
   | { type: 'ai_suggestion'; data: { suggestion: string; event: string; side: string } }
   | { type: 'error'; data: { message: string } }
   | { type: 'pong' }
+
+export interface DailyPnL {
+  id: number
+  user_id: number
+  trade_date: string
+  gross_pnl: number
+  brokerage: number
+  net_pnl: number
+  total_trades: number
+  winning_trades: number
+  ce_pnl: number
+  pe_pnl: number
+  created_at: string
+}

@@ -86,6 +86,165 @@ class KiteService:
         logger.info(f"User {self.user_id}: Kite access_token obtained successfully")
         return access_token
 
+    def auto_login(self, username: str, password: str, totp_secret: str) -> str:
+        """
+        Perform automated Zerodha login using password and TOTP,
+        generating request_token, exchanging it, and returning the access_token.
+        """
+        import requests
+        import pyotp
+        import urllib.parse
+
+        if not self._api_key or not self._api_secret:
+            raise RuntimeError("KiteService is not configured (missing API Key/Secret)")
+
+        logger.info(f"User {self.user_id}: Starting automated TOTP login for {username}...")
+
+        session = requests.Session()
+        headers = {
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.164 Safari/537.36",
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "en-US,en;q=0.9",
+            "content-type": "application/x-www-form-urlencoded"
+        }
+        session.headers.update(headers)
+
+        # 1. Access login page to fetch initial cookies
+        try:
+            session.get("https://kite.zerodha.com")
+        except Exception as e:
+            raise RuntimeError(f"Failed to access Zerodha login page: {e}")
+
+        # 2. POST to api/login
+        try:
+            login_res = session.post(
+                "https://kite.zerodha.com/api/login",
+                data={"user_id": username, "password": password}
+            )
+            login_data = login_res.json()
+        except Exception as e:
+            raise RuntimeError(f"Failed to submit login credentials: {e}")
+
+        if login_data.get("status") != "success":
+            raise RuntimeError(f"Login API error: {login_data.get('message', 'Unknown error')}")
+
+        request_id = login_data["data"]["request_id"]
+        logger.info(f"User {self.user_id}: Got login request_id: {request_id}")
+
+        # 3. Generate TOTP code
+        try:
+            secret_clean = totp_secret.strip()
+            # If the user pasted an otpauth URI, parse the secret param
+            if secret_clean.lower().startswith("otpauth://"):
+                parsed_otp = urllib.parse.urlparse(totp_secret)
+                otp_params = urllib.parse.parse_qs(parsed_otp.query)
+                secret_param = otp_params.get("secret")
+                if secret_param:
+                    secret_clean = secret_param[0]
+            
+            secret_clean = secret_clean.replace(" ", "").upper()
+            # Ensure base32 padding is correct (multiple of 8)
+            missing_padding = len(secret_clean) % 8
+            if missing_padding:
+                secret_clean += "=" * (8 - missing_padding)
+                
+            totp = pyotp.TOTP(secret_clean)
+            otp_val = totp.now()
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate TOTP code (check secret key): {e}")
+
+        # 4. POST to api/twofa
+        try:
+            twofa_res = session.post(
+                "https://kite.zerodha.com/api/twofa",
+                data={
+                    "user_id": username,
+                    "request_id": request_id,
+                    "twofa_value": otp_val,
+                    "twofa_type": "totp"
+                }
+            )
+            twofa_data = twofa_res.json()
+        except Exception as e:
+            raise RuntimeError(f"Failed to submit 2FA details: {e}")
+
+        if twofa_data.get("status") != "success":
+            raise RuntimeError(f"2FA API error: {twofa_data.get('message', 'Unknown error')}")
+
+        logger.info(f"User {self.user_id}: 2FA validation successful")
+
+        # 5. Connect to Kite Connect authorization URL and follow redirects step-by-step
+        auth_url = f"https://kite.zerodha.com/connect/login?api_key={self._api_key}&v=3"
+        current_url = auth_url
+        request_token = None
+        max_redirects = 5
+
+        for redirect_count in range(max_redirects):
+            try:
+                auth_res = session.get(current_url, allow_redirects=False)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load Kite auth URL {current_url}: {e}")
+
+            if auth_res.status_code in (301, 302):
+                location = auth_res.headers.get("Location") or auth_res.headers.get("location")
+                if not location:
+                    raise RuntimeError(f"Location header missing from redirect at {current_url}")
+
+                # Resolve relative redirects
+                location = urllib.parse.urljoin(current_url, location)
+
+                # Parse request_token from query string
+                parsed_url = urllib.parse.urlparse(location)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+                request_token_list = query_params.get("request_token")
+                if request_token_list:
+                    request_token = request_token_list[0]
+                    break
+
+                current_url = location
+            else:
+                # If we get a 200 OK, check if it's the authorize page
+                if "connect/authorize" in auth_res.url:
+                    logger.info(f"User {self.user_id}: Encountered authorization consent page. Auto-approving...")
+                    try:
+                        parsed_consent = urllib.parse.urlparse(auth_res.url)
+                        consent_params = urllib.parse.parse_qs(parsed_consent.query)
+                        approve_res = session.post(
+                            "https://kite.zerodha.com/connect/authorize",
+                            data={
+                                "status": "approve",
+                                "client_id": self._api_key,
+                                "redirect_params": consent_params.get("redirect_params", [""])[0]
+                            },
+                            allow_redirects=False
+                        )
+                        if approve_res.status_code in (301, 302):
+                            location = approve_res.headers.get("Location") or approve_res.headers.get("location")
+                            location = urllib.parse.urljoin(auth_res.url, location)
+                            parsed_url = urllib.parse.urlparse(location)
+                            query_params = urllib.parse.parse_qs(parsed_url.query)
+                            request_token_list = query_params.get("request_token")
+                            if request_token_list:
+                                request_token = request_token_list[0]
+                                break
+                            current_url = location
+                            continue
+                    except Exception as approve_err:
+                        logger.error(f"User {self.user_id}: Auto-approval of consent failed: {approve_err}")
+
+                raise RuntimeError(
+                    f"Expected redirect (302) from Zerodha login, got status {auth_res.status_code} at {current_url}"
+                )
+
+        if not request_token:
+            raise RuntimeError("Failed to capture request_token after following redirects.")
+
+        logger.info(f"User {self.user_id}: Captured request_token successfully")
+
+        # 6. Exchange request_token for access_token
+        access_token = self.exchange_token(request_token)
+        return access_token
+
     def set_access_token(self, access_token: str):
         """Restore access_token from DB on app startup."""
         if not self._kite:
@@ -256,13 +415,7 @@ class KiteService:
         self._ticker.on_reconnect = on_reconnect
         self._ticker.on_noreconnect = on_noreconnect
 
-        thread = threading.Thread(
-            target=self._ticker.connect,
-            kwargs={"threaded": False},
-            daemon=True,
-            name=f"KiteTicker-Thread-{self.user_id}",
-        )
-        thread.start()
+        self._ticker.connect(threaded=True)
         self._ticker_running = True
         logger.info(f"User {self.user_id}: KiteTicker background thread started")
 
@@ -342,6 +495,21 @@ class KiteService:
         except Exception:
             pass
         return self.get_ltp_rest(symbol)
+
+    def get_nifty_spot_ltp(self) -> Optional[Decimal]:
+        """Fetch NIFTY spot LTP from Zerodha REST API."""
+        if not self.is_authenticated() or not self._kite:
+            return None
+        try:
+            resp = self._kite.ltp(["NSE:NIFTY 50"])
+            ltp = resp.get("NSE:NIFTY 50", {}).get("last_price")
+            if ltp:
+                self._last_api_error = None
+                return Decimal(str(ltp))
+        except Exception as e:
+            logger.warning(f"Failed to fetch NIFTY spot LTP (REST API): {e}")
+            self._last_api_error = f"Failed to fetch NIFTY spot LTP: {str(e)}"
+        return None
 
     def get_nifty_prev_close(self) -> Optional[Decimal]:
         """Fetch NIFTY previous close price from Kite REST API."""

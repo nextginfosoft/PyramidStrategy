@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Trade } from '../../types'
 import { tradesApi, configApi } from '../../services/api'
@@ -34,6 +34,21 @@ const getRangeDates = (range: string) => {
     }
     default:
       return { from: '', to: '' }
+  }
+}
+
+const formatPostExitTime = (timeStr: string | null | undefined, tradeDateStr: string) => {
+  if (!timeStr) return ''
+  try {
+    const d = new Date(timeStr)
+    const todayStr = getLocalDateString(new Date())
+    if (tradeDateStr === todayStr) {
+      return format(d, 'hh:mm a')
+    } else {
+      return format(d, 'dd MMM hh:mm a')
+    }
+  } catch (e) {
+    return ''
   }
 }
 

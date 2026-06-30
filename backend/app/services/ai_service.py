@@ -169,7 +169,7 @@ class AIService:
                 "success": True,
                 "vix": vix,
                 "vix_analysis": f"VIX is at {vix}%, indicating normal trading speeds.",
-                "expected_range": f"Expected range is ±{current_ltp * (vix/100) / 15.87:.1f} points.",
+                "expected_range": f"Expected range is ±{current_ltp * (vix / 100) / 15.87:.1f} points.",
                 "level_assessment": "Current configured levels are appropriately positioned.",
                 "suggested_config": {
                     "s1": round(current_ltp - 50, 1),
@@ -367,6 +367,7 @@ class AIService:
         try:
             from app.db.database import SessionLocal
             from app.models.models import AISuggestion
+            from app.services.notification import get_user_notification_service
             with SessionLocal() as db:
                 row = AISuggestion(
                     user_id=self.user_id,
@@ -380,8 +381,24 @@ class AIService:
                 )
                 db.add(row)
                 db.commit()
+                
+            # Send Telegram live suggestion alert
+            ns = get_user_notification_service(self.user_id)
+            if ns.is_enabled():
+                header = f"🤖 *AI Observer Live Suggestion*"
+                if side:
+                    header += f" ({side})"
+                tg_message = (
+                    f"{header}\n"
+                    f"• *Event:* {event}\n"
+                    f"• *NIFTY Spot:* {nifty_ltp:.1f}\n"
+                    f"• *Level:* {level or 'N/A'}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{suggestion}"
+                )
+                await ns._send(tg_message)
         except Exception as e:
-            logger.warning(f"Failed to store AI suggestion: {e}")
+            logger.warning(f"Failed to store or send AI suggestion: {e}")
 
     def get_today_suggestions(self, limit: int = 20) -> list:
         try:
@@ -600,3 +617,62 @@ async def run_pre_market_brief_for_user(db, user_id: int, today) -> dict:
             await ns._send(tg_message)
             
     return brief
+
+
+async def run_post_session_review_for_user(db, user_id: int, today) -> dict:
+    """Orchestrate EOD post-session review generation and send Telegram alert."""
+    from app.services.ai_service import get_user_ai_service
+    from app.services.notification import get_user_notification_service
+    from app.models.models import Trade, User
+    from app.api.routes.trades import get_today_pnl
+    
+    logger.info(f"⏳ Running EOD Post-session AI Review for User {user_id}...")
+    
+    # 1. Fetch trades
+    trades = db.query(Trade).filter(
+        Trade.user_id == user_id,
+        Trade.trade_date == today
+    ).all()
+    
+    # 2. Fetch P&L
+    user = db.query(User).filter(User.id == user_id).first()
+    pnl = get_today_pnl(db, user) if user else {}
+    
+    # 3. Format trades
+    trades_list = []
+    for t in trades:
+        trades_list.append({
+            "id": t.id,
+            "side": t.side,
+            "level": t.level,
+            "action": t.action,
+            "avg_price": float(t.avg_price) if t.avg_price else None,
+            "pnl": float(t.pnl) if t.pnl else None,
+        })
+        
+    ai_serv = get_user_ai_service(user_id)
+    ns = get_user_notification_service(user_id)
+    
+    review = await ai_serv.generate_post_session_review(trades_list, pnl)
+    
+    if review.get("success") and ns.is_enabled():
+        total_exits = pnl.get("total_exits", 0)
+        winning_trades = pnl.get("winning_trades", 0)
+        win_rate = (winning_trades / total_exits * 100) if total_exits > 0 else 0.0
+        gross_pnl = pnl.get("gross_pnl", 0.0)
+        
+        tg_message = (
+            f"🌆 *Post-Session AI Review* ({today.strftime('%d-%b-%Y')})\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"• *Gross P&L:* Rs {gross_pnl:.2f}\n"
+            f"• *Total Exits:* {total_exits} (Wins: *{winning_trades}*)\n"
+            f"• *Win Rate:* {win_rate:.1f}%\n\n"
+            f"🟢 *What Worked:*\n_{review.get('what_worked')}_\n\n"
+            f"🔴 *What Didn't Work:*\n_{review.get('what_didnt_work')}_\n\n"
+            f"📈 *Patterns Observed:*\n_{review.get('patterns_observed')}_\n\n"
+            f"💡 *Actionable Advice for Tomorrow:*\n_{review.get('future_advice')}_"
+        )
+        await ns._send(tg_message)
+        logger.info(f"User {user_id}: Sent Post-Session AI Review Telegram alert")
+        
+    return review
