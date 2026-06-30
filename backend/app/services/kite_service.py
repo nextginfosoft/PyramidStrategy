@@ -415,13 +415,7 @@ class KiteService:
         self._ticker.on_reconnect = on_reconnect
         self._ticker.on_noreconnect = on_noreconnect
 
-        thread = threading.Thread(
-            target=self._ticker.connect,
-            kwargs={"threaded": False},
-            daemon=True,
-            name=f"KiteTicker-Thread-{self.user_id}",
-        )
-        thread.start()
+        self._ticker.connect(threaded=True)
         self._ticker_running = True
         logger.info(f"User {self.user_id}: KiteTicker background thread started")
 
