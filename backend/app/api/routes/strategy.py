@@ -9,6 +9,7 @@ from app.core.engine_manager import engine_manager
 from app.services.kite_service import get_user_kite_service
 from app.api.routes.session import require_auth
 from app.config import settings
+from loguru import logger
 
 router = APIRouter(prefix="/strategy", tags=["strategy"])
 

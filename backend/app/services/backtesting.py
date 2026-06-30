@@ -357,7 +357,7 @@ async def run_backtest_workflow(
             
             alt_stats = compute_statistics(alt_trades)
             results["comparisons"].append({
-                "name": alt_config.get("name", f"Config {idx+1}"),
+                "name": alt_config.get("name", f"Config {idx + 1}"),
                 "config": alt_config,
                 "summary": alt_stats
             })

@@ -169,7 +169,7 @@ class AIService:
                 "success": True,
                 "vix": vix,
                 "vix_analysis": f"VIX is at {vix}%, indicating normal trading speeds.",
-                "expected_range": f"Expected range is ±{current_ltp * (vix/100) / 15.87:.1f} points.",
+                "expected_range": f"Expected range is ±{current_ltp * (vix / 100) / 15.87:.1f} points.",
                 "level_assessment": "Current configured levels are appropriately positioned.",
                 "suggested_config": {
                     "s1": round(current_ltp - 50, 1),

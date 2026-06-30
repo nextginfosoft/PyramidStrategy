@@ -329,7 +329,7 @@ class OrderManager:
                         msg = o.get("status_message") or o.get("status_message_raw", "Unknown reason")
                         raise OrderError(f"Order {kite_status}: {msg}")
             if i % 5 == 4:
-                logger.debug(f"Still waiting for fill: {order_id} ({i+1}s)")
+                logger.debug(f"Still waiting for fill: {order_id} ({i + 1}s)")
 
         raise TimeoutError(f"Order {order_id} not filled within {_FILL_POLL_SECS}s")
 
