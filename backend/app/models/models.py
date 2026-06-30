@@ -9,6 +9,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     hashed_password = Column(String(100), nullable=False)
+    is_approved = Column(Boolean, default=False, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -53,6 +55,10 @@ class Trade(Base):
     status = Column(String(20), default="OPEN")        # OPEN/TARGET/SL/SQUAREOFF/CANCELLED
     pnl = Column(Numeric(12, 2))
     is_paper_trade = Column(Boolean, default=True)
+    post_exit_high = Column(Numeric(10, 2))
+    post_exit_high_time = Column(DateTime(timezone=True))
+    post_exit_low = Column(Numeric(10, 2))
+    post_exit_low_time = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -179,10 +179,21 @@ class OrderManager:
         )
 
         expiry_date = today_ist()
+        updated_trade_ids = []
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        now_ist = datetime.now(ist)
+
         if open_trades:
             expiry_date = open_trades[0].expiry or today_ist()
             for ot in open_trades:
                 ot.status = reason
+                if reason == "TARGET":
+                    ot.post_exit_high = exit_price
+                    ot.post_exit_high_time = now_ist
+                    ot.post_exit_low = exit_price
+                    ot.post_exit_low_time = now_ist
+                updated_trade_ids.append(ot.id)
             open_trades[0].pnl = pnl_rupees
 
         # Log the EXIT as a separate record
@@ -203,8 +214,14 @@ class OrderManager:
             status=reason,
             pnl=pnl_rupees,
             is_paper_trade=self.paper_trade,
+            post_exit_high=exit_price if reason == "TARGET" else None,
+            post_exit_high_time=now_ist if reason == "TARGET" else None,
+            post_exit_low=exit_price if reason == "TARGET" else None,
+            post_exit_low_time=now_ist if reason == "TARGET" else None,
         )
         db.add(exit_trade)
+        db.flush()
+        updated_trade_ids.append(exit_trade.id)
 
         self._log_audit(db, f"ORDER_EXIT_{reason}", side, None, trigger_nifty, {
             "instrument": instrument,
@@ -216,12 +233,17 @@ class OrderManager:
         })
         db.commit()
 
+        # Update ID in list after commit to be safe
+        if exit_trade.id and exit_trade.id not in updated_trade_ids:
+            updated_trade_ids.append(exit_trade.id)
+
         return {
             "order_id": order_id,
             "exit_price": exit_price,
             "pnl_points": pnl_pts,
             "pnl_rupees": pnl_rupees,
             "status": status,
+            "updated_trade_ids": updated_trade_ids,
         }
 
     # ── Live Order Placement ──────────────────────────────────────────────────

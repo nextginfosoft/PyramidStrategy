@@ -13,10 +13,15 @@ import { Settings } from '../Settings/Settings'
 import KiteStatus from '../KiteStatus/KiteStatus'
 import { LiveLogModal } from '../LiveLogModal/LiveLogModal'
 import { PDFReportsModal } from '../PDFReportsModal/PDFReportsModal'
+import { AdminPanel } from '../AdminPanel/AdminPanel'
+import { UserSession } from '../../App'
 import { BacktestModal } from '../BacktestModal/BacktestModal'
+import { Analytics } from '../Analytics/AnalyticsModal'
 import { Notification } from '../Notification/Notification'
 import { UserGuide } from '../UserGuide/UserGuide'
 import { StatusBar } from '../StatusBar/StatusBar'
+import { ChartModal } from '../ChartModal/ChartModal'
+import { AreaChart as SparkAreaChart, Area as SparkArea, ResponsiveContainer as SparkContainer } from 'recharts'
 
 const formatTimeTo12Hour = (timeStr: string): string => {
   try {
@@ -49,19 +54,42 @@ const getCutoffTimeStr = (squareoffTime: string): string => {
   }
 }
 
-export function Dashboard({ onLogout }: { onLogout?: () => void }) {
+export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: UserSession | null }) {
   useWebSocket()
   const qc = useQueryClient()
   const { status, wsConnected, setStatus, clearAISuggestions } = useStrategyStore()
   const addToast = useToastStore(state => state.addToast)
   const [showSettings, setShowSettings] = useState(false)
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [showUserGuide, setShowUserGuide] = useState(false)
   const [showLiveLogs, setShowLiveLogs] = useState(false)
   const [showPDFReports, setShowPDFReports] = useState(false)
   const [showBacktest, setShowBacktest] = useState(false)
+  const [showAnalytics, setShowAnalytics] = useState(false)
+  const [showChart, setShowChart] = useState(false)
   const [simPrice, setSimPrice] = useState('')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('sidebar_collapsed') === 'true'
+  })
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('pyramid_theme')
+    if (saved === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light')
+      return 'light'
+    }
+    document.documentElement.setAttribute('data-theme', 'dark')
+    return 'dark'
+  })
+
+  const handleToggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(nextTheme)
+    document.documentElement.setAttribute('data-theme', nextTheme)
+    localStorage.setItem('pyramid_theme', nextTheme)
+  }
   const [exportingTrades, setExportingTrades] = useState(false)
   const [exportingLogs, setExportingLogs] = useState(false)
+  const [exportPeriod, setExportPeriod] = useState('all')
   const [lastLtpTime, setLastLtpTime] = useState<number | null>(null)
   const [lastPnlTime, setLastPnlTime] = useState<number | null>(null)
   const [secondsTicker, setSecondsTicker] = useState(0)
@@ -132,22 +160,22 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     onLogout?.()
   }
 
-  const handleExportTrades = async () => {
+  const handleExportTrades = async (period: string = 'all') => {
     setExportingTrades(true)
     try {
-      const blob = await tradesApi.exportTrades()
+      const blob = await tradesApi.exportTrades(period)
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', 'pyramid_trades.csv')
+      link.setAttribute('download', `pyramid_trades_${period}.csv`)
       document.body.appendChild(link)
       link.click()
       link.parentNode?.removeChild(link)
       window.URL.revokeObjectURL(url)
-      addToast('Trades exported successfully.', 'success')
+      addToast(`Trades (${period}) exported successfully.`, 'success')
     } catch (err) {
       console.error(err)
-      addToast('Failed to export trades.', 'error')
+      addToast(`Failed to export trades (${period}).`, 'error')
     } finally {
       setExportingTrades(false)
     }
@@ -179,24 +207,28 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     queryKey: ['strategy-config'],
     queryFn: configApi.getStrategy,
     retry: false,
+    enabled: user?.is_approved !== false,
   })
 
   const { data: trades = [] } = useQuery({
     queryKey: ['trades-today'],
     queryFn: tradesApi.getToday,
     refetchInterval: wsConnected ? 15000 : 3000,
+    enabled: user?.is_approved !== false,
   })
 
   const { data: pnl, isLoading: isPnlLoading } = useQuery({
     queryKey: ['pnl-today'],
     queryFn: tradesApi.getTodayPnl,
     refetchInterval: wsConnected ? 15000 : 3000,
+    enabled: user?.is_approved !== false,
   })
 
   const { data: queryStatus } = useQuery({
     queryKey: ['strategy-status'],
     queryFn: strategyApi.getStatus,
     refetchInterval: wsConnected ? 15000 : 3000,
+    enabled: user?.is_approved !== false,
   })
 
   useEffect(() => {
@@ -256,6 +288,27 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
   const isRunning = status?.is_running ?? false
   const paperTrade = status?.paper_trade ?? true
   const niftyLtp = status?.nifty_ltp
+  const [niftyTicks, setNiftyTicks] = useState<number[]>([])
+
+  useEffect(() => {
+    if (niftyLtp != null) {
+      setNiftyTicks(prev => {
+        if (prev.length > 0 && prev[prev.length - 1] === niftyLtp) {
+          return prev
+        }
+        const next = [...prev, niftyLtp]
+        if (next.length > 30) {
+          return next.slice(next.length - 30)
+        }
+        return next
+      })
+    }
+  }, [niftyLtp])
+
+  const sparklineData = useMemo(() => {
+    return niftyTicks.map((val, idx) => ({ id: idx, value: val }))
+  }, [niftyTicks])
+
   const todayPnl = pnl?.gross_pnl ?? 0
   const hasOpenPositions = (status?.ce?.lots ?? 0) > 0 || (status?.pe?.lots ?? 0) > 0
 
@@ -272,6 +325,102 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
       formattedPct: Math.abs(pct).toFixed(2) + '%',
     }
   }, [niftyLtp, niftyPrevClose])
+
+  const estimatedCharges = useMemo(() => {
+    let totalBrokerage = 0
+    let totalExchangeTaxes = 0
+    let totalStt = 0
+    let totalStampDuty = 0
+    let totalSlippage = 0 // Est. 0.1% slippage on exit order fills
+
+    trades.forEach(t => {
+      const price = t.avg_price ?? 0
+      const qty = t.qty ?? 0
+      const value = price * qty
+
+      // Only count completed/filled trades
+      if (t.status === 'COMPLETED' || t.status === 'FILLED' || !t.status) {
+        // Zerodha Brokerage: Flat ₹20 per executed order
+        totalBrokerage += 20
+
+        // Exchange Transaction Charges (approx. 0.05% of turnover value for options)
+        totalExchangeTaxes += value * 0.0005
+
+        if (t.action === 'EXIT') {
+          // STT (Securities Transaction Tax) is 0.125% of option premium value on Sell side
+          totalStt += value * 0.00125
+        } else if (t.action === 'BUY') {
+          // Stamp duty is 0.003% of option premium value on Buy side
+          totalStampDuty += value * 0.00003
+        }
+
+        // Slippage: Let's estimate an average slippage of approx. 0.1% of option turnover value
+        totalSlippage += value * 0.001
+      }
+    })
+
+    // GST is 18% of (Brokerage + Exchange Transaction Charges)
+    const gst = (totalBrokerage + totalExchangeTaxes) * 0.18
+
+    // SEBI Charges: 0.0001% of turnover
+    const turnover = trades.reduce((acc, t) => acc + ((t.avg_price ?? 0) * (t.qty ?? 0)), 0)
+    const sebiCharges = turnover * 0.000001
+
+    const totalCharges = totalBrokerage + totalExchangeTaxes + totalStt + totalStampDuty + gst + sebiCharges
+    const netPnl = todayPnl - totalCharges - totalSlippage
+
+    return {
+      brokerage: totalBrokerage,
+      taxes: totalExchangeTaxes + totalStt + totalStampDuty + gst + sebiCharges,
+      slippage: totalSlippage,
+      total: totalCharges + totalSlippage,
+      netPnl,
+    }
+  }, [trades, todayPnl])
+
+  const { data: pnlHistory = [] } = useQuery({
+    queryKey: ['pnl-history'],
+    queryFn: tradesApi.getPnlHistory,
+    refetchInterval: wsConnected ? 60000 : 15000,
+    enabled: user?.is_approved !== false,
+  })
+
+  const stats = useMemo(() => {
+    if (!pnlHistory || !pnlHistory.length) {
+      return { winRate: 0, streak: 0, profitFactor: 0.0 }
+    }
+    const winningDays = pnlHistory.filter(day => (day.net_pnl ?? 0) > 0).length
+    const winRate = (winningDays / pnlHistory.length) * 100
+
+    let streak = 0
+    // Count consecutive winning days (pnlHistory is sorted desc: latest first)
+    for (let i = 0; i < pnlHistory.length; i++) {
+      const net = pnlHistory[i].net_pnl ?? 0
+      if (net > 0) {
+        streak++
+      } else if (net < 0) {
+        break
+      }
+    }
+
+    let grossProfits = 0
+    let grossLosses = 0
+    pnlHistory.forEach(day => {
+      const p = day.net_pnl ?? 0
+      if (p > 0) {
+        grossProfits += p
+      } else if (p < 0) {
+        grossLosses += Math.abs(p)
+      }
+    })
+    const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses) : grossProfits > 0 ? 9.9 : 0.0
+
+    return {
+      winRate: Math.round(winRate),
+      streak,
+      profitFactor: parseFloat(profitFactor.toFixed(2))
+    }
+  }, [pnlHistory])
 
   const marketTimestamp = useMemo(() => {
     if (!lastLtpTime) return null
@@ -326,136 +475,254 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
     }
   }
 
+  if (user && user.is_approved === false) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-navy-950/40 backdrop-blur-md border border-navy-500/30 rounded-2xl p-8 text-center shadow-2xl relative overflow-hidden">
+          {/* Decorative glowing gradient background circles */}
+          <div className="absolute -top-24 -left-24 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl" />
+          <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-rose-500/10 rounded-full blur-3xl" />
+
+          {/* Verification icon */}
+          <div className="w-20 h-20 bg-gradient-to-tr from-cyan-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_20px_rgba(6,182,212,0.3)] animate-pulse">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+
+          <h2 className="text-2xl font-bold text-white mb-3 tracking-wide">Verification Pending</h2>
+          
+          <div className="bg-navy-900/60 rounded-xl p-4 mb-6 border border-navy-500/20 text-left">
+            <p className="text-xs text-navy-300 font-bold uppercase tracking-wider mb-1">Registered Username</p>
+            <p className="text-sm font-semibold text-cyan-400">{user.username}</p>
+          </div>
+
+          <p className="text-gray-300 text-sm leading-relaxed mb-8">
+            Your registration is currently pending administrator review. 
+            An automated notification has been sent to our system moderator. 
+            You will be granted immediate dashboard access as soon as your account is approved.
+          </p>
+
+          <div className="flex gap-4">
+            <button 
+              onClick={onLogout}
+              className="flex-1 py-3 px-5 bg-navy-800 hover:bg-navy-700 text-white font-semibold rounded-xl text-sm transition-all border border-navy-500/20 active:scale-[0.98]"
+            >
+              Sign In with Other Account
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-navy-950 text-navy-100">
-      {/* Header */}
-      <header className="border-b border-navy-700 bg-navy-900/60 backdrop-blur-md px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-orange-400 font-bold text-lg"><span aria-hidden="true">🔺</span> PyramidStrategy</span>
-          {paperTrade && (
-            <span className="text-xs bg-yellow-900/50 border border-yellow-700 text-yellow-400 px-2 py-0.5 rounded font-bold">
-              PAPER TRADE
+    <div className="h-screen overflow-hidden bg-navy-950 text-navy-100 flex">
+      {/* Sidebar navigation */}
+      <aside className={clsx(
+        "bg-navy-900 border-r border-navy-800 flex flex-col shrink-0 select-none transition-all duration-300 overflow-hidden",
+        sidebarCollapsed ? "w-0" : "w-60"
+      )}>
+        {/* Brand / Connection */}
+        <div className="p-4 border-b border-navy-800 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-orange-500 text-base font-bold">🔺</span>
+            <span className="text-sm font-black uppercase tracking-wider bg-gradient-to-r from-orange-400 to-amber-500 bg-clip-text text-transparent whitespace-nowrap">
+              Pyramid Strategy
             </span>
-          )}
-          <span className={clsx('text-xs flex items-center gap-1',
-            wsConnected ? 'text-green-400' : 'text-red-400')}>
-            <span className={clsx('w-1.5 h-1.5 rounded-full', wsConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400')} />
-            {wsConnected ? 'LIVE' : 'DISCONNECTED'}
-          </span>
+            <span className="text-[8px] bg-navy-950/60 border border-navy-850 text-navy-400 px-1 py-0.5 rounded font-mono font-bold select-none ml-1">
+              2026
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-1.5 pt-0.5">
+            <span className={clsx('text-[10px] flex items-center gap-1.5 font-bold tracking-wide select-none',
+              wsConnected ? 'text-green-400' : 'text-red-400')}>
+              <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+                {wsConnected && (
+                  <span key={niftyLtp} className="absolute inline-flex h-full w-full rounded-full bg-green-400/60 animate-tick-ripple" />
+                )}
+                <span className={clsx('relative inline-flex rounded-full h-1.5 w-1.5',
+                  wsConnected ? 'bg-green-400' : 'bg-red-400'
+                )} />
+              </span>
+              {wsConnected ? 'LIVE FEED' : 'OFFLINE'}
+            </span>
+            {paperTrade && (
+              <span className="text-[9px] bg-yellow-950/40 border border-yellow-700/30 text-yellow-500 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                Paper
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isRunning ? (
-            <button onClick={handleStopClick}
-              className="px-3 py-1 bg-red-800 hover:bg-red-700 rounded text-xs font-bold shadow-md shadow-red-950/20 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-navy-950">
-              <span aria-hidden="true">⏹</span> STOP
+
+        {/* Engine Controls Block */}
+        <div className="p-3 border-b border-navy-800 bg-navy-950/20 space-y-2">
+          <div className="text-[9px] text-navy-400 font-extrabold uppercase tracking-widest px-1">Engine Controls</div>
+          <div className="flex gap-2">
+            {isRunning ? (
+              <button onClick={handleStopClick}
+                className="flex-1 py-1.5 bg-red-800 hover:bg-red-700 rounded text-xs font-bold shadow-md shadow-red-950/20 focus:outline-none focus:ring-2 focus:ring-red-500 transition duration-150">
+                <span aria-hidden="true">⏹</span> STOP
+              </button>
+            ) : (
+              <button onClick={() => startMut.mutate()}
+                disabled={!config}
+                className="flex-1 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-40 rounded text-xs font-bold shadow-md shadow-green-950/20 focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-150">
+                <span aria-hidden="true">▶</span> START
+              </button>
+            )}
+            <button onClick={handleResetClick}
+              disabled={isRunning || hasOpenPositions}
+              title={isRunning ? 'Stop strategy before resetting' : hasOpenPositions ? 'Cannot reset with active positions' : 'Reset daily strategy state'}
+              className="py-1.5 px-3 bg-yellow-700 hover:bg-yellow-600 disabled:opacity-30 disabled:hover:bg-yellow-700 rounded text-xs font-bold shadow-md shadow-yellow-950/20 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition duration-150">
+              <span aria-hidden="true">🔄</span> RESET
             </button>
-          ) : (
-            <button onClick={() => startMut.mutate()}
-              disabled={!config}
-              className="px-3 py-1 bg-green-700 hover:bg-green-600 disabled:opacity-40 rounded text-xs font-bold shadow-md shadow-green-950/20 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-navy-950">
-              <span aria-hidden="true">▶</span> START
-            </button>
-          )}
-          <button onClick={handleResetClick}
-            disabled={isRunning || hasOpenPositions}
-            title={isRunning ? 'Stop strategy before resetting' : hasOpenPositions ? 'Cannot reset with active positions' : 'Reset daily strategy state'}
-            className="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 disabled:opacity-30 disabled:hover:bg-yellow-700 rounded text-xs font-bold shadow-md shadow-yellow-950/20 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-navy-950">
-            <span aria-hidden="true">🔄</span> RESET
-          </button>
+          </div>
+        </div>
+
+        {/* Navigation links */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          <div className="text-[9px] text-navy-400 font-extrabold uppercase tracking-widest px-1 mb-2">Navigation</div>
+          
           <button onClick={() => setShowLiveLogs(true)}
-            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
-            <span aria-hidden="true">📄</span> Trade Log
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">📄</span> Trade Log
           </button>
+
           <button onClick={() => setShowPDFReports(true)}
-            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
-            <span aria-hidden="true">📋</span> PDF Reports
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">📋</span> PDF Reports
           </button>
+
           <button onClick={() => setShowBacktest(true)}
-            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
-            <span aria-hidden="true">📊</span> Backtest
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">📊</span> Backtesting
           </button>
+
+          <button onClick={() => setShowAnalytics(true)}
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">📈</span> P&L Analytics
+          </button>
+
+          <button onClick={() => setShowChart(true)}
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">🕯️</span> Live Nifty Chart
+          </button>
+
           <button onClick={() => setShowUserGuide(true)}
-            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
-            <span aria-hidden="true">📖</span> User Guide
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">📖</span> User Guide
           </button>
+
           <button onClick={() => setShowSettings(true)}
-            className="px-3 py-1 bg-navy-800 hover:bg-navy-700 border border-navy-700 rounded text-xs text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
-            <span aria-hidden="true">⚙</span> Settings
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">⚙️</span> Settings
           </button>
+
+          {user?.is_admin && (
+            <button onClick={() => setShowAdminPanel(true)}
+              className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800 border-t border-navy-800/40 mt-1 pt-2">
+              <span aria-hidden="true" className="mr-2 text-sm">🛡️</span> Admin Panel
+            </button>
+          )}
+        </nav>
+
+        {/* Bottom Panel */}
+        <div className="p-3 border-t border-navy-800 space-y-1.5">
+          <button onClick={handleToggleTheme}
+            title={theme === 'dark' ? 'Switch to Obsidian Amethyst Theme' : 'Switch to Midnight Dark Theme'}
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none">
+            {theme === 'dark' ? <><span aria-hidden="true" className="mr-2 text-sm">🔮</span> Amethyst Theme</> : <><span aria-hidden="true" className="mr-2 text-sm">🌙</span> Midnight Theme</>}
+          </button>
+
           <button onClick={handleLogout}
-            className="px-3 py-1 bg-navy-900 hover:bg-navy-800 border border-navy-700 rounded text-xs text-navy-300 hover:text-navy-100 transition duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500">
-            <span aria-hidden="true">⇥</span> Logout
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-red-950/20 hover:text-red-400 rounded-lg text-xs text-navy-400 transition duration-150 focus:outline-none">
+            <span aria-hidden="true" className="mr-2 text-sm">⇥</span> Logout
           </button>
         </div>
-      </header>
+      </aside>
 
-      <StatusBar />
-
-      {/* Error messages */}
-      {startMut.isError && (
-        <div className="px-4 py-2 border-b border-red-800 bg-red-950/20">
-          <Notification
-            type="error"
-            message={
-              <span>
-                {(() => {
-                  const errData = (startMut.error as any)?.response?.data?.detail;
-                  if (errData?.errors && Array.isArray(errData.errors)) {
-                    return `Safety Checks Failed: ${errData.errors.join('; ')}`;
-                  }
-                  return errData?.message || errData || startMut.error?.message;
-                })()}
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
+        {/* Top ribbon container with collapse trigger & Status Marquee */}
+        <div className="flex items-center bg-navy-950 border-b border-navy-800 select-none pr-4 sticky top-0 z-20 shadow-md">
+          <button
+            onClick={() => {
+              const next = !sidebarCollapsed;
+              setSidebarCollapsed(next);
+              localStorage.setItem('sidebar_collapsed', String(next));
+            }}
+            title={sidebarCollapsed ? 'Expand sidebar panel' : 'Collapse sidebar panel'}
+            className="h-11 px-4 bg-navy-900 hover:bg-navy-800 border-r border-navy-800 text-xs uppercase font-bold tracking-wider text-navy-300 hover:text-navy-100 flex items-center justify-center gap-1.5 focus:outline-none transition duration-150"
+          >
+            <span>{sidebarCollapsed ? '▶' : '◀'}</span>
+            <span>Menu</span>
+          </button>
+          
+          {sidebarCollapsed && (
+            <div className="flex items-center gap-1.5 pl-3 pr-3 h-11 shrink-0 select-none animate-fade-in">
+              <span className="text-orange-500 text-base font-bold">🔺</span>
+              <span className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-orange-400 to-amber-500 bg-clip-text text-transparent whitespace-nowrap">
+                Pyramid Strategy
               </span>
-            }
-            onClose={() => startMut.reset()}
-          />
-        </div>
-      )}
-
-      {stopMut.isError && (
-        <div className="px-4 py-2 border-b border-red-800 bg-red-950/20">
-          <Notification
-            type="error"
-            message={
-              <span>
-                Failed to stop strategy: {(() => {
-                  const errData = (stopMut.error as any)?.response?.data?.detail;
-                  return errData?.message || errData || stopMut.error?.message;
-                })()}
+              <span className="text-[8px] bg-navy-850/60 border border-navy-800 text-navy-450 px-1 py-0.5 rounded font-mono font-bold select-none ml-1">
+                2026
               </span>
-            }
-            onClose={() => stopMut.reset()}
-          />
-        </div>
-      )}
+            </div>
+          )}
 
-      {/* Time warnings */}
-      {status && !status.entries_allowed && (
-        <div className="px-4 py-1.5 border-b border-yellow-800 bg-yellow-950/20">
-          <Notification
-            type="warning"
-            message={`${getCutoffTimeStr(config?.squareoff_time ?? '11:30')} passed — No new entries allowed`}
-            className="justify-center"
-          />
+          <div className="flex-1 overflow-hidden">
+            <StatusBar />
+          </div>
         </div>
-      )}
-      {status?.squareoff_triggered && (
-        <div className="px-4 py-1.5 border-b border-red-800 bg-red-950/20">
-          <Notification
-            type="error"
-            pulse
-            message={`${formatTimeTo12Hour(config?.squareoff_time ?? '11:30')} — SQUAREOFF TRIGGERED`}
-            className="justify-center font-bold"
-          />
-        </div>
-      )}
 
-      {/* Main grid */}
-      <div className="grid grid-cols-12 gap-3 p-3">
+        {/* Scrollable content container */}
+        <div className="flex-1 overflow-y-auto p-3 min-h-0">
+
+          {/* Error messages */}
+        {startMut.isError && (
+          <div className="px-4 py-2 border-b border-red-800 bg-red-950/20">
+            <Notification
+              type="error"
+              message={
+                <span>
+                  {(() => {
+                    const errData = (startMut.error as any)?.response?.data?.detail;
+                    if (errData?.errors && Array.isArray(errData.errors)) {
+                      return `Safety Checks Failed: ${errData.errors.join('; ')}`;
+                    }
+                    return errData?.message || errData || startMut.error?.message;
+                  })()}
+                </span>
+              }
+              onClose={() => startMut.reset()}
+            />
+          </div>
+        )}
+
+        {stopMut.isError && (
+          <div className="px-4 py-2 border-b border-red-800 bg-red-950/20">
+            <Notification
+              type="error"
+              message={
+                <span>
+                  Failed to stop strategy: {(() => {
+                    const errData = (stopMut.error as any)?.response?.data?.detail;
+                    return errData?.message || errData || stopMut.error?.message;
+                  })()}
+                </span>
+              }
+              onClose={() => stopMut.reset()}
+            />
+          </div>
+        )}
+
+          {/* Main grid */}
+          <div className="grid grid-cols-12 gap-3">
         {/* Left: NIFTY + Levels */}
         <div className="col-span-12 lg:col-span-3 space-y-3">
           {/* NIFTY price */}
-          <div className="bg-navy-900 border border-navy-700/60 rounded-xl p-4 shadow-lg flex flex-col gap-2 relative overflow-hidden transition-all duration-300 hover:border-navy-600">
+          <div className="glass-card rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden">
             <div className="flex items-center justify-between">
               <span className="text-xs text-navy-300 font-bold uppercase tracking-wider">NIFTY 50</span>
               <span className={clsx(
@@ -475,6 +742,31 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
                 <div className="h-9 w-44 bg-navy-800 rounded animate-pulse" />
               )}
             </div>
+
+            {/* Price Tick Sparkline (last 30 ticks) */}
+            {sparklineData.length > 1 && (
+              <div className="h-9 w-full mt-1 overflow-hidden select-none">
+                <SparkContainer width="100%" height="100%">
+                  <SparkAreaChart data={sparklineData}>
+                    <defs>
+                      <linearGradient id="colorNiftySpark" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={niftyChange?.isUp ? '#10b981' : '#f87171'} stopOpacity={0.25}/>
+                        <stop offset="95%" stopColor={niftyChange?.isUp ? '#10b981' : '#f87171'} stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
+                    <SparkArea
+                      type="monotone"
+                      dataKey="value"
+                      stroke={niftyChange?.isUp ? '#10b981' : '#f87171'}
+                      strokeWidth={1.5}
+                      fill="url(#colorNiftySpark)"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </SparkAreaChart>
+                </SparkContainer>
+              </div>
+            )}
 
             {/* Point / % change pill badge */}
             {niftyChange ? (
@@ -513,17 +805,159 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
                 </span>
               )}
             </div>
+
+            {/* Inline time status warnings inside the card */}
+            {status && !status.entries_allowed && (
+              <div className="flex items-center gap-1.5 mt-2 text-[11px] text-yellow-500 font-bold bg-yellow-950/20 px-2 py-1.5 rounded border border-yellow-800/40">
+                <span aria-hidden="true">⚡</span>
+                <span>{getCutoffTimeStr(config?.squareoff_time ?? '15:15')} Passed (No Entries)</span>
+              </div>
+            )}
+            {status?.squareoff_triggered && (
+              <div className="flex items-center gap-1.5 mt-2 text-[11px] text-red-400 font-bold bg-red-950/20 px-2 py-1.5 rounded border border-red-800/40 animate-pulse">
+                <span aria-hidden="true">⚠️</span>
+                <span>Squareoff Triggered ({formatTimeTo12Hour(config?.squareoff_time ?? '15:30')})</span>
+              </div>
+            )}
+          </div>
+
+          {/* Option LTP Tracker */}
+          <div className="glass-card rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden shadow-lg border border-navy-800/40">
+            <div className="flex items-center justify-between border-b border-navy-800 pb-2">
+              <span className="text-xs text-navy-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <span>⚡</span> Option LTP Tracker
+              </span>
+              <span className="text-[10px] text-navy-400 font-mono">Real-time</span>
+            </div>
+
+            <div className="space-y-3">
+              {/* CE Leg */}
+              <div>
+                <div className="flex items-center justify-between text-[11px] font-bold text-navy-300 mb-1">
+                  <span className="flex items-center gap-1">
+                    CALL OPTION (CE)
+                    <span className="group relative inline-block cursor-help select-none text-navy-500 hover:text-navy-300">
+                      ℹ️
+                      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 w-52 rounded bg-navy-900 border border-navy-800 p-2 text-[9px] text-navy-200 opacity-0 transition-opacity duration-200 shadow-xl group-hover:opacity-100 leading-normal font-sans font-normal normal-case">
+                        <strong>CE Leg State</strong><br/>
+                        IDLE: Waiting for trigger.<br/>
+                        L1/L2/L3: Active averaging tiers entered based on strategy support bounds.
+                      </span>
+                    </span>
+                  </span>
+                  {status?.ce && status.ce.state !== 'IDLE' ? (
+                    <span className={clsx(
+                      'text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wide',
+                      status.ce.state.includes('L3') ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                      status.ce.state.includes('L2') ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                      'bg-green-500/10 text-green-400 border border-green-500/20'
+                    )}>
+                      {status.ce.state.replace('_ENTERED', '')}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] px-1.5 py-0.5 bg-navy-850 text-navy-400 border border-navy-800/40 rounded font-semibold uppercase tracking-wide">
+                      IDLE
+                    </span>
+                  )}
+                </div>
+                {status?.ce && status.ce.state !== 'IDLE' ? (
+                  <div className="bg-navy-950/40 border border-navy-800 rounded-lg p-2.5 space-y-1.5">
+                    <div className="text-[10px] font-mono text-navy-300 truncate" title={status.ce.locked_instrument || ''}>
+                      {status.ce.locked_instrument}
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-lg font-bold text-white font-mono tracking-tight">
+                        ₹{(status.ce.current_ltp ?? 0).toFixed(2)}
+                      </span>
+                      <span className="text-xs text-navy-400 font-mono">
+                        Avg: ₹{(status.ce.entry_avg_price ?? 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-navy-400 font-medium">{status.ce.lots} Lots ({status.ce.lots * (config?.lot_size ?? 50)} Qty)</span>
+                      <span className={clsx('font-bold font-mono', (status.ce.unrealized_pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400')}>
+                        {status.ce.unrealized_pnl != null
+                          ? `${status.ce.unrealized_pnl >= 0 ? '+' : ''}₹${status.ce.unrealized_pnl.toFixed(0)}`
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-navy-950/20 border border-navy-850 border-dashed rounded-lg p-2 text-center text-xs text-navy-450 font-medium">
+                    No active call positions
+                  </div>
+                )}
+              </div>
+
+              {/* PE Leg */}
+              <div>
+                <div className="flex items-center justify-between text-[11px] font-bold text-navy-300 mb-1">
+                  <span className="flex items-center gap-1">
+                    PUT OPTION (PE)
+                    <span className="group relative inline-block cursor-help select-none text-navy-500 hover:text-navy-300">
+                      ℹ️
+                      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 w-52 rounded bg-navy-900 border border-navy-800 p-2 text-[9px] text-navy-200 opacity-0 transition-opacity duration-200 shadow-xl group-hover:opacity-100 leading-normal font-sans font-normal normal-case">
+                        <strong>PE Leg State</strong><br/>
+                        IDLE: Waiting for trigger.<br/>
+                        L1/L2/L3: Active averaging tiers entered based on strategy resistance bounds.
+                      </span>
+                    </span>
+                  </span>
+                  {status?.pe && status.pe.state !== 'IDLE' ? (
+                    <span className={clsx(
+                      'text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wide',
+                      status.pe.state.includes('L3') ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                      status.pe.state.includes('L2') ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                      'bg-green-500/10 text-green-400 border border-green-500/20'
+                    )}>
+                      {status.pe.state.replace('_ENTERED', '')}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] px-1.5 py-0.5 bg-navy-850 text-navy-400 border border-navy-800/40 rounded font-semibold uppercase tracking-wide">
+                      IDLE
+                    </span>
+                  )}
+                </div>
+                {status?.pe && status.pe.state !== 'IDLE' ? (
+                  <div className="bg-navy-950/40 border border-navy-800 rounded-lg p-2.5 space-y-1.5">
+                    <div className="text-[10px] font-mono text-navy-300 truncate" title={status.pe.locked_instrument || ''}>
+                      {status.pe.locked_instrument}
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-lg font-bold text-white font-mono tracking-tight">
+                        ₹{(status.pe.current_ltp ?? 0).toFixed(2)}
+                      </span>
+                      <span className="text-xs text-navy-400 font-mono">
+                        Avg: ₹{(status.pe.entry_avg_price ?? 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-navy-400 font-medium">{status.pe.lots} Lots ({status.pe.lots * (config?.lot_size ?? 50)} Qty)</span>
+                      <span className={clsx('font-bold font-mono', (status.pe.unrealized_pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400')}>
+                        {status.pe.unrealized_pnl != null
+                          ? `${status.pe.unrealized_pnl >= 0 ? '+' : ''}₹${status.pe.unrealized_pnl.toFixed(0)}`
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-navy-950/20 border border-navy-850 border-dashed rounded-lg p-2 text-center text-xs text-navy-450 font-medium">
+                    No active put positions
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Level panel */}
-          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+          <div className="glass-card rounded-xl p-3">
             <div className="text-xs text-navy-300 mb-2 font-semibold">LEVELS</div>
             <LevelPanel status={status} config={config ?? null} isLoading={isConfigLoading} />
           </div>
 
           {/* Paper trade simulator */}
           {paperTrade && (
-            <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+            <div className="glass-card rounded-xl p-3">
               <div className="text-xs text-yellow-500 mb-2 font-bold uppercase tracking-wide"><span aria-hidden="true">🎮</span> Simulate Tick</div>
               <div className="flex gap-1">
                 <input
@@ -547,47 +981,114 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
         {/* Center: P&L + Trade Log */}
         <div className="col-span-12 lg:col-span-5 space-y-3">
           {/* P&L Summary */}
-          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-navy-300 font-semibold">TODAY'S P&L</span>
+          {/* P&L Summary */}
+          <div className="glass-card rounded-xl p-3.5 space-y-2 border border-navy-800/40 shadow-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-navy-300 font-semibold uppercase tracking-wider">TODAY'S P&L</span>
               {isPnlLoading ? (
                 <div className="h-3.5 w-24 bg-navy-850 rounded animate-pulse" />
               ) : (
                 <span className="text-xs text-navy-300 font-mono">{pnl?.total_exits ?? 0} exits | {pnl?.winning_trades ?? 0} wins</span>
               )}
             </div>
-            <div className="flex items-end justify-between h-[32px]">
-              {isPnlLoading ? (
-                <div className="h-8 w-28 bg-navy-800 rounded animate-pulse" />
-              ) : (
-                <div className={clsx('text-2xl font-bold font-mono',
-                  todayPnl > 0 ? 'text-green-400' : todayPnl < 0 ? 'text-red-400' : 'text-navy-300')}>
-                  {todayPnl >= 0 ? '+' : ''}₹{todayPnl.toFixed(0)}
-                </div>
-              )}
-              {lastPnlTime && !isPnlLoading && (
-                <span className="text-[10px] text-navy-300 font-mono">
-                  {formatTimeAgo(lastPnlTime)}
-                </span>
-              )}
+            
+            <div className="grid grid-cols-2 gap-4 pt-1">
+              <div>
+                <span className="text-[10px] text-navy-400 font-semibold uppercase tracking-wide block">Gross Return</span>
+                {isPnlLoading ? (
+                  <div className="h-7 w-24 bg-navy-800 rounded animate-pulse mt-0.5" />
+                ) : (
+                  <div className={clsx('text-xl font-bold font-mono tracking-tight',
+                    todayPnl > 0 ? 'text-green-400' : todayPnl < 0 ? 'text-red-400' : 'text-navy-300')}>
+                    {todayPnl >= 0 ? '+' : ''}₹{todayPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                )}
+              </div>
+              
+              <div>
+                <span className="text-[10px] text-navy-400 font-semibold uppercase tracking-wide block">Est. Net Return</span>
+                {isPnlLoading ? (
+                  <div className="h-7 w-24 bg-navy-800 rounded animate-pulse mt-0.5" />
+                ) : (
+                  <div className={clsx('text-xl font-bold font-mono tracking-tight',
+                    estimatedCharges.netPnl > 0 ? 'text-green-400' : estimatedCharges.netPnl < 0 ? 'text-red-400' : 'text-navy-300')}>
+                    {estimatedCharges.netPnl >= 0 ? '+' : ''}₹{estimatedCharges.netPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                )}
+              </div>
             </div>
+
+            <div className="pt-2 border-t border-navy-850/80 grid grid-cols-3 gap-2 text-[10px] text-navy-350 select-none">
+              <div>
+                <span className="text-navy-400">Brokerage:</span>
+                <span className="font-mono ml-1 font-bold text-navy-200">₹{estimatedCharges.brokerage.toFixed(2)}</span>
+              </div>
+              <div>
+                <span className="text-navy-400">Taxes & GST:</span>
+                <span className="font-mono ml-1 font-bold text-navy-200">₹{estimatedCharges.taxes.toFixed(2)}</span>
+              </div>
+              <div>
+                <span className="text-navy-400">Est. Slippage:</span>
+                <span className="font-mono ml-1 font-bold text-navy-200" title="Estimated at 0.1% transaction value">₹{estimatedCharges.slippage.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {lastPnlTime && !isPnlLoading && (
+              <div className="text-[9px] text-navy-400 font-mono text-right pt-0.5 select-none">
+                Last calculated {formatTimeAgo(lastPnlTime)}
+              </div>
+            )}
           </div>
 
           {/* P&L Chart */}
-          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
-            <div className="text-xs text-navy-300 mb-2 font-semibold">P&L CHART</div>
+          <div className="glass-card rounded-xl p-3.5 space-y-3 border border-navy-800/40 shadow-lg">
+            <div className="flex items-center justify-between border-b border-navy-800 pb-2">
+              <span className="text-xs text-navy-300 font-semibold uppercase tracking-wider">P&L CHART</span>
+              <span className="text-[10px] text-navy-400 font-mono">Performance Analytics</span>
+            </div>
+
+            {/* Key Stats Bar */}
+            <div className="grid grid-cols-3 gap-2 select-none">
+              <div className="bg-navy-950/40 border border-navy-800/60 rounded-lg p-2.5 flex flex-col items-center justify-center text-center">
+                <span className="text-[8px] text-navy-450 font-bold uppercase tracking-wider block mb-0.5">Win Rate</span>
+                <span className="text-xs font-bold text-green-400 font-mono">{stats.winRate}%</span>
+              </div>
+              <div className="bg-navy-950/40 border border-navy-800/60 rounded-lg p-2.5 flex flex-col items-center justify-center text-center">
+                <span className="text-[8px] text-navy-450 font-bold uppercase tracking-wider block mb-0.5">Win Streak</span>
+                <span className="text-xs font-bold text-orange-400 font-mono">🔥 {stats.streak} Days</span>
+              </div>
+              <div className="bg-navy-950/40 border border-navy-800/60 rounded-lg p-2.5 flex flex-col items-center justify-center text-center">
+                <span className="text-[8px] text-navy-450 font-bold uppercase tracking-wider block mb-0.5">Profit Factor</span>
+                <span className={clsx('text-xs font-bold font-mono', 
+                  stats.profitFactor >= 1.5 ? 'text-green-400' : stats.profitFactor >= 1.0 ? 'text-yellow-400' : 'text-red-400'
+                )}>
+                  {stats.profitFactor}
+                </span>
+              </div>
+            </div>
+
             <PnLChart data={pnlChartData} />
           </div>
 
           {/* Trade Log */}
-          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+          <div className="glass-card rounded-xl p-3">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-navy-200">TRADE LOG</span>
               <div className="flex items-center gap-2">
+                <select
+                  value={exportPeriod}
+                  onChange={(e) => setExportPeriod(e.target.value)}
+                  className="bg-navy-800 border border-navy-700/60 text-[10px] text-navy-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer hover:border-navy-600 transition-colors"
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
                 <button
-                  onClick={handleExportTrades}
+                  onClick={() => handleExportTrades(exportPeriod)}
                   disabled={exportingTrades}
-                  className="px-2.5 py-1 bg-navy-800 hover:bg-navy-700 disabled:opacity-40 text-navy-200 rounded text-[10px] font-semibold border border-navy-700 transition flex items-center gap-1 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="px-2.5 py-1 bg-navy-850 hover:bg-navy-700 disabled:opacity-40 text-navy-250 hover:text-white rounded text-[10px] font-semibold border border-navy-700 transition flex items-center gap-1 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                 >
                   {exportingTrades ? (
                     <span className="w-2.5 h-2.5 border border-navy-300 border-t-transparent rounded-full animate-spin" />
@@ -612,12 +1113,147 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
             </div>
             <TradeLog />
           </div>
+
+          {/* Post-Exit Target Performance Card */}
+          <div className="glass-card rounded-xl p-3 space-y-2 border border-navy-800/40 shadow-lg">
+            <div className="flex items-center justify-between border-b border-navy-800 pb-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs select-none">🎯</span>
+                <span className="text-xs text-navy-200 font-bold uppercase tracking-wider">Post-Target Performance</span>
+              </div>
+              <span className="text-[9px] text-emerald-400 font-extrabold uppercase tracking-wider bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shadow-sm animate-pulse select-none">LIVE TRACKING</span>
+            </div>
+            
+            <div className="space-y-2 max-h-[300px] overflow-auto scrollbar-thin">
+              {(() => {
+                const targetTrades = trades.filter(t => t.action === 'EXIT' && t.status === 'TARGET');
+                
+                if (targetTrades.length === 0) {
+                  return (
+                    <div className="text-navy-450 text-xs text-center py-6 border border-dashed border-navy-850 rounded-lg bg-navy-950/20 select-none">
+                      <div className="text-sm mb-0.5 opacity-55">🏁</div>
+                      No target exits achieved today yet.
+                    </div>
+                  );
+                }
+                
+                return targetTrades.map((t) => {
+                  const hasPostExit = t.post_exit_high != null && t.post_exit_low != null;
+                  const exitPrice = t.avg_price ?? 0;
+                  const low = t.post_exit_low ?? exitPrice;
+                  const high = t.post_exit_high ?? exitPrice;
+                  
+                  const range = high - low;
+                  const pct = range > 0 ? Math.max(0, Math.min(100, ((exitPrice - low) / range) * 100)) : 50;
+                  
+                  // Premium Analytics
+                  const missedRally = high - exitPrice;
+                  const missedRallyPct = exitPrice > 0 ? (missedRally / exitPrice) * 100 : 0;
+                  
+                  const savedDrop = exitPrice - low;
+                  const savedDropPct = exitPrice > 0 ? (savedDrop / exitPrice) * 100 : 0;
+                  
+                  const formatTime = (timeStrStr: string | null | undefined) => {
+                    if (!timeStrStr) return '';
+                    try {
+                      const d = new Date(timeStrStr);
+                      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                    } catch (e) {
+                      return '';
+                    }
+                  };
+                  
+                  return (
+                    <div key={t.id} className="bg-navy-950/50 border border-navy-800 rounded-lg p-2.5 space-y-2 hover:border-navy-700/80 hover:bg-navy-950/70 transition duration-150 shadow-sm">
+                      {/* Top Symbol Block */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className={clsx('text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider border',
+                            t.side === 'CE' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20')}>
+                            {t.side === 'CE' ? '▲ CE' : '▼ PE'}
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-white tracking-wide" title={t.instrument}>
+                            {t.instrument}
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono text-navy-450 bg-navy-900/60 border border-navy-800/40 px-1.5 rounded">
+                          Level Done
+                        </span>
+                      </div>
+                      
+                      {/* Stats Grid */}
+                      <div className="grid grid-cols-3 gap-1.5 select-none">
+                        <div className="text-center bg-navy-900/50 p-1.5 rounded-md border border-navy-850">
+                          <span className="text-navy-450 block text-[8px] uppercase tracking-wider font-semibold mb-0.5">🏁 Target Exit</span>
+                          <span className="font-mono font-bold text-white text-xs">₹{exitPrice.toFixed(2)}</span>
+                        </div>
+                        <div className="text-center bg-emerald-950/10 p-1.5 rounded-md border border-emerald-950/20">
+                          <span className="text-emerald-400/90 block text-[8px] uppercase tracking-wider font-bold mb-0.5">📈 Post High</span>
+                          <span className="font-mono font-bold text-emerald-400 text-xs">₹{high.toFixed(2)}</span>
+                        </div>
+                        <div className="text-center bg-rose-950/10 p-1.5 rounded-md border border-rose-950/20">
+                          <span className="text-rose-400/90 block text-[8px] uppercase tracking-wider font-bold mb-0.5">📉 Post Low</span>
+                          <span className="font-mono font-bold text-rose-400 text-xs">₹{low.toFixed(2)}</span>
+                        </div>
+                      </div>
+                      
+                      {/* Advanced Analytics */}
+                      <div className="flex gap-1.5 text-[9px] select-none">
+                        <div className="flex-1 bg-navy-900/30 border border-navy-850/60 rounded-md p-1.5 flex items-center justify-between">
+                          <span className="text-navy-400 font-medium">Missed Run:</span>
+                          <span className={clsx('font-mono font-bold', missedRally > 0 ? 'text-emerald-400' : 'text-navy-400')}>
+                            {missedRally > 0 ? `+₹${missedRally.toFixed(1)} (+${missedRallyPct.toFixed(0)}%)` : 'None'}
+                          </span>
+                        </div>
+                        <div className="flex-1 bg-navy-900/30 border border-navy-850/60 rounded-md p-1.5 flex items-center justify-between">
+                          <span className="text-navy-450 font-medium">Saved Drop:</span>
+                          <span className={clsx('font-mono font-bold', savedDrop > 0 ? 'text-amber-400' : 'text-navy-450')}>
+                            {savedDrop > 0 ? `-₹${savedDrop.toFixed(1)} (-${savedDropPct.toFixed(0)}%)` : 'None'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Visual Range Slider */}
+                      {hasPostExit && range > 0 && (
+                        <div className="space-y-1.5 pt-0.5">
+                          <div className="flex-1 h-1.5 rounded-full bg-navy-950 border border-navy-850/80 relative overflow-visible shadow-inner">
+                            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-500/10 via-emerald-500/5 to-emerald-500/25"></div>
+                            <div 
+                              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 transition-all duration-300" 
+                              style={{ left: `${pct}%` }}
+                            >
+                              <span className="absolute -inset-1 rounded-full bg-brand/35 animate-ping opacity-75"></span>
+                              <div className="w-2.5 h-2.5 rounded-full bg-brand ring-2 ring-navy-950 shadow-lg relative z-10"></div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between text-[9px] text-navy-400 font-mono px-0.5">
+                            <span className="flex items-center gap-0.5">
+                              <span>Low:</span>
+                              <strong className="text-navy-300">{formatTime(t.post_exit_low_time) || '—'}</strong>
+                            </span>
+                            <span className="text-navy-350 bg-navy-900/50 px-1.5 py-0.5 rounded border border-navy-850/40 select-none text-[9px]">
+                              Exit at <strong className="text-white font-bold">{pct.toFixed(0)}%</strong> of range
+                            </span>
+                            <span className="flex items-center gap-0.5">
+                              <span>High:</span>
+                              <strong className="text-navy-300">{formatTime(t.post_exit_high_time) || '—'}</strong>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
         </div>
 
         {/* Right: AI Observer + Open Positions */}
         <div className="col-span-12 lg:col-span-4 space-y-3">
           {/* Open Positions */}
-          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+          <div className="glass-card rounded-xl p-3">
             <div className="text-xs text-navy-300 mb-2 font-semibold">OPEN POSITIONS</div>
             {[status?.ce, status?.pe].map((sm, i) => (
               sm && sm.state !== 'IDLE' && sm.state !== 'BLOCKED' && (
@@ -627,7 +1263,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
                   </span>
                   <span className="text-navy-100">{sm.locked_instrument}</span>
                   <span className="text-navy-300">{sm.lots}L</span>
-                  <span className={clsx('font-mono',
+                  <span className={clsx('tabular-nums font-bold',
                     (sm.unrealized_pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400')}>
                     {sm.unrealized_pnl != null
                       ? `${sm.unrealized_pnl >= 0 ? '+' : ''}₹${sm.unrealized_pnl.toFixed(0)}`
@@ -645,18 +1281,40 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           <KiteStatus />
 
           {/* AI Observer */}
-          <div className="bg-navy-900 border border-navy-700 rounded-xl p-3 shadow-lg">
+          <div className="glass-card rounded-xl p-3">
             <div className="text-xs text-navy-300 mb-2 font-semibold"><span aria-hidden="true">🤖</span> AI OBSERVER</div>
             <AIObserver />
           </div>
         </div>
       </div>
 
+      {/* Footer */}
+      <footer className="mt-2.5 border-t border-navy-800/80 py-1.5 text-[10px] text-navy-400 w-full">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-1 px-1">
+          <span>Copyright © 2026. All rights reserved.</span>
+          <span>
+            Developed by{' '}
+            <a
+              href="https://nextginfosoft.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand font-bold hover:underline hover:text-brand-dark transition-all duration-150"
+            >
+              NextG Infosoft Technology(P)
+            </a>
+          </span>
+        </div>
+      </footer>
+        </div>
+
       {showSettings && <Settings onClose={() => { setShowSettings(false); qc.invalidateQueries() }} />}
       {showLiveLogs && <LiveLogModal onClose={() => setShowLiveLogs(false)} />}
+      {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
       {showPDFReports && <PDFReportsModal onClose={() => setShowPDFReports(false)} />}
       {showBacktest && <BacktestModal onClose={() => setShowBacktest(false)} />}
       {showUserGuide && <UserGuide onClose={() => setShowUserGuide(false)} />}
+      {showAnalytics && <Analytics onClose={() => setShowAnalytics(false)} />}
+      {showChart && <ChartModal onClose={() => setShowChart(false)} />}
 
       {confirmAction && (
         <ConfirmModal
@@ -672,6 +1330,7 @@ export function Dashboard({ onLogout }: { onLogout?: () => void }) {
           onCancel={() => setConfirmAction(null)}
         />
       )}
+      </main>
     </div>
   )
 }

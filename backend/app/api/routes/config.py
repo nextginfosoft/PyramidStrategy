@@ -90,6 +90,24 @@ def save_api_key(payload: ApiConfigUpdate, db: Session = Depends(get_db), user: 
         ApiConfig.provider == payload.provider
     ).first()
 
+    # Encrypt credentials for Zerodha programmatic auto-login
+    if payload.provider == "zerodha" and payload.extra_config:
+        username = payload.extra_config.get("username")
+        password = payload.extra_config.get("password")
+        totp_secret = payload.extra_config.get("totp_secret")
+        
+        extra = dict(existing.extra_config or {}) if existing else {}
+        if username is not None:
+            extra["username"] = username
+        if password:
+            extra["password_encrypted"] = encrypt(password)
+        if totp_secret:
+            extra["totp_secret_encrypted"] = encrypt(totp_secret)
+        
+        extra.pop("password", None)
+        extra.pop("totp_secret", None)
+        payload.extra_config = extra
+
     encrypted_key = encrypt(payload.api_key) if payload.api_key else None
     encrypted_secret = encrypt(payload.api_secret) if payload.api_secret else None
 
@@ -136,9 +154,6 @@ def save_api_key(payload: ApiConfigUpdate, db: Session = Depends(get_db), user: 
     return {"status": "saved", "provider": payload.provider}
 
 
-
-
-
 @router.get("/api-keys", response_model=list[ApiConfigResponse])
 def list_api_keys(db: Session = Depends(get_db), user: User = Depends(require_auth)):
     configs = db.query(ApiConfig).filter(ApiConfig.user_id == user.id).all()
@@ -148,10 +163,20 @@ def list_api_keys(db: Session = Depends(get_db), user: User = Depends(require_au
         if cfg.api_key_encrypted:
             raw = decrypt(cfg.api_key_encrypted)
             masked = mask_key(raw)
+            
+        extra_config_filtered = dict(cfg.extra_config or {}) if cfg.extra_config else {}
+        if cfg.provider == "zerodha":
+            if "password_encrypted" in extra_config_filtered:
+                extra_config_filtered["has_password"] = True
+                extra_config_filtered.pop("password_encrypted", None)
+            if "totp_secret_encrypted" in extra_config_filtered:
+                extra_config_filtered["has_totp"] = True
+                extra_config_filtered.pop("totp_secret_encrypted", None)
+                
         result.append(ApiConfigResponse(
             provider=cfg.provider,
             api_key_masked=masked,
             is_active=cfg.is_active,
-            extra_config=cfg.extra_config,
+            extra_config=extra_config_filtered if cfg.extra_config else None,
         ))
     return result

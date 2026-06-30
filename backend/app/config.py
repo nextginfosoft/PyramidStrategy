@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
 
+    # Administration
+    SUPER_ADMIN_USERNAME: str = "santosh"
+
     # CORS
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:5173",

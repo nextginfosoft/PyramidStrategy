@@ -2,15 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Default Theme: Warm Sunset Light Orange Background with Navy-Orange details */
+  --bg-gradient-from: #fff7ed; /* orange-50 */
+  --bg-gradient-via: #fed7aa;  /* orange-200 */
+  --bg-gradient-to: #fdba74;   /* orange-300 */
+
+  --color-navy-950: #0a0c16;
+  --color-navy-900: #101424;
+  --color-navy-800: #191e34;
+  --color-navy-700: #232c4a;
+  --color-navy-600: #323f66;
+  --color-navy-300: #8da4d0;
+  --color-navy-200: #bfd2f2;
+  --color-navy-100: #d7e4fa;
+  --color-navy-50: #ebf2fd;
+
+  --color-bull: #10b981;
+  --color-bear: #ef4444;
+
+  --glass-card-bg: #0d1426; /* solid dark navy card background to eliminate backdrop subpixel blur */
+  --glass-card-border: rgba(249, 115, 22, 0.12); /* orange border highlights */
+  --glass-card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
+  --glass-card-hover-border: rgba(249, 115, 22, 0.35); /* glowing orange hover border */
+  --glass-card-hover-shadow: 0 10px 40px -4px rgba(249, 115, 22, 0.22), 0 0 15px 0 rgba(249, 115, 22, 0.06);
+
+  --scrollbar-track: #0c0e18;
+  --scrollbar-thumb: #232c4a;
+}
+
+[data-theme="light"] {
+  /* Secondary Theme: Warm Sunset Light Orange Background with Amethyst details */
+  --bg-gradient-from: #fff7ed; /* orange-50 */
+  --bg-gradient-via: #fed7aa;  /* orange-200 */
+  --bg-gradient-to: #fdba74;   /* orange-300 */
+
+  --color-navy-950: #130a24;
+  --color-navy-900: #1b1033;
+  --color-navy-800: #291a4b;
+  --color-navy-700: #3c266d;
+  --color-navy-600: #4e328a;
+  --color-navy-300: #c1a8f6;
+  --color-navy-200: #ded1f8;
+  --color-navy-100: #f3effc;
+  --color-navy-50: #faf7fe;
+
+  --color-bull: #10b981;
+  --color-bear: #ef4444;
+
+  --glass-card-bg: #160d2b; /* solid deep violet card background to eliminate backdrop subpixel blur */
+  --glass-card-border: rgba(167, 139, 250, 0.16);
+  --glass-card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  --glass-card-hover-border: rgba(167, 139, 250, 0.42);
+  --glass-card-hover-shadow: 0 10px 40px -4px rgba(167, 139, 250, 0.26), 0 0 15px 0 rgba(167, 139, 250, 0.08);
+
+  --scrollbar-track: #130a24;
+  --scrollbar-thumb: #3c266d;
+}
+
 body {
-  @apply bg-navy-950 text-navy-100 font-mono;
+  background: radial-gradient(circle at 50% 0%, var(--bg-gradient-from) 0%, var(--bg-gradient-via) 60%, var(--bg-gradient-to) 100%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  @apply text-navy-100 font-mono;
   -webkit-font-smoothing: antialiased;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: #0a0e1a; }
-::-webkit-scrollbar-thumb { background: #25304b; border-radius: 2px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 
 /* Premium modal animations */
 @keyframes fadeIn {
@@ -54,7 +117,79 @@ body {
 
 .animate-marquee:hover {
   animation-play-state: paused;
+}/* Glassmorphism custom card glow styles */
+.glass-card {
+  background: var(--glass-card-bg);
+  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--glass-card-shadow);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateY(0);
 }
 
+.glass-card:hover {
+  border-color: var(--glass-card-hover-border);
+  box-shadow: var(--glass-card-hover-shadow);
+  transform: translateY(-2px);
+}
 
+/* Tabular numbers for price ticks */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Real-time Web Socket Heartbeat Pulse Ripple */
+@keyframes tick-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(3.5);
+    opacity: 0;
+  }
+}
+
+.animate-tick-ripple {
+  animation: tick-ripple 0.3s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+/* Global Font Size & Sharpness Upgrades for High Visibility */
+.text-\[9px\] {
+  font-size: 11px !important;
+  letter-spacing: 0.015em;
+}
+.text-\[10px\] {
+  font-size: 12px !important;
+  letter-spacing: 0.01em;
+}
+.text-\[11px\] {
+  font-size: 13px !important;
+}
+.text-xs {
+  font-size: 13px !important;
+}
+.text-sm {
+  font-size: 15px !important;
+}
+.text-lg {
+  font-size: 19px !important;
+}
+.text-3xl {
+  font-size: 32px !important;
+}
+.font-mono {
+  font-weight: 500; /* slightly bolder monospaced text to avoid thinning */
+}
+
+/* Force browser autofill to respect dark theme text color and backgrounds */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px #191e34 inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
 

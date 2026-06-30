@@ -430,7 +430,13 @@ class TestSessionRoutes:
         init_db()
         with SessionLocal() as db:
             db.query(User).filter(User.username == "admin").delete()
-            db.add(User(id=1, username="admin", hashed_password=get_password_hash("pyramid123")))
+            db.add(User(
+                id=1,
+                username="admin",
+                hashed_password=get_password_hash("pyramid123"),
+                is_approved=True,
+                is_admin=True
+            ))
             db.commit()
 
     @pytest.fixture

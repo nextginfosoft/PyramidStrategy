@@ -58,13 +58,13 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
                   1. Kite Session Login
                 </h3>
                 <p className="text-navy-300 mb-2">
-                  Zerodha API credentials expire daily. Every morning before market open:
+                  Zerodha API credentials expire daily (at 6:00 AM IST). The platform manages this via:
                 </p>
-                <ol className="list-decimal pl-4 space-y-1.5 text-navy-200">
-                  <li>Find the <span className="text-white">Kite Status</span> card on the dashboard.</li>
-                  <li>Click <span className="text-orange-400 hover:underline cursor-pointer">Login to Kite</span> to authenticate.</li>
-                  <li>Once returned, verify status shows a green <span className="text-green-400">ACTIVE</span> ticker badge.</li>
-                </ol>
+                <ul className="list-disc pl-4 space-y-1.5 text-navy-200 mb-2">
+                  <li><span className="text-orange-400 font-bold">Automated Login:</span> The platform runs a daily check at <span className="text-white">8:00 AM IST</span> to programmatically log in using your stored Username, Password, and TOTP Key.</li>
+                  <li><span className="text-orange-400 font-bold">Manual Test/Refresh:</span> Go to <span className="text-white">Settings &gt; API Config & Integration</span> and click <span className="text-blue-400">⚡ Test Auto-Login</span> to re-authenticate instantly.</li>
+                  <li><span className="text-orange-400 font-bold">Browser Login (Fallback):</span> Click <span className="text-white">Login to Kite</span> on the dashboard's status card to authenticate manually via Zerodha's redirect portal.</li>
+                </ul>
               </div>
 
               <div>
@@ -96,6 +96,21 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
                 </ul>
               </div>
 
+              <div>
+                <h3 className="text-orange-400 font-bold text-xs uppercase tracking-wider mb-2 border-b border-navy-800 pb-1">
+                  4. Telegram Alerts Setup
+                </h3>
+                <p className="text-navy-300 mb-2">
+                  Configure alerts for strategy execution (entries, exits, stops):
+                </p>
+                <ol className="list-decimal pl-4 space-y-1 text-navy-200">
+                  <li>Get a <span className="text-white">Bot Token</span> from <span className="text-sky-400 font-mono">@BotFather</span> in Telegram using <span className="text-white">/newbot</span>.</li>
+                  <li>Get your <span className="text-white">Chat ID</span> by starting a chat with <span className="text-sky-400 font-mono">@userinfobot</span>.</li>
+                  <li>Go to <span className="text-white">Settings &gt; Telegram</span>, paste both fields, and click Save.</li>
+                  <li>Click <span className="text-blue-400 font-bold">Test Alert</span> to verify the setup.</li>
+                </ol>
+              </div>
+
               <div className="bg-navy-950/40 p-2.5 rounded border border-navy-800 text-[11px]">
                 <span className="text-yellow-500 font-bold block mb-1">💡 Pro-Tip (Simulation)</span>
                 In Paper Trade mode, use the <span className="text-white">Simulate Tick</span> input card to manually inject NIFTY prices to verify triggers, averaging, and targets risk-free.
@@ -105,32 +120,60 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
 
           {/* TAB 2: SUPPORTED FEATURES */}
           {activeTab === 'features' && (
-            <div className="space-y-3.5">
-              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-2">
-                <span className="text-white font-bold block">🔺 Spacing Options Engine</span>
-                <p className="text-navy-300 text-[11px]">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-white font-bold text-xs block">🔺 Spacing Options Engine</span>
+                <p className="text-navy-300 text-[10.5px]">
                   Runs automated intraday state machines targeting 20-point gains per leg. Leverages 3-level averaging limits (1:1:1 progression) and enforces a hard Level 3 stop boundary.
                 </p>
               </div>
 
-              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-2">
-                <span className="text-blue-400 font-bold block">🤖 Multi-stage AI Observer</span>
-                <p className="text-navy-300 text-[11px]">
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-blue-400 font-bold text-xs block">🤖 Multi-stage AI Observer</span>
+                <p className="text-navy-300 text-[10.5px]">
                   Delivers advisory market intelligence. Includes live trade explanation logs, pre-market VIX/PCR/Max Pain snapshots, and EOD performance breakdowns.
                 </p>
               </div>
 
-              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-2">
-                <span className="text-yellow-400 font-bold block">📋 Comprehensive PDF Reports</span>
-                <p className="text-navy-300 text-[11px]">
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-purple-400 font-bold text-xs block">📈 P&L Heatmap & Drawdown</span>
+                <p className="text-navy-300 text-[10.5px]">
+                  Visual performance tracking calendar colored green/red by day, featuring cumulative equity growth curves, max drawdown graphs, and raw CSV spreadsheet downloads.
+                </p>
+              </div>
+
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-green-400 font-bold text-xs block">💬 Two-Way Telegram Bot</span>
+                <p className="text-navy-300 text-[10.5px]">
+                  Allows managing the strategy remotely. Any group member can query status with <span className="text-white font-mono text-[9px]">/status</span>, or arm/disarm the engine using <span className="text-white font-mono text-[9px]">/start</span> and <span className="text-white font-mono text-[9px]">/stop</span>.
+                </p>
+              </div>
+
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-cyan-400 font-bold text-xs block">📱 Meta & Twilio WhatsApp Channels</span>
+                <p className="text-navy-300 text-[10.5px]">
+                  Parallel notification channel. Provides instant alerts on your mobile for trade entries, target hits, exits, and system reports using Twilio or Meta WhatsApp Cloud API.
+                </p>
+              </div>
+
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-yellow-400 font-bold text-xs block">📋 Comprehensive PDF Reports</span>
+                <p className="text-navy-300 text-[10.5px]">
                   Automatically builds and archives detailed execution summaries. Dispatches daily reports at 12:30 PM and weekly logs on Monday morning.
                 </p>
               </div>
 
-              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-2">
-                <span className="text-green-400 font-bold block">🔔 Telegram Alerts</span>
-                <p className="text-navy-300 text-[11px]">
-                  Keeps you notified on your phone. Dispatches alerts for every position entry, target exit, stop-loss trigger, and error event.
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-amber-500 font-bold text-xs block">💾 Local Instrument Token Caching</span>
+                <p className="text-navy-300 text-[10.5px]">
+                  Self-healing resilience during exchange load. Caches daily option chain instrument mappings and falls back to offline files if Kite API requests fail.
+                </p>
+              </div>
+
+              <div className="bg-navy-850/50 p-3 rounded-lg border border-navy-800 space-y-1.5">
+                <span className="text-rose-400 font-bold text-xs block">🔄 Real-Time Feed Simulation</span>
+                <p className="text-navy-300 text-[10.5px]">
+                  Validates execution risk-free. Evaluates paper trades utilizing live ticked prices from Kite, or manual price inputs if market feeds are closed.
                 </p>
               </div>
             </div>
@@ -144,20 +187,20 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
                 {/* Milestone 1 */}
                 <div className="relative">
                   <div className="absolute -left-[21px] top-0.5 bg-green-500 w-2.5 h-2.5 rounded-full border border-navy-950" />
-                  <span className="text-green-400 font-bold block text-[11px]">PHASE 3: AI Observer & Telegram</span>
+                  <span className="text-green-400 font-bold block text-[11px]">PHASE 3: AI Observer & Multi-Channel Alerts</span>
                   <span className="text-[10px] text-navy-400">Status: COMPLETED & ACTIVE</span>
                   <p className="text-navy-300 text-[11px] mt-1">
-                    Multi-user DB briefs, automated schedulers, and Approve & Arm dashboard integration.
+                    Automated schedulers, Approve & Arm integration, and Telegram + WhatsApp real-time alerts multiplexing.
                   </p>
                 </div>
 
                 {/* Milestone 2 */}
                 <div className="relative">
                   <div className="absolute -left-[21px] top-0.5 bg-orange-500 w-2.5 h-2.5 rounded-full border border-navy-950" />
-                  <span className="text-orange-400 font-bold block text-[11px]">PHASE 4: BANKNIFTY Multi-Instrument</span>
+                  <span className="text-orange-400 font-bold block text-[11px]">PHASE 4: Backtesting & BANKNIFTY Multi-Instrument</span>
                   <span className="text-[10px] text-navy-400">Status: IN PROGRESS</span>
                   <p className="text-navy-300 text-[11px] mt-1">
-                    Supporting BANKNIFTY spot tracking, individual level panels, and separate metrics.
+                    Historical 1-minute backtesting engine and BANKNIFTY spot tracking with custom level panels.
                   </p>
                 </div>
 
@@ -174,10 +217,50 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
                 {/* Milestone 4 */}
                 <div className="relative">
                   <div className="absolute -left-[21px] top-0.5 bg-navy-700 w-2.5 h-2.5 rounded-full border border-navy-950" />
-                  <span className="text-navy-300 font-bold block text-[11px]">PHASE 6: SaaS & Mobile App wrapping</span>
+                  <span className="text-navy-300 font-bold block text-[11px]">PHASE 6: Interactive Bots & Granular Filters</span>
+                  <span className="text-[10px] text-navy-400">Status: PLANNED</span>
+                  <p className="text-navy-300 text-[11px] mt-1">
+                    Two-way Telegram bot webhook commands (/status, /start, /stop) and per-channel alert filtering.
+                  </p>
+                </div>
+
+                {/* Milestone 5 */}
+                <div className="relative">
+                  <div className="absolute -left-[21px] top-0.5 bg-navy-700 w-2.5 h-2.5 rounded-full border border-navy-950" />
+                  <span className="text-navy-300 font-bold block text-[11px]">PHASE 7: SaaS & Mobile App wrapping</span>
                   <span className="text-[10px] text-navy-400">Status: FUTURE MVP</span>
                   <p className="text-navy-300 text-[11px] mt-1">
                     Multi-tenant workspace, subscription billing, and Progressive Web App packaging.
+                  </p>
+                </div>
+
+                {/* Milestone 6 */}
+                <div className="relative">
+                  <div className="absolute -left-[21px] top-0.5 bg-navy-700 w-2.5 h-2.5 rounded-full border border-navy-950" />
+                  <span className="text-navy-300 font-bold block text-[11px]">PHASE 8: Auto-reconnect & Self-healing Websockets</span>
+                  <span className="text-[10px] text-navy-400">Status: PLANNED</span>
+                  <p className="text-navy-300 text-[11px] mt-1">
+                    Websocket connection monitoring, automatic re-authentication using TOTP keys, and robust retry-backoff queue to avoid gaps in price feeds.
+                  </p>
+                </div>
+
+                {/* Milestone 7 */}
+                <div className="relative">
+                  <div className="absolute -left-[21px] top-0.5 bg-navy-700 w-2.5 h-2.5 rounded-full border border-navy-950" />
+                  <span className="text-navy-300 font-bold block text-[11px]">PHASE 9: Pre-Market Auto-Suggester & Expiry Roll-over</span>
+                  <span className="text-[10px] text-navy-400">Status: PLANNED</span>
+                  <p className="text-navy-300 text-[11px] mt-1">
+                    Option chain Open Interest (OI) analysis for pivot suggest support, and automatic rollover to next week's contracts on expiry Tuesdays.
+                  </p>
+                </div>
+
+                {/* Milestone 8 */}
+                <div className="relative">
+                  <div className="absolute -left-[21px] top-0.5 bg-navy-700 w-2.5 h-2.5 rounded-full border border-navy-950" />
+                  <span className="text-navy-300 font-bold block text-[11px]">PHASE 10: Multi-Account Copier & Slippage Auditing</span>
+                  <span className="text-[10px] text-navy-400">Status: PLANNED</span>
+                  <p className="text-navy-300 text-[11px] mt-1">
+                    Replicating trade executions across multiple Zerodha terminals and tracking millisecond fill latency & slippage logs.
                   </p>
                 </div>
 

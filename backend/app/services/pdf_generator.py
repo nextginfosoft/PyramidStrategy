@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from fpdf import FPDF
 from sqlalchemy.orm import Session
-from app.models.models import User, Trade, DailyPnL, AISuggestion, AuditLog
+from app.models.models import User, Trade, DailyPnL, AISuggestion, AuditLog, StrategyConfig
 from app.core.time_rules import to_ist_str
 
 class PDFReport(FPDF):
@@ -48,6 +48,14 @@ def build_daily_report_pdf(user_id: int, target_date: date, db: Session, output_
     user = db.query(User).filter(User.id == user_id).first()
     username = user.username if user else f"User {user_id}"
     date_str = target_date.strftime("%d-%b-%Y")
+
+    # Load active strategy configuration for target and SL points calculation
+    cfg = db.query(StrategyConfig).filter(
+        StrategyConfig.user_id == user_id,
+        StrategyConfig.is_active == True
+    ).first()
+    target_pts = Decimal(str(cfg.target_points)) if cfg else Decimal("20")
+    sl_pts = Decimal(str(cfg.sl_points)) if cfg else Decimal("10")
 
     # Fetch stats
     daily_pnl = db.query(DailyPnL).filter(
@@ -178,47 +186,191 @@ def build_daily_report_pdf(user_id: int, target_date: date, db: Session, output_
     
     # Table headers
     pdf.set_fill_color(226, 232, 240)
-    pdf.set_font("helvetica", "B", 9)
+    pdf.set_font("helvetica", "B", 7.5)  # Clean small bold headers
     pdf.cell(20, 7, "Time", 1, 0, "C", True)
-    pdf.cell(45, 7, "Instrument", 1, 0, "C", True)
-    pdf.cell(20, 7, "Action", 1, 0, "C", True)
-    pdf.cell(20, 7, "Lots", 1, 0, "C", True)
-    pdf.cell(25, 7, "Avg Price", 1, 0, "C", True)
-    pdf.cell(30, 7, "P&L Status", 1, 0, "C", True)
-    pdf.cell(30, 7, "Nifty Trigger", 1, 1, "C", True)
+    pdf.cell(38, 7, "Instrument / Order ID", 1, 0, "C", True)
+    pdf.cell(13, 7, "Action", 1, 0, "C", True)
+    pdf.cell(10, 7, "Lots", 1, 0, "C", True)
+    pdf.cell(19, 7, "Act Price", 1, 0, "C", True)
+    pdf.cell(19, 7, "Avg Price", 1, 0, "C", True)
+    pdf.cell(18, 7, "Target Price", 1, 0, "C", True)
+    pdf.cell(18, 7, "Stop Loss", 1, 0, "C", True)
+    pdf.cell(35, 7, "P&L / Exit Status", 1, 1, "C", True)
 
-    pdf.set_font("helvetica", "", 9)
+    pdf.set_font("helvetica", "", 7.5)
     if not trades:
         pdf.cell(190, 8, "No trades executed today.", 1, 1, "C")
     else:
+        # Keep track of buy prices per instrument to calculate combined averages chronologically
+        buy_prices_by_instrument = {}
+        
         for t in trades:
-            time_str = to_ist_str(t.created_at, "%I:%M %p")
-            pdf.cell(20, 7, time_str, 1, 0, "C")
-            pdf.cell(45, 7, t.instrument, 1, 0, "C")
+            x = 10
+            y = pdf.get_y()
             
-            # Action styling
+            # --- Draw cell boundaries with height 11 for spacing ---
+            pdf.rect(x, y, 20, 11)
+            pdf.rect(x + 20, y, 38, 11)
+            pdf.rect(x + 58, y, 13, 11)
+            pdf.rect(x + 71, y, 10, 11)
+            pdf.rect(x + 81, y, 19, 11)
+            pdf.rect(x + 100, y, 19, 11)
+            pdf.rect(x + 119, y, 18, 11)
+            pdf.rect(x + 137, y, 18, 11)
+            pdf.rect(x + 155, y, 35, 11)
+            
+            # Calculate running average and target/SL prices
             if t.action == "BUY":
-                pdf.set_text_color(16, 185, 129)
+                inst = t.instrument
+                if inst not in buy_prices_by_instrument:
+                    buy_prices_by_instrument[inst] = []
+                buy_prices_by_instrument[inst].append(Decimal(str(t.avg_price or 0)))
+                
+                num_entries = len(buy_prices_by_instrument[inst])
+                avg_entry_price = sum(buy_prices_by_instrument[inst]) / num_entries
+                
+                target_val = avg_entry_price + target_pts
+                target_str1 = f"{target_val:.2f}"
+                target_str2 = f"+20 pts"
+                
+                if t.level == "L3" or num_entries == 3:
+                    sl_val = Decimal(str(t.avg_price or 0)) - sl_pts
+                    sl_str1 = f"{sl_val:.2f}"
+                    sl_str2 = f"-10 pts"
+                else:
+                    sl_str1 = "N/A"
+                    sl_str2 = "-"
+                
+                avg_price_str = f"{avg_entry_price:.2f}"
+                avg_sub_str = "Pos Avg"
+            else:
+                # Exit trades
+                target_str1 = "-"
+                target_str2 = "-"
+                sl_str1 = "-"
+                sl_str2 = "-"
+                avg_price_str = "-"
+                avg_sub_str = "-"
+            
+            # 1. Time / Mode
+            time_str = to_ist_str(t.created_at, "%I:%M %p")
+            pdf.set_xy(x, y + 2.0)
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.cell(20, 4, time_str, 0, 0, "C")
+            pdf.set_xy(x, y + 6.5)
+            pdf.set_font("helvetica", "B", 6.5)
+            if not getattr(t, "is_paper_trade", True):
+                pdf.set_text_color(249, 115, 22)  # Orange for Live
+                mode_str = "LIVE"
+            else:
+                pdf.set_text_color(100, 116, 139)  # Gray for Paper
+                mode_str = "PAPER"
+            pdf.cell(20, 3, mode_str, 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
+            
+            # 2. Instrument & Order ID
+            pdf.set_xy(x + 20, y + 2.0)
+            pdf.set_font("helvetica", "B", 7.5)
+            pdf.cell(38, 4, t.instrument, 0, 0, "C")
+            pdf.set_xy(x + 20, y + 6.5)
+            pdf.set_font("helvetica", "", 6.5)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(38, 3, f"Kite: {t.kite_order_id or 'MOCK_ORDER'}", 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
+            
+            # 3. Action & Level
+            pdf.set_xy(x + 58, y + 2.0)
+            if t.action == "BUY":
+                pdf.set_text_color(16, 185, 129)  # Green
                 action_text = "BUY"
             else:
-                pdf.set_text_color(239, 68, 68)
-                action_text = f"EXIT"
-            pdf.cell(20, 7, action_text, 1, 0, "C")
-            pdf.set_text_color(30, 41, 59) # reset
+                pdf.set_text_color(239, 68, 68)   # Red
+                action_text = "EXIT"
+            pdf.set_font("helvetica", "B", 7.5)
+            pdf.cell(13, 4, action_text, 0, 0, "C")
+            pdf.set_xy(x + 58, y + 6.5)
+            pdf.set_font("helvetica", "", 6.5)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(13, 3, f"{t.level}", 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
             
-            pdf.cell(20, 7, str(t.lots), 1, 0, "C")
-            pdf.cell(25, 7, f"Rs. {t.avg_price:.2f}", 1, 0, "R")
+            # 4. Lots & Qty
+            pdf.set_xy(x + 71, y + 2.0)
+            pdf.cell(10, 4, f"{t.lots} L", 0, 0, "C")
+            pdf.set_xy(x + 71, y + 6.5)
+            pdf.set_font("helvetica", "", 6.5)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(10, 3, f"({t.qty or (t.lots * 75)})", 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
             
+            # 5. Actual Price
+            pdf.set_xy(x + 81, y + 2.0)
+            pdf.cell(19, 4, f"{t.avg_price:.2f}" if t.avg_price else "-", 0, 0, "C")
+            pdf.set_xy(x + 81, y + 6.5)
+            pdf.set_font("helvetica", "", 6.5)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(19, 3, f"Spot: {t.trigger_nifty_level:.1f}" if t.trigger_nifty_level else "-", 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
+            
+            # 6. Avg Price
+            pdf.set_xy(x + 100, y + 2.0)
+            pdf.cell(19, 4, avg_price_str, 0, 0, "C")
+            pdf.set_xy(x + 100, y + 6.5)
+            pdf.set_font("helvetica", "", 6.5)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(19, 3, avg_sub_str, 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
+            
+            # 7. Target Price
+            pdf.set_xy(x + 119, y + 2.0)
+            pdf.cell(18, 4, target_str1, 0, 0, "C")
+            pdf.set_xy(x + 119, y + 6.5)
+            pdf.set_font("helvetica", "", 6.5)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(18, 3, target_str2, 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
+            
+            # 8. Stop Loss
+            pdf.set_xy(x + 137, y + 2.0)
+            pdf.cell(18, 4, sl_str1, 0, 0, "C")
+            pdf.set_xy(x + 137, y + 6.5)
+            pdf.set_font("helvetica", "", 6.5)
+            pdf.set_text_color(100, 116, 139)
+            pdf.cell(18, 3, sl_str2, 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
+            
+            # 9. P&L / Exit Status
+            pdf.set_xy(x + 155, y + 2.0)
             pnl_val = t.pnl if t.pnl is not None else Decimal("0")
             if t.action == "EXIT":
                 pnl_color = (16, 185, 129) if pnl_val >= 0 else (239, 68, 68)
                 pdf.set_text_color(*pnl_color)
-                pdf.cell(30, 7, f"{'+' if pnl_val >= 0 else ''}Rs. {pnl_val:,.2f} ({t.status})", 1, 0, "C")
+                pdf.set_font("helvetica", "B", 7.5)
+                pdf.cell(35, 4, f"{'+' if pnl_val >= 0 else ''}Rs. {pnl_val:,.2f}", 0, 0, "C")
+                pdf.set_xy(x + 155, y + 6.5)
+                pdf.set_font("helvetica", "", 6.5)
+                pdf.set_text_color(100, 116, 139)
+                pdf.cell(35, 3, f"Reason: {t.status}", 0, 0, "C")
             else:
-                pdf.cell(30, 7, "-", 1, 0, "C")
-            pdf.set_text_color(30, 41, 59) # reset
+                pdf.cell(35, 4, "-", 0, 0, "C")
+                pdf.set_xy(x + 155, y + 6.5)
+                pdf.set_font("helvetica", "", 6.5)
+                pdf.set_text_color(100, 116, 139)
+                pdf.cell(35, 3, "Position Opened", 0, 0, "C")
+            pdf.set_font("helvetica", "", 7.5)
+            pdf.set_text_color(30, 41, 59)  # Reset
             
-            pdf.cell(30, 7, f"{t.trigger_nifty_level:.2f}" if t.trigger_nifty_level else "-", 1, 1, "C")
+            # Advance to the next row (height = 11)
+            pdf.set_xy(x, y + 11)
+            pdf.ln(0.01)
 
     # 4. Strategy Decisions (Audit Log)
     pdf.ln(6)

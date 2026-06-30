@@ -18,6 +18,8 @@ apscheduler>=3.10.4
 cryptography>=42.0.7
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+pyotp>=2.10.0
+
 
 # Config
 pydantic>=2.7.1

@@ -63,7 +63,7 @@ export function Login({ onLogin }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-navy-950 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-navy-950 via-navy-900 to-navy-950 text-navy-100 flex items-center justify-center p-4 relative overflow-hidden font-sans">
       {/* Decorative Premium Glow Background Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-orange-600/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
@@ -94,7 +94,8 @@ export function Login({ onLogin }: Props) {
                 placeholder="Enter username"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                className="w-full bg-navy-800/80 border border-navy-700 focus:border-orange-500/80 focus:ring-1 focus:ring-orange-500/50 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-all duration-200"
+                style={{ color: '#ffffff', backgroundColor: '#191e34' }}
+                className="w-full border border-navy-700 focus:border-orange-500/80 focus:ring-1 focus:ring-orange-500/50 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all duration-200"
                 required
                 autoFocus
               />
@@ -106,7 +107,8 @@ export function Login({ onLogin }: Props) {
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-navy-800/80 border border-navy-700 focus:border-orange-500/80 focus:ring-1 focus:ring-orange-500/50 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-all duration-200"
+                style={{ color: '#ffffff', backgroundColor: '#191e34' }}
+                className="w-full border border-navy-700 focus:border-orange-500/80 focus:ring-1 focus:ring-orange-500/50 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all duration-200"
                 required
               />
             </div>
@@ -119,7 +121,8 @@ export function Login({ onLogin }: Props) {
                   placeholder="••••••••"
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
-                  className="w-full bg-navy-800/80 border border-navy-700 focus:border-orange-500/80 focus:ring-1 focus:ring-orange-500/50 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-all duration-200"
+                  style={{ color: '#ffffff', backgroundColor: '#191e34' }}
+                  className="w-full border border-navy-700 focus:border-orange-500/80 focus:ring-1 focus:ring-orange-500/50 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all duration-200"
                   required
                 />
               </div>

@@ -67,113 +67,161 @@ export function StatusBar() {
     }
   }, [status, isCriticalError, paperTrade, lastNiftyTickSec, isRunning])
 
-  const tickerMessage = useMemo(() => {
+  interface TickerPart {
+    text: string;
+    colorClass: string;
+  }
+
+  const tickerMessageParts = useMemo<TickerPart[]>(() => {
     if (!status) {
-      return 'Connecting to backend services...';
+      return [{ text: 'Connecting to backend services...', colorClass: 'text-navy-300' }];
     }
 
     if (isCriticalError) {
-      // Return static error banner details
+      let errStr = '❌ KITE SYSTEM CONGESTION: Connection error detected.';
       if (!authenticated) {
-        return '❌ CRITICAL: Zerodha Kite credentials not authenticated. Save API key/secret in settings and complete login.';
+        errStr = '❌ CRITICAL: Zerodha Kite credentials not authenticated. Save API key/secret in settings and complete login.';
+      } else if (apiError) {
+        errStr = `❌ KITE REST API ERROR: ${apiError}. Check network or rate-limits.`;
+      } else if (tickerError) {
+        errStr = `❌ KITE TICKER WEBSOCKET ERROR: ${tickerError}. Reconnecting...`;
+      } else if (!tickerConnected) {
+        errStr = '❌ DISCONNECTED: Live Zerodha market feed WebSocket down. Attempting auto-recovery...';
+      } else if (lastNiftyTickSec !== null && lastNiftyTickSec > 15) {
+        errStr = `❌ DATA HEARTBEAT FAILURE: Live Nifty feed hasn't pushed ticks in ${lastNiftyTickSec} seconds. Connection check recommended.`;
       }
-      if (apiError) {
-        return `❌ KITE REST API ERROR: ${apiError}. Check network or rate-limits.`;
-      }
-      if (tickerError) {
-        return `❌ KITE TICKER WEBSOCKET ERROR: ${tickerError}. Reconnecting...`;
-      }
-      if (!tickerConnected) {
-        return '❌ DISCONNECTED: Live Zerodha market feed WebSocket down. Attempting auto-recovery...';
-      }
-      if (lastNiftyTickSec !== null && lastNiftyTickSec > 15) {
-        return `❌ DATA HEARTBEAT FAILURE: Live Nifty feed hasn't pushed ticks in ${lastNiftyTickSec} seconds. Connection check recommended.`;
-      }
-      return '❌ KITE SYSTEM CONGESTION: Connection error detected.';
+      return [{ text: errStr, colorClass: 'text-red-400 font-bold' }];
     }
 
-    // Healthy running state message compilation
-    const parts: string[] = []
+    const parts: TickerPart[] = [];
 
-    // Connection mode
+    // 0. Engine Start/Stop Time Status
+    if (isRunning) {
+      parts.push({
+        text: `🚀 ENGINE ACTIVE (Started at: ${status.started_at || '—'})`,
+        colorClass: 'text-cyan-400 font-bold'
+      });
+    } else {
+      parts.push({
+        text: `⏹️ ENGINE INACTIVE${status.stopped_at ? ` (Stopped at: ${status.stopped_at})` : ' (Ready to start)'}`,
+        colorClass: 'text-orange-400 font-bold'
+      });
+    }
+
+    // 1. Connection mode
     if (paperTrade) {
-      parts.push(`🎮 SIMULATION ACTIVE: Real-time price tracker running in Paper Trading mode.`)
+      parts.push({
+        text: `🎮 SIMULATION ACTIVE: Real-time price tracker running in Paper Trading mode.`,
+        colorClass: 'text-yellow-400'
+      });
     } else {
-      parts.push(`🟢 KITE LIVE FEED: Authenticated & Connected to Zerodha Ticker.`)
+      parts.push({
+        text: `🟢 KITE LIVE FEED: Authenticated & Connected to Zerodha Ticker.`,
+        colorClass: 'text-emerald-400'
+      });
     }
 
-    // Nifty Spot price
+    // 2. Nifty Spot price
     if (status.nifty_ltp != null) {
-      parts.push(`NIFTY 50: ₹${status.nifty_ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`)
-      if (lastNiftyTickSec !== null) {
-        parts.push(`Last update: ${lastNiftyTickSec}s ago`)
-      }
+      const ltpStr = status.nifty_ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      const isUp = (status.nifty_ltp >= (status.nifty_prev_close ?? 0));
+      parts.push({
+        text: `NIFTY 50: ₹${ltpStr}${lastNiftyTickSec !== null ? ` (${lastNiftyTickSec}s ago)` : ''}`,
+        colorClass: isUp ? 'text-green-400' : 'text-red-400'
+      });
     } else {
-      parts.push(`NIFTY 50: Awaiting tick...`)
+      parts.push({
+        text: `NIFTY 50: Awaiting tick...`,
+        colorClass: 'text-navy-300'
+      });
     }
 
-    // CE details
+    // 3. CE details
     if (status.ce) {
-      const ce = status.ce
+      const ce = status.ce;
       if (ce.state !== 'IDLE') {
-        const pnlStr = ce.unrealized_pnl != null
-          ? `${ce.unrealized_pnl >= 0 ? '+' : ''}₹${ce.unrealized_pnl.toFixed(0)}`
-          : '—'
-        parts.push(`CE Position: ${ce.state} | Strike: ${ce.locked_strike || '—'} | ${ce.lots} Lots | Unrealized P&L: ${pnlStr}`)
+        const pnl = ce.unrealized_pnl ?? 0;
+        const pnlStr = `${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(0)}`;
+        parts.push({
+          text: `CE Position: ${ce.state} | Strike: ${ce.locked_strike || '—'} | ${ce.lots} Lots | Unrealized P&L: ${pnlStr}`,
+          colorClass: pnl >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'
+        });
       } else {
-        parts.push(`CE Leg: IDLE (Monitoring Support S1/S2/S3)`)
+        parts.push({
+          text: `CE Leg: IDLE (Monitoring Support S1/S2/S3)`,
+          colorClass: 'text-navy-300 opacity-90'
+        });
       }
     }
 
-    // PE details
+    // 4. PE details
     if (status.pe) {
-      const pe = status.pe
+      const pe = status.pe;
       if (pe.state !== 'IDLE') {
-        const pnlStr = pe.unrealized_pnl != null
-          ? `${pe.unrealized_pnl >= 0 ? '+' : ''}₹${pe.unrealized_pnl.toFixed(0)}`
-          : '—'
-        parts.push(`PE Position: ${pe.state} | Strike: ${pe.locked_strike || '—'} | ${pe.lots} Lots | Unrealized P&L: ${pnlStr}`)
+        const pnl = pe.unrealized_pnl ?? 0;
+        const pnlStr = `${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(0)}`;
+        parts.push({
+          text: `PE Position: ${pe.state} | Strike: ${pe.locked_strike || '—'} | ${pe.lots} Lots | Unrealized P&L: ${pnlStr}`,
+          colorClass: pnl >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'
+        });
       } else {
-        parts.push(`PE Leg: IDLE (Monitoring Resistance R1/R2/R3)`)
+        parts.push({
+          text: `PE Leg: IDLE (Monitoring Resistance R1/R2/R3)`,
+          colorClass: 'text-navy-300 opacity-90'
+        });
       }
     }
 
-    // System details
-    parts.push(`Websocket Link: ${wsConnected ? 'Connected' : 'Disconnected'}`)
+    // 5. System details
+    parts.push({
+      text: `Websocket Link: ${wsConnected ? 'Connected' : 'Disconnected'}`,
+      colorClass: wsConnected ? 'text-emerald-400' : 'text-red-400'
+    });
     if (health?.instruments_loaded) {
-      parts.push(`NFO Instruments: Cached & Loaded`)
+      parts.push({
+        text: `NFO Instruments: Cached & Loaded`,
+        colorClass: 'text-sky-400'
+      });
     }
     if (health?.subscribed_options != null && health.subscribed_options > 0) {
-      parts.push(`Streaming options: ${health.subscribed_options}`)
+      parts.push({
+        text: `Streaming options: ${health.subscribed_options}`,
+        colorClass: 'text-purple-400'
+      });
     }
 
-    return parts.join('  •  ')
-  }, [status, isCriticalError, paperTrade, lastNiftyTickSec, apiError, tickerError, wsConnected, health])
+    return parts;
+  }, [status, isCriticalError, paperTrade, lastNiftyTickSec, apiError, tickerError, wsConnected, health]);
 
   return (
-    <div className="w-full h-9 bg-navy-900/40 border-b border-navy-800/50 backdrop-blur-sm flex items-center px-4 select-none font-mono text-[11px] overflow-hidden">
+    <div className="w-full h-11 bg-transparent flex items-center px-4 select-none font-mono text-[13px] overflow-hidden">
       
       {/* 1. Static status badge (Left side) */}
-      <div className="flex-shrink-0 flex items-center gap-1.5 mr-4 py-0.5 px-2 border rounded-full font-bold uppercase tracking-wider text-[9px] shadow-sm select-none z-10 bg-navy-950">
-        <span className={clsx('w-1.5 h-1.5 rounded-full inline-block', badgeInfo.dotClass)} />
+      <div className="flex-shrink-0 flex items-center gap-2 mr-4 py-1 px-3 border border-navy-800 rounded-full font-bold uppercase tracking-wider text-[10px] shadow-sm select-none z-10 bg-navy-950">
+        <span className={clsx('w-2 h-2 rounded-full inline-block', badgeInfo.dotClass)} />
         <span className={badgeInfo.bgClass.split(' ')[1]}>{badgeInfo.text}</span>
       </div>
 
-      {/* 2. Message Area (Static or Scrolling) */}
+      {/* 2. Message Area (Scrolling) */}
       <div className="flex-1 overflow-hidden relative flex items-center h-full">
         {isCriticalError ? (
           // Critical Alert State: Static flashing red banner
           <div className="w-full text-left font-bold text-red-400 animate-pulse select-text">
-            {tickerMessage}
+            {tickerMessageParts[0]?.text}
           </div>
         ) : (
-          // Healthy State: Smooth horizontally scrolling marquee
+          // Healthy State: Smooth horizontally scrolling marquee with color coded items
           <div className="w-full whitespace-nowrap overflow-hidden">
             <div 
-              className="animate-marquee hover:pause cursor-help text-navy-200 select-text inline-block animate-marquee-hover"
-              style={{ animationDuration: '30s' }}
+              className="animate-marquee hover:pause cursor-help select-text inline-block animate-marquee-hover font-semibold"
+              style={{ animationDuration: '36s' }}
             >
-              {tickerMessage}
+              {tickerMessageParts.map((part, idx) => (
+                <span key={idx} className={clsx("inline-block", part.colorClass)}>
+                  {idx > 0 && <span className="mx-4 text-navy-700 font-bold select-none">•</span>}
+                  {part.text}
+                </span>
+              ))}
             </div>
           </div>
         )}
@@ -182,10 +230,22 @@ export function StatusBar() {
       {/* 3. Small websocket indicator dot (Right side) */}
       <div 
         title={wsConnected ? 'WebSocket Client Link OK' : 'WebSocket Client Link Offline'} 
-        className="flex-shrink-0 ml-4 flex items-center gap-1 text-[10px] text-navy-400 select-none hidden md:flex"
+        className="flex-shrink-0 ml-4 flex items-center gap-2 text-xs text-navy-400 select-none hidden md:flex"
       >
         <span>WS</span>
-        <span className={clsx('w-1.5 h-1.5 rounded-full inline-block', wsConnected ? 'bg-green-400' : 'bg-red-400 animate-pulse')} />
+        <span className="inline-flex relative items-center justify-center h-2.5 w-2.5">
+          {wsConnected ? (
+            <>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+            </>
+          ) : (
+            <>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+            </>
+          )}
+        </span>
       </div>
     </div>
   )

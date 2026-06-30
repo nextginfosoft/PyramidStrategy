@@ -79,17 +79,29 @@ def get_pnl_history(
 
 
 @router.get("/export")
-def export_trades(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+def export_trades(period: str = "all", db: Session = Depends(get_db), user: User = Depends(require_auth)):
     import csv
     from io import StringIO
     from fastapi.responses import StreamingResponse
+    import pytz
+    from datetime import datetime, timedelta
 
-    trades = (
-        db.query(Trade)
-        .filter(Trade.user_id == user.id)
-        .order_by(Trade.created_at.asc())
-        .all()
-    )
+    query = db.query(Trade).filter(Trade.user_id == user.id)
+
+    if period != "all":
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.now(ist)
+        if period == "today":
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = query.filter(Trade.created_at >= start_date.astimezone(pytz.utc))
+        elif period == "weekly":
+            start_date = now - timedelta(days=7)
+            query = query.filter(Trade.created_at >= start_date.astimezone(pytz.utc))
+        elif period == "monthly":
+            start_date = now - timedelta(days=30)
+            query = query.filter(Trade.created_at >= start_date.astimezone(pytz.utc))
+
+    trades = query.order_by(Trade.created_at.asc()).all()
 
     entries = [t for t in trades if t.action == "BUY"]
     exits = [t for t in trades if t.action == "EXIT"]
@@ -102,7 +114,9 @@ def export_trades(db: Session = Depends(get_db), user: User = Depends(require_au
         "Trade ID", "Trigger Level", "Instrument", "Strike", "Expiry", 
         "Lots", "Quantity", "Entry Timing", "Entry Price", "Entry Nifty", 
         "Exit Timing", "Exit Price", "Exit Nifty", "Exit Reason", 
-        "PnL (Rupees)", "Is Paper Trade"
+        "PnL (Rupees)", "Is Paper Trade",
+        "Post-Exit High", "Post-Exit High Time",
+        "Post-Exit Low", "Post-Exit Low Time"
     ])
 
     for entry in entries:
@@ -134,12 +148,20 @@ def export_trades(db: Session = Depends(get_db), user: User = Depends(require_au
             exit_nifty_val = float(matching_exit.trigger_nifty_level) if matching_exit.trigger_nifty_level is not None else ""
             exit_reason_str = matching_exit.status
             pnl_val = float((matching_exit.avg_price - entry.avg_price) * entry.qty) if matching_exit.avg_price is not None and entry.avg_price is not None else ""
+            post_exit_high = float(matching_exit.post_exit_high) if matching_exit.post_exit_high is not None else ""
+            post_exit_high_time = matching_exit.post_exit_high_time.isoformat() if matching_exit.post_exit_high_time is not None else ""
+            post_exit_low = float(matching_exit.post_exit_low) if matching_exit.post_exit_low is not None else ""
+            post_exit_low_time = matching_exit.post_exit_low_time.isoformat() if matching_exit.post_exit_low_time is not None else ""
         else:
             exit_time_str = "OPEN"
             exit_price_val = ""
             exit_nifty_val = ""
             exit_reason_str = "OPEN"
             pnl_val = ""
+            post_exit_high = ""
+            post_exit_high_time = ""
+            post_exit_low = ""
+            post_exit_low_time = ""
 
         writer.writerow([
             entry.id,
@@ -157,7 +179,11 @@ def export_trades(db: Session = Depends(get_db), user: User = Depends(require_au
             exit_nifty_val,
             exit_reason_str,
             pnl_val,
-            entry.is_paper_trade
+            entry.is_paper_trade,
+            post_exit_high,
+            post_exit_high_time,
+            post_exit_low,
+            post_exit_low_time
         ])
 
     output.seek(0)

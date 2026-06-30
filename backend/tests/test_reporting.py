@@ -6,7 +6,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy.orm import Session
 
-from app.models.models import User, Trade, DailyPnL, AISuggestion, AuditLog, ApiConfig
+from app.models.models import User, Trade, DailyPnL, AISuggestion, AuditLog, ApiConfig, StrategyConfig
 from app.services.reporting import (
     get_user_reporting_config,
     generate_daily_report,
@@ -131,6 +131,8 @@ class TestReportingService:
                 q.filter.return_value.order_by.return_value.all.return_value = []
             elif model == AISuggestion:
                 q.filter.return_value.order_by.return_value.all.return_value = []
+            elif model == StrategyConfig:
+                q.filter.return_value.first.return_value = None
             return q
             
         mock_db.query.side_effect = mock_query

@@ -105,6 +105,29 @@
 - Support Discord, Slack, custom URLs
 - Webhook security: HMAC signature verification
 
+### R16: Interactive Telegram Bot Commands
+**Priority:** Medium  
+**Why:** Enable two-way remote strategy management without needing the dashboard open.
+
+- Set up a secure bot webhook listener (e.g. `POST /telegram/webhook`).
+- Expose basic controls via custom inline keyboard buttons (Start engine, Stop engine, Status).
+- Query current positions, active levels, and live P&L in real-time.
+
+### R17: Granular Notification Filters
+**Priority:** Low-Medium  
+**Why:** Avoid alert noise on high-frequency channels (like WhatsApp) while keeping full logging on Telegram.
+
+- Add per-channel configuration checkboxes in settings.
+- Selectively enable/disable alerts for: Entries, Exits, Safety Cutoffs, and Daily PDF Reports independently per integration.
+
+### R18: Auto-reconnect & Self-healing Websockets
+**Priority:** High  
+**Why:** Prevent live feed interruption and missing critical level ticks during trading hours.
+
+- Implement a background ping/pong monitor for the Zerodha WebSocket feed.
+- Automatic re-authentication flow using stored API key and TOTP seed on connection drops.
+- Queue pending orders or retry state reconciliation to avoid sync mismatches.
+
 ---
 
 ## LONG-TERM (Month 6-12)
@@ -161,6 +184,27 @@
 - Format: PDF report or Telegram message
 - Weekly summary: Monday briefing with prior week stats
 
+### R19: Expiry Day Strike Roll-Over (Next-Week Expiry Toggle)
+**Priority:** High  
+**Why:** Prevent theta decay risk and high intraday option volatility on expiry Tuesdays.
+
+- Add a settings toggle to roll over expiry contracts after a custom time (e.g. 10:30 AM).
+- If enabled, the engine selects the next week's option strike contracts instead of the current day's expiring contracts on Tuesdays.
+
+### R20: Multi-Account Trade Copier
+**Priority:** Medium-High  
+**Why:** Replicate trading strategy signals across multiple client accounts concurrently.
+
+- Expose multi-account credential inputs in the Settings page.
+- Distribute strategy buy and exit orders to all active accounts with customizable lot size multipliers.
+
+### R21: Live Slippage & Latency Auditing
+**Priority:** Low-Medium  
+**Why:** Audit and log Zerodha execution efficiency and actual pricing slippage.
+
+- Track differences between level crossing time, request dispatch, and final trade execution fill timestamp.
+- Present a latency statistics card and raw tick slippage log on the frontend.
+
 ---
 
 ## TECHNICAL DEBT & INFRASTRUCTURE
@@ -206,6 +250,12 @@
 | R12: AI Level Detection | Very High | High | ⭐⭐ (post MVP) |
 | R13: SaaS | Very High | Very High | ⭐ (startup phase) |
 | R6: Greeks display | Low | Low | ⭐⭐ |
+| R16: Interactive Bot | Medium | Medium | ⭐⭐ |
+| R17: Notification Filters | Low | Low | ⭐⭐ |
+| R18: Auto-reconnect | High | Medium | ⭐⭐⭐ |
+| R19: Expiry Roll-over | High | Medium | ⭐⭐⭐ |
+| R20: Multi-Account Copier | High | High | ⭐⭐ |
+| R21: Slippage Auditing | Medium | Low | ⭐⭐ |
 | T1: Docker deploy | High | Low | ⭐⭐⭐ |
 | T2: CI/CD | Medium | Low | ⭐⭐ |
 
