@@ -14,7 +14,11 @@ export function useWebSocket() {
   const connect = () => {
     if (ws.current?.readyState === WebSocket.OPEN) return
     const token = localStorage.getItem('pyramid_token')
-    const wsUrl = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL
+    if (!token) {
+      console.warn('WS connection aborted: No token found in localStorage')
+      return
+    }
+    const wsUrl = `${WS_URL}?token=${encodeURIComponent(token)}`
     ws.current = new WebSocket(wsUrl)
 
     ws.current.onopen = () => {
@@ -44,8 +48,13 @@ export function useWebSocket() {
       setWsConnected(false)
     }
 
-    ws.current.onclose = () => {
+    ws.current.onclose = (event) => {
       setWsConnected(false)
+      // Do not attempt to reconnect if authentication failed on backend
+      if (event.code === 4001 || event.code === 4002) {
+        console.warn(`WebSocket authentication failed (code ${event.code}). Reconnection aborted.`)
+        return
+      }
       // Reconnect after 3 seconds
       reconnectTimer.current = setTimeout(connect, 3000)
     }
