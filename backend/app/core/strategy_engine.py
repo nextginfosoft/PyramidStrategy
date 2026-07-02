@@ -212,8 +212,7 @@ class StrategyEngine:
         try:
             import pytz
             from datetime import datetime
-            ist = pytz.timezone("Asia/Kolkata")
-            now = datetime.now(ist)
+            now = datetime.now(pytz.utc)
 
             updated_any = False
             with SessionLocal() as db:
