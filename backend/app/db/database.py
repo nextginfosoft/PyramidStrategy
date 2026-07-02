@@ -16,7 +16,7 @@ if settings.is_sqlite:
     else:
         engine = create_engine(
             settings.DATABASE_URL,
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30},
         )
         
     @event.listens_for(engine, "connect")
