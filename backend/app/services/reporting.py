@@ -230,6 +230,9 @@ async def send_daily_report(user_id: int, target_date: date):
             ns.load_from_db()
             ws.load_from_db()
 
+            # Always ensure the DailyPnL record is generated/updated in DB first
+            msg = generate_daily_report(user_id, target_date, db)
+
             if fmt == "pdf":
                 reports_dir = os.path.join("logs", "reports")
                 os.makedirs(reports_dir, exist_ok=True)
@@ -264,7 +267,6 @@ async def send_daily_report(user_id: int, target_date: date):
                     
             elif fmt == "whatsapp":
                 if ws.is_enabled():
-                    msg = generate_daily_report(user_id, target_date, db)
                     await ws.send_message(msg)
                     logger.info(f"Daily EOD Report sent to User {user_id} via WhatsApp")
                 else:
@@ -272,7 +274,6 @@ async def send_daily_report(user_id: int, target_date: date):
                     
             else:  # telegram (default)
                 if ns.is_enabled():
-                    msg = generate_daily_report(user_id, target_date, db)
                     await ns._send(msg)
                     logger.info(f"Daily EOD Report sent to User {user_id} via Telegram")
                 else:

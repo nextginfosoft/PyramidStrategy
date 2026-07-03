@@ -101,9 +101,16 @@ class NotificationService:
         if not self._enabled or not self._notify_entry:
             return
         emoji = "🟢" if side == "CE" else "🔴"
+        
+        # Convert L1/L2/L3 to S1/S2/S3 for CE, or R1/R2/R3 for PE
+        mapped_lvl = level
+        if level in ("L1", "L2", "L3"):
+            prefix = "S" if side == "CE" else "R"
+            mapped_lvl = level.replace("L", prefix)
+
         msg = (
             f"{emoji} *BUY* `{instrument}`\n"
-            f"Side: {side} | Level: {level} | Lots: {lots}\n"
+            f"Side: {side} | Level: {mapped_lvl} | Lots: {lots}\n"
             f"Entry: ₹{fill_price:.2f} | NIFTY: {nifty_ltp:.2f}\n"
             f"Time: {self._now_str()}"
         )
@@ -139,11 +146,13 @@ class NotificationService:
         entry_avg: Decimal,
         pnl_rupees: Decimal,
     ):
-        """Notify: Stop loss triggered at L3."""
+        """Notify: Stop loss triggered at level 3 (S3/R3)."""
         if not self._enabled or not self._notify_sl:
             return
+        prefix = "S" if side == "CE" else "R"
+        mapped_lvl = f"{prefix}3"
         msg = (
-            f"🛑 *SL HIT* — {side} L3\n"
+            f"🛑 *SL HIT* — {side} {mapped_lvl}\n"
             f"Instrument: `{instrument}`\n"
             f"Lots: {lots} | Exit: ₹{exit_price:.2f} | Entry Avg: ₹{entry_avg:.2f}\n"
             f"*P&L: ₹{pnl_rupees:.0f}*\n"
