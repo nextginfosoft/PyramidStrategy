@@ -101,3 +101,40 @@ async def test_cooldown_blocks_immediate_l2_entry(engine):
         await engine.on_nifty_tick(Decimal("23040"))
     assert engine.ce.state == State.L2_ENTERED
     assert engine.ce.lots == 2
+
+@pytest.mark.asyncio
+async def test_concurrent_ticks_ignored(engine):
+    """
+    If a tick is already being processed, subsequent ticks should be ignored 
+    to prevent concurrency race conditions.
+    """
+    import asyncio
+    
+    # We will patch engine._process_side to sleep for a bit to simulate processing time
+    original_process_side = engine._process_side
+    
+    async def mock_process_side(side, nifty_ltp, prev_nifty):
+        await asyncio.sleep(0.05)  # Simulate slow processing/DB write
+        await original_process_side(side, nifty_ltp, prev_nifty)
+        
+    engine._process_side = mock_process_side
+    
+    # Trigger level crossing: establish baseline 23120, then drop to 23090 (cross S1)
+    await engine.on_nifty_tick(Decimal("23120"))
+    
+    # Fire first tick (starts processing, will sleep for 0.05s)
+    task1 = asyncio.create_task(engine.on_nifty_tick(Decimal("23090")))
+    
+    # Wait a small amount of time to let task1 start and enter mock_process_side
+    await asyncio.sleep(0.01)
+    assert engine._is_processing_tick is True
+    
+    # Fire second tick (should be ignored immediately because self._is_processing_tick is True)
+    await engine.on_nifty_tick(Decimal("23090"))
+    
+    # Wait for the first tick to finish
+    await task1
+    assert engine._is_processing_tick is False
+    
+    # Verify the first tick was processed (state is now L1_ENTERED)
+    assert engine.ce.state == State.L1_ENTERED

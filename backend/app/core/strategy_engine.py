@@ -28,10 +28,13 @@ class StrategyEngine:
     def __init__(self, user_id: int):
         self.user_id = user_id
         self.is_running: bool = False
+        self.squareoff_triggered: bool = False
         self.started_at: Optional[str] = None
         self.stopped_at: Optional[str] = None
         self.last_nifty_price: Optional[Decimal] = None
         self.last_entry_time: dict[str, float] = {"CE": 0.0, "PE": 0.0}
+        self._is_processing_tick: bool = False
+        self._processing_option_symbols: set[str] = set()
 
         # Independent state machines per CLAUDE.md
         self.ce = StateMachine(side="CE")
@@ -96,10 +99,14 @@ class StrategyEngine:
         self.last_entry_time = {"CE": 0.0, "PE": 0.0}
         self.started_at = None
         self.stopped_at = None
+        self.squareoff_triggered = False
+        self._is_processing_tick = False
+        self._processing_option_symbols.clear()
         logger.info(f"User {self.user_id}: Daily reset complete — state machines reset")
 
     def start(self):
         self.is_running = True
+        self.squareoff_triggered = False
         from datetime import datetime
         import pytz
         ist = pytz.timezone("Asia/Kolkata")
@@ -196,11 +203,16 @@ class StrategyEngine:
         if not trade_ids:
             return
 
+        if not hasattr(self, "_processing_option_symbols"):
+            self._processing_option_symbols = set()
+
+        if symbol in self._processing_option_symbols:
+            return
+        self._processing_option_symbols.add(symbol)
         try:
             import pytz
             from datetime import datetime
-            ist = pytz.timezone("Asia/Kolkata")
-            now = datetime.now(ist)
+            now = datetime.now(pytz.utc)
 
             updated_any = False
             with SessionLocal() as db:
@@ -233,6 +245,8 @@ class StrategyEngine:
                 )
         except Exception as e:
             logger.warning(f"Error in _process_post_exit_tick: {e}")
+        finally:
+            self._processing_option_symbols.discard(symbol)
 
     # ── Main Tick Processor ──────────────────────────────────────────────────
 
@@ -250,25 +264,35 @@ class StrategyEngine:
             self.last_nifty_price = nifty_ltp
             return
 
-        # Check squareoff first (highest priority)
-        if should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
-            self.last_nifty_price = nifty_ltp
-            await self._force_squareoff()
+        if self._is_processing_tick:
+            logger.debug(f"User {self.user_id}: Tick ignored — engine busy processing previous tick")
             return
 
-        prev_nifty = self.last_nifty_price
+        self._is_processing_tick = True
+        try:
+            # Check squareoff first (highest priority)
+            if should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
+                self.last_nifty_price = nifty_ltp
+                if not self.squareoff_triggered:
+                    self.squareoff_triggered = True
+                    await self._force_squareoff()
+                return
 
-        # Process both sides independently
-        await asyncio.gather(
-            self._process_side("PE", nifty_ltp, prev_nifty),
-            self._process_side("CE", nifty_ltp, prev_nifty),
-            return_exceptions=True,
-        )
+            prev_nifty = self.last_nifty_price
 
-        self.last_nifty_price = nifty_ltp
+            # Process both sides independently
+            await asyncio.gather(
+                self._process_side("PE", nifty_ltp, prev_nifty),
+                self._process_side("CE", nifty_ltp, prev_nifty),
+                return_exceptions=True,
+            )
 
-        # Broadcast updated status to frontend
-        await self._broadcast_status(nifty_ltp)
+            self.last_nifty_price = nifty_ltp
+
+            # Broadcast updated status to frontend
+            await self._broadcast_status(nifty_ltp)
+        finally:
+            self._is_processing_tick = False
 
     # ── Side Processing ──────────────────────────────────────────────────────
 
@@ -507,6 +531,8 @@ class StrategyEngine:
 
     async def _force_squareoff(self):
         """Force close all open positions at configured squareoff time."""
+        self.squareoff_triggered = True
+        self.is_running = False
         sq_time_str = self.config.get("squareoff_time", "11:30") if self.config else "11:30"
         
         # Collect total unrealized P&L before closing

@@ -181,8 +181,7 @@ class OrderManager:
         expiry_date = today_ist()
         updated_trade_ids = []
         import pytz
-        ist = pytz.timezone("Asia/Kolkata")
-        now_ist = datetime.now(ist)
+        now_utc = datetime.now(pytz.utc)
 
         if open_trades:
             expiry_date = open_trades[0].expiry or today_ist()
@@ -190,9 +189,9 @@ class OrderManager:
                 ot.status = reason
                 if reason == "TARGET":
                     ot.post_exit_high = exit_price
-                    ot.post_exit_high_time = now_ist
+                    ot.post_exit_high_time = now_utc
                     ot.post_exit_low = exit_price
-                    ot.post_exit_low_time = now_ist
+                    ot.post_exit_low_time = now_utc
                 updated_trade_ids.append(ot.id)
             open_trades[0].pnl = pnl_rupees
 
@@ -215,9 +214,9 @@ class OrderManager:
             pnl=pnl_rupees,
             is_paper_trade=self.paper_trade,
             post_exit_high=exit_price if reason == "TARGET" else None,
-            post_exit_high_time=now_ist if reason == "TARGET" else None,
+            post_exit_high_time=now_utc if reason == "TARGET" else None,
             post_exit_low=exit_price if reason == "TARGET" else None,
-            post_exit_low_time=now_ist if reason == "TARGET" else None,
+            post_exit_low_time=now_utc if reason == "TARGET" else None,
         )
         db.add(exit_trade)
         db.flush()

@@ -39,12 +39,20 @@ class EngineManager:
 
     async def broadcast_nifty_tick(self, nifty_ltp: Decimal):
         """Distribute the NIFTY spot tick to all running engines concurrently."""
+        running_engines = []
         tasks = []
         for uid, engine in list(self._engines.items()):
             if engine.is_running:
+                running_engines.append(engine)
                 tasks.append(engine.on_nifty_tick(nifty_ltp))
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for engine, res in zip(running_engines, results):
+                if isinstance(res, Exception):
+                    logger.error(
+                        f"User {engine.user_id}: Exception swallowed in on_nifty_tick: {res}",
+                        exc_info=res
+                    )
 
 
 # Global singleton manager

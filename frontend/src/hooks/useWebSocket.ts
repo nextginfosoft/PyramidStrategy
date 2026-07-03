@@ -3,7 +3,23 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useStrategyStore } from '../store/strategyStore'
 import type { WSMessage } from '../types'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+const getWsUrl = () => {
+  const envUrl = import.meta.env.VITE_WS_URL
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl
+  }
+
+  const { protocol, host, hostname } = window.location
+  const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:'
+
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return envUrl || 'ws://localhost:8000/ws'
+  }
+
+  return `${wsProtocol}//${host}/ws`
+}
+
+const WS_URL = getWsUrl()
 
 export function useWebSocket() {
   const ws = useRef<WebSocket | null>(null)
@@ -14,7 +30,11 @@ export function useWebSocket() {
   const connect = () => {
     if (ws.current?.readyState === WebSocket.OPEN) return
     const token = localStorage.getItem('pyramid_token')
-    const wsUrl = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL
+    if (!token) {
+      console.warn('WS connection aborted: No token found in localStorage')
+      return
+    }
+    const wsUrl = `${WS_URL}?token=${encodeURIComponent(token)}`
     ws.current = new WebSocket(wsUrl)
 
     ws.current.onopen = () => {
@@ -44,8 +64,13 @@ export function useWebSocket() {
       setWsConnected(false)
     }
 
-    ws.current.onclose = () => {
+    ws.current.onclose = (event) => {
       setWsConnected(false)
+      // Do not attempt to reconnect if authentication failed on backend
+      if (event.code === 4001 || event.code === 4002) {
+        console.warn(`WebSocket authentication failed (code ${event.code}). Reconnection aborted.`)
+        return
+      }
       // Reconnect after 3 seconds
       reconnectTimer.current = setTimeout(connect, 3000)
     }

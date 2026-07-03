@@ -1,8 +1,23 @@
 import axios from 'axios'
 import type { StrategyConfig, Trade, DailyPnL } from '../types'
 
+const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl
+  }
+
+  const { protocol, host, hostname } = window.location
+
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return envUrl || 'http://localhost:8000'
+  }
+
+  return `${protocol}//${host}/api`
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  baseURL: getApiBaseUrl(),
 })
 
 export const strategyApi = {
