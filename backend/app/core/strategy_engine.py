@@ -130,13 +130,15 @@ class StrategyEngine:
         self.post_exit_trades = {}
         try:
             with SessionLocal() as db:
-                from app.models.models import Trade
                 from app.core.time_rules import today_ist
-                target_trades = db.query(Trade).filter(
-                    Trade.user_id == self.user_id,
-                    Trade.trade_date == today_ist(),
-                    Trade.status == "TARGET"
+                target_date = today_ist()
+                all_trades = db.query(Trade).filter(
+                    Trade.user_id == self.user_id
                 ).all()
+                target_trades = [
+                    t for t in all_trades
+                    if t.trade_date == target_date and t.status == "TARGET"
+                ]
                 for trade in target_trades:
                     symbol = trade.instrument
                     if symbol not in self.post_exit_trades:
@@ -535,22 +537,38 @@ class StrategyEngine:
         self.is_running = False
         sq_time_str = self.config.get("squareoff_time", "11:30") if self.config else "11:30"
         
-        # Collect total unrealized P&L before closing
-        ce_pnl = Decimal("0")
-        pe_pnl = Decimal("0")
-        
+        # 1. Close any active positions
         for sm in (self.ce, self.pe):
             if sm.state not in (State.IDLE, State.BLOCKED):
                 option_ltp = self.get_option_ltp(sm.locked_instrument) or sm.entry_avg_price
-                if option_ltp is not None and sm.entry_avg_price is not None:
-                    pnl = (option_ltp - sm.entry_avg_price) * sm.total_qty
-                    if sm.side == "CE":
-                        ce_pnl = pnl
-                    else:
-                        pe_pnl = pnl
-                
                 logger.warning(f"User {self.user_id} [{sm.side}] FORCE SQUAREOFF at {sq_time_str}")
                 await self._execute_exit(sm, option_ltp or Decimal("0"), "SQUAREOFF", Decimal("0"))
+
+        # 2. Query today's completed trades from database to send the correct total daily P&L
+        ce_pnl = Decimal("0")
+        pe_pnl = Decimal("0")
+        try:
+            from app.models.models import Trade
+            target_date = today_ist()
+            with SessionLocal() as db:
+                all_trades = (
+                    db.query(Trade)
+                    .filter(Trade.user_id == self.user_id)
+                    .all()
+                )
+                trades = [
+                    t for t in all_trades
+                    if t.trade_date == target_date and t.action == "EXIT"
+                ]
+                logger.info(f"User {self.user_id} squareoff P&L query: fetched {len(all_trades)} total trades, found {len(trades)} exits for {target_date}")
+                for t in trades:
+                    pnl_val = Decimal(str(t.pnl or 0))
+                    if t.side == "CE":
+                        ce_pnl += pnl_val
+                    elif t.side == "PE":
+                        pe_pnl += pnl_val
+        except Exception as db_err:
+            logger.error(f"Failed to query today's trades for squareoff P&L: {db_err}")
 
         # Send Telegram / WhatsApp alerts
         try:
