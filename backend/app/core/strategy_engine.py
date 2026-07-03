@@ -130,6 +130,7 @@ class StrategyEngine:
         self.post_exit_trades = {}
         try:
             with SessionLocal() as db:
+                from app.models.models import Trade
                 from app.core.time_rules import today_ist
                 target_date = today_ist()
                 all_trades = db.query(Trade).filter(
