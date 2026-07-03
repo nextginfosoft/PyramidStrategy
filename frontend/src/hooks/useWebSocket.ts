@@ -3,7 +3,23 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useStrategyStore } from '../store/strategyStore'
 import type { WSMessage } from '../types'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+const getWsUrl = () => {
+  const envUrl = import.meta.env.VITE_WS_URL
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl
+  }
+
+  const { protocol, host, hostname } = window.location
+  const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:'
+
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return envUrl || 'ws://localhost:8000/ws'
+  }
+
+  return `${wsProtocol}//${host}/ws`
+}
+
+const WS_URL = getWsUrl()
 
 export function useWebSocket() {
   const ws = useRef<WebSocket | null>(null)
