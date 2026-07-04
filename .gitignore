@@ -36,6 +36,8 @@ logs/
 
 # Strategy data (optional — commit if you want to share backtests)
 *.db
+*.db-shm
+*.db-wal
 
 # Scratch directory
 backend/scratch/
