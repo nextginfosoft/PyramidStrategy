@@ -400,7 +400,7 @@ def _load_startup_config():
 app = FastAPI(
     title="PyramidStrategy API",
     description="Automated NIFTY Options Trading — Pyramid Strategy",
-    version="1.0.0",
+    version="1.0.1",
     lifespan=lifespan,
 )
 

@@ -1162,7 +1162,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         {/* Footer */}
         <div className="p-3 border-t border-navy-700/85 bg-navy-900/50 flex items-center justify-between text-[10px] text-navy-300 px-5">
           <span>🛡 API keys are securely stored with AES-256 encryption.</span>
-          <span>v1.0.0</span>
+          <span>v1.0.1</span>
         </div>
       </div>
     </div>

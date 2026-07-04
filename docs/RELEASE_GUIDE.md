@@ -10,6 +10,7 @@ This is a local record of the versions tagged and published in this repository:
 
 | Version | Release Date | Trigger Branch | Description / Major Changes |
 | :--- | :--- | :--- | :--- |
+| **`v1.0.1`** | 2026-07-04 | `dev` | Fixed packaged executable run-time issue where fakeredis could not locate the commands.json metadata file. Bundled the missing JSON asset in the PyInstaller spec. |
 | **`v1.0.0`** | 2026-07-04 | `dev` | Initial release setup. Fixed packaged executable UI loading, bypassed Uvicorn logging config errors, resolved CORS/domain origin mismatches, and created automated GitHub Release workflow. |
 
 ---
