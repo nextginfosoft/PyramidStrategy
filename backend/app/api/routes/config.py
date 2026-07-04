@@ -13,11 +13,14 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 # ── Strategy Levels ───────────────────────────────────────────────────────────
 
+from datetime import datetime
+
 @router.get("/strategy", response_model=StrategyConfigResponse)
 def get_strategy_config(db: Session = Depends(get_db), user: User = Depends(require_auth)):
     cfg = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).order_by(StrategyConfig.id.desc()).first()
     if not cfg:
         # Return a default initial config if none exists for this user
+        now = datetime.utcnow()
         return StrategyConfigResponse(
             id=0,
             r1=23170, r2=23220, r3=23250,
@@ -27,7 +30,9 @@ def get_strategy_config(db: Session = Depends(get_db), user: User = Depends(requ
             sl_points=10,
             paper_trade=True,
             squareoff_time="11:30",
-            is_active=False
+            is_active=False,
+            created_at=now,
+            updated_at=now
         )
     return cfg
 
