@@ -1,11 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 
 
 a = Analysis(
     ['backend\\app\\main.py'],
     pathex=[],
     binaries=[],
-    datas=[('frontend/dist', 'frontend/dist')],
+    datas=[('frontend/dist', 'frontend/dist')] + collect_data_files('fakeredis'),
     hiddenimports=[
         'uvicorn.protocols.http.h11_impl',
         'uvicorn.protocols.websockets.wsproto_impl',
