@@ -1,0 +1,87 @@
+# PyramidStrategy — Developer Release Guide
+
+This document tracks local version releases, documents the steps to check previous release history, and details the commands needed to compile and publish new versions.
+
+---
+
+## 1. Local Version History (Changelog)
+
+This is a local record of the versions tagged and published in this repository:
+
+| Version | Release Date | Trigger Branch | Description / Major Changes |
+| :--- | :--- | :--- | :--- |
+| **`v1.0.0`** | 2026-07-04 | `dev` | Initial release setup. Fixed packaged executable UI loading, bypassed Uvicorn logging config errors, resolved CORS/domain origin mismatches, and created automated GitHub Release workflow. |
+
+---
+
+## 2. Managing Version Tags via Command Line
+
+Git stores release tags directly in the local repository. You can use these commands to inspect them:
+
+* **List all previous tags with their release messages:**
+  ```powershell
+  git tag -n
+  ```
+* **View the commit and details associated with a specific version tag (e.g. `v1.0.0`):**
+  ```powershell
+  git show v1.0.0
+  ```
+* **Fetch the latest tags from GitHub remote if working on a different machine:**
+  ```powershell
+  git fetch --tags
+  ```
+
+---
+
+## 3. How to Release a New Version (Automated via GitHub Actions)
+
+To release a new version of the app to your end users using GitHub Actions:
+
+### Step 3.1: Commit and Push Your Code Changes
+Make your changes, commit them, and push them to your repository:
+```powershell
+git add .
+git commit -m "feat: Describe your new feature or bug fix"
+git push origin dev
+```
+
+### Step 3.2: Tag the Code with a New Version Number
+Increment your version based on the changes (e.g., from `v1.0.0` to `v1.0.1` or `v1.1.0`):
+```powershell
+# Create the local tag
+git tag v1.0.1 -m "Release description message"
+
+# Push the tag to GitHub
+git push origin v1.0.1
+```
+*Once pushed, GitHub Actions automatically handles frontend compiling, PyInstaller packaging, zipping, and publishes `PyramidStrategy_Windows.zip` on your repository's **Releases** page.*
+
+---
+
+## 4. How to Build the Executable Manually (Local Environment)
+
+If you ever need to compile the executable manually on your local computer instead of using GitHub:
+
+### Step 4.1: Compile the Frontend UI
+Ensure the React code is fully built into production assets first:
+```powershell
+cd frontend
+npm run build
+cd ..
+```
+
+### Step 4.2: Terminate any Running Instances
+Close any background instances of `PyramidStrategy.exe` to unlock internal DLLs:
+```powershell
+taskkill /F /IM PyramidStrategy.exe
+```
+
+### Step 4.3: Compile the Backend using PyInstaller
+Activate your virtual environment and run the PyInstaller command:
+```powershell
+cd backend
+venv\Scripts\activate
+cd ..
+pyinstaller --clean -y PyramidStrategy.spec
+```
+*The compiled folder containing the entrypoint `PyramidStrategy.exe` and `_internal` files will be output to the `dist/PyramidStrategy` directory.*
