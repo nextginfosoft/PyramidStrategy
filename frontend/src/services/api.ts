@@ -3,17 +3,19 @@ import type { StrategyConfig, Trade, DailyPnL } from '../types'
 
 const getApiBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_BASE_URL
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+  if (envUrl) {
     return envUrl
   }
 
-  const { protocol, host, hostname } = window.location
+  const { protocol, host, port } = window.location
 
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return envUrl || 'http://localhost:8000'
+  // If running from Vite development server, point to backend on port 8000
+  if (port !== '8000' && port !== '') {
+    return 'http://localhost:8000'
   }
 
-  return `${protocol}//${host}/api`
+  // In production (served from backend port), use relative path with /api prefix
+  return '/api'
 }
 
 const api = axios.create({

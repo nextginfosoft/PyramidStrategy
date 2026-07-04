@@ -111,3 +111,12 @@ Make it a habit to check the system status every morning before the market opens
 - [ ] **Step 6:** Click **Start Live Feed** to establish the WebSocket connection (verify options streaming count is greater than 0).
 - [ ] **Step 7:** Verify your **Paper Trading** toggle status (ON for testing, OFF for live).
 - [ ] **Step 8:** Click **Start Strategy** on the main dashboard.
+
+---
+
+## 7. Developer Releases & Executable Compilations
+
+If you are a developer looking to package a new release version or compile the executable:
+* Refer to the comprehensive developer release instructions at **[docs/RELEASE_GUIDE.md](file:///D:/PyramidStretagy_dev/docs/RELEASE_GUIDE.md)**.
+* Git tag versions and build instructions are tracked there.
+

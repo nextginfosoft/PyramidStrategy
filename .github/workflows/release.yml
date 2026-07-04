@@ -1,0 +1,64 @@
+name: Build and Package Release Executable
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on any tag starting with v (e.g. v1.0.0)
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    name: Build Windows Executable
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # --- 1. BUILD FRONTEND ---
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Compile Frontend Assets
+        run: |
+          cd frontend
+          npm run build
+
+      # --- 2. BUILD BACKEND & EXE ---
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pyinstaller
+
+      - name: Build Executable via PyInstaller
+        run: |
+          pyinstaller --clean -y PyramidStrategy.spec
+
+      # --- 3. COMPRESS BUILD OUTPUT ---
+      - name: Zip Executable Release Folder
+        shell: powershell
+        run: |
+          Compress-Archive -Path dist/PyramidStrategy -DestinationPath dist/PyramidStrategy_Windows.zip
+
+      # --- 4. CREATE GITHUB RELEASE & UPLOAD ---
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PyramidStrategy_Windows.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

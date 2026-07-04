@@ -494,3 +494,49 @@ def health():
         "active_engines": active_engines_count,
         "total_managed_users": len(engine_manager._engines),
     }
+
+
+# Serve static files for Frontend (single-server EXE setup)
+import os
+from fastapi.staticfiles import StaticFiles
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Check if frontend/dist exists in the package internal structure, or in local development
+frontend_dist = os.path.abspath(os.path.join(current_dir, "frontend", "dist"))
+if not os.path.exists(frontend_dist):
+    # Try dev path relative to app folder
+    frontend_dist = os.path.abspath(os.path.join(current_dir, "..", "..", "frontend", "dist"))
+
+if os.path.exists(frontend_dist):
+    logger.info(f"Mounting static files from: {frontend_dist}")
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
+else:
+    logger.warning(f"Frontend dist folder not found at: {frontend_dist}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import uvicorn.logging
+    import webbrowser
+    import threading
+    import time
+
+    def open_browser():
+        # Wait a moment for uvicorn to start serving requests
+        time.sleep(1.5)
+        url = "http://127.0.0.1:8000"
+        logger.info(f"Opening default web browser to {url}...")
+        try:
+            webbrowser.open(url)
+        except Exception as e:
+            logger.error(f"Failed to open web browser: {e}")
+
+    # Start browser opener in a background thread
+    threading.Thread(target=open_browser, daemon=True).start()
+
+    logger.info("Starting uvicorn server on http://127.0.0.1:8000")
+    try:
+        # Run the server with log_config=None to avoid PyInstaller dictConfig formatter errors
+        uvicorn.run(app, host="127.0.0.1", port=8000, log_config=None)
+    except Exception as e:
+        logger.error(f"Uvicorn server failed to start: {e}")

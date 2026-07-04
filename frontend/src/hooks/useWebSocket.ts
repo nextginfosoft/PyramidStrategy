@@ -5,17 +5,19 @@ import type { WSMessage } from '../types'
 
 const getWsUrl = () => {
   const envUrl = import.meta.env.VITE_WS_URL
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+  if (envUrl) {
     return envUrl
   }
 
-  const { protocol, host, hostname } = window.location
+  const { protocol, host, port } = window.location
   const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:'
 
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return envUrl || 'ws://localhost:8000/ws'
+  // If running from Vite development server, point to backend on port 8000
+  if (port !== '8000' && port !== '') {
+    return 'ws://localhost:8000/ws'
   }
 
+  // In production, connect directly to the same host/port serving the app
   return `${wsProtocol}//${host}/ws`
 }
 

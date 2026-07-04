@@ -235,6 +235,19 @@
 - Dead letter queue for failed order notifications
 - Manual override UI: force-exit positions from dashboard
 
+### T6: Automated Desktop Release Pipeline (GitHub Actions)
+- Configured GitHub Actions workflow triggered on version tag pushes (`v*`).
+- Compiles the React frontend production assets automatically.
+- Runs PyInstaller inside a Windows runner to compile `PyramidStrategy.exe`.
+- Compresses the output into a `.zip` file and attaches it as a download to the GitHub Release.
+
+### T7: Desktop License & Activation Key System
+- Add offline (cryptographic signatures) or online (SaaS API) license key verification.
+- Local hardware fingerprinting using WMI/BIOS serial number hash checks.
+- Build a FastAPI licensing check middleware that blocks strategy execution if the license is inactive or expired.
+- Isolate the licensing system so it only runs when packaged as an executable (`sys.frozen` is True), leaving VPS/Cloud deployments completely unaffected.
+- Add an activation key prompt/unlock page in the React UI.
+
 ---
 
 ## IMPROVEMENT PRIORITY MATRIX
@@ -258,6 +271,8 @@
 | R21: Slippage Auditing | Medium | Low | ⭐⭐ |
 | T1: Docker deploy | High | Low | ⭐⭐⭐ |
 | T2: CI/CD | Medium | Low | ⭐⭐ |
+| T6: Desktop Release Pipeline | High | Low | Completed ⭐⭐⭐ |
+| T7: Desktop Licensing System | High | Medium | Future ⭐⭐ |
 
 ---
 

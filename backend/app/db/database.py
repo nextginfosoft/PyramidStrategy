@@ -6,16 +6,30 @@ from loguru import logger
 
 
 # ── Engine setup ──────────────────────────────────────────────────────────────
+import sys
+import os
+
+db_url = settings.DATABASE_URL
+
+if settings.is_sqlite and ":memory:" not in db_url:
+    is_frozen = getattr(sys, "frozen", False)
+    if is_frozen and os.environ.get("APPDATA"):
+        app_data_dir = os.path.join(os.environ["APPDATA"], "PyramidStrategy")
+        os.makedirs(app_data_dir, exist_ok=True)
+        db_path = os.path.join(app_data_dir, "pyramidstrategy.db")
+        db_url = f"sqlite:///{db_path}"
+        logger.info(f"Packaged executable detected. SQLite database relocated to: {db_path}")
+
 if settings.is_sqlite:
-    if ":memory:" in settings.DATABASE_URL:
+    if ":memory:" in db_url:
         engine = create_engine(
-            settings.DATABASE_URL,
+            db_url,
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
     else:
         engine = create_engine(
-            settings.DATABASE_URL,
+            db_url,
             connect_args={"check_same_thread": False, "timeout": 30},
         )
         
