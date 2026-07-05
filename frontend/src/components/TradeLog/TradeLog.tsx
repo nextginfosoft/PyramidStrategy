@@ -313,6 +313,7 @@ export function TradeLog() {
                 <th className="text-right pr-2">AVG Price</th>
                 <th className="text-right pr-2">Target Price</th>
                 <th className="text-right pr-2">Stop Loss</th>
+                <th className="text-right pr-2 hidden md:table-cell">Active Range</th>
                 <th className="text-right pr-2">Lots</th>
                 <th className="text-right">P&L</th>
               </tr>
@@ -352,6 +353,15 @@ export function TradeLog() {
                     </td>
                     <td className="text-right pr-2 text-red-400/90 font-mono">
                       {t.sl_price ? `₹${t.sl_price.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="text-right pr-2 font-mono text-[11px] whitespace-nowrap hidden md:table-cell">
+                      {t.active_low && t.active_high ? (
+                        <>
+                          <span className="text-red-400">₹{t.active_low.toFixed(1)}</span>
+                          <span className="text-navy-550 mx-0.5 font-normal">/</span>
+                          <span className="text-green-400">₹{t.active_high.toFixed(1)}</span>
+                        </>
+                      ) : '—'}
                     </td>
                     <td className="text-right pr-2 text-navy-200 font-mono">{t.lots}</td>
                     <td className={clsx('text-right font-mono font-semibold',

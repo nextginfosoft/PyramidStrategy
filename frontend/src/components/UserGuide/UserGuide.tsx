@@ -305,7 +305,7 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
 
         {/* Footer */}
         <div className="p-4 border-t border-navy-800 bg-navy-950/20 text-center text-[10px] text-navy-400 font-mono italic">
-          PyramidStrategy v1.0.1 — Enforcing Core Strategy Constraints.
+          PyramidStrategy v1.1.0 — Enforcing Core Strategy Constraints.
         </div>
       </div>
     </div>

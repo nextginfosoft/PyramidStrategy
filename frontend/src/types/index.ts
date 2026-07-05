@@ -4,7 +4,12 @@ export interface SideStatus {
   locked_strike: number | null
   locked_instrument: string | null
   entry_avg_price: number | null
+  level3_entry_price?: number | null
   current_ltp: number | null
+  active_high?: number | null
+  active_high_time?: string | null
+  active_low?: number | null
+  active_low_time?: string | null
   unrealized_pnl: number | null
   realized_pnl: number
   blocked_levels: string[]
@@ -50,6 +55,10 @@ export interface Trade {
   status: string
   pnl: number | null
   is_paper_trade: boolean
+  active_high?: number | null
+  active_high_time?: string | null
+  active_low?: number | null
+  active_low_time?: string | null
   post_exit_high?: number | null
   post_exit_high_time?: string | null
   post_exit_low?: number | null

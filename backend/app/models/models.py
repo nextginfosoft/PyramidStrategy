@@ -55,6 +55,10 @@ class Trade(Base):
     status = Column(String(20), default="OPEN")        # OPEN/TARGET/SL/SQUAREOFF/CANCELLED
     pnl = Column(Numeric(12, 2))
     is_paper_trade = Column(Boolean, default=True)
+    active_high = Column(Numeric(10, 2))
+    active_high_time = Column(DateTime(timezone=True))
+    active_low = Column(Numeric(10, 2))
+    active_low_time = Column(DateTime(timezone=True))
     post_exit_high = Column(Numeric(10, 2))
     post_exit_high_time = Column(DateTime(timezone=True))
     post_exit_low = Column(Numeric(10, 2))
