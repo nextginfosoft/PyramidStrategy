@@ -124,6 +124,8 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
         "Lots", "Quantity", "Entry Timing", "Entry Price", "Entry Nifty", 
         "Exit Timing", "Exit Price", "Exit Nifty", "Exit Reason", 
         "PnL (Rupees)", "Is Paper Trade",
+        "Active High", "Active High Time",
+        "Active Low", "Active Low Time",
         "Post-Exit High", "Post-Exit High Time",
         "Post-Exit Low", "Post-Exit Low Time"
     ])
@@ -150,6 +152,12 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             if ext.instrument == entry.instrument and ext.created_at > entry.created_at:
                 matching_exit = ext
                 break
+
+        # Fetch active range details from the entry record
+        active_high = float(entry.active_high) if entry.active_high is not None else ""
+        active_high_time = to_ist_str(entry.active_high_time)
+        active_low = float(entry.active_low) if entry.active_low is not None else ""
+        active_low_time = to_ist_str(entry.active_low_time)
 
         if matching_exit:
             exit_time_str = to_ist_str(matching_exit.created_at)
@@ -189,6 +197,10 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             exit_reason_str,
             pnl_val,
             entry.is_paper_trade,
+            active_high,
+            active_high_time,
+            active_low,
+            active_low_time,
             post_exit_high,
             post_exit_high_time,
             post_exit_low,

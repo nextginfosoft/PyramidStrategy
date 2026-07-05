@@ -48,7 +48,7 @@ class StrategyEngine:
 
         # Option LTP cache (updated by market data feed)
         self._option_ltp: dict[str, Decimal] = {}  # symbol → ltp
-        self.nifty_prev_close: Optional[Decimal] = Decimal("23150.00")
+        self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
 
         # Order manager (initialized with user_id)
         self.order_manager = OrderManager(user_id=self.user_id, kite_service=None)
@@ -180,6 +180,9 @@ class StrategyEngine:
     def get_option_ltp(self, symbol: str) -> Optional[Decimal]:
         if not symbol:
             return None
+        # If in paper trade mode and we have a cached/simulated LTP, prioritize it
+        if self.mock_mode and symbol in self._option_ltp:
+            return self._option_ltp[symbol]
         # Try real Kite service first if authenticated (allows live-data paper trading)
         try:
             from app.services.kite_service import get_user_kite_service
@@ -194,7 +197,23 @@ class StrategyEngine:
 
     async def on_option_tick(self, symbol: str, ltp: Decimal):
         """Callback from KiteTicker for option price updates."""
+        if self.mock_mode:
+            return
         self._option_ltp[symbol] = ltp
+        
+        # Track active high/low during position lifetime
+        for sm in [self.ce, self.pe]:
+            if sm.state != State.IDLE and sm.locked_instrument == symbol:
+                import pytz
+                from datetime import datetime
+                now = datetime.now(pytz.utc)
+                if sm.active_high is None or ltp > sm.active_high:
+                    sm.active_high = ltp
+                    sm.active_high_time = now
+                if sm.active_low is None or ltp < sm.active_low:
+                    sm.active_low = ltp
+                    sm.active_low_time = now
+                    
         await self._process_post_exit_tick(symbol, ltp)
 
     async def _process_post_exit_tick(self, symbol: str, ltp: Decimal):
@@ -262,6 +281,24 @@ class StrategyEngine:
             get_redis_client().setex("nifty:ltp", 5, str(nifty_ltp))
         except Exception:
             pass
+
+        # In paper trade mode, estimate and update option prices for locked instruments
+        if self.mock_mode:
+            for sm in [self.ce, self.pe]:
+                if sm.locked_instrument:
+                    est_price = estimate_option_price(sm.locked_instrument, nifty_ltp)
+                    self._option_ltp[sm.locked_instrument] = est_price
+                    # Update active range tracking during simulated ticks
+                    if sm.state != State.IDLE:
+                        import pytz
+                        from datetime import datetime
+                        now = datetime.now(pytz.utc)
+                        if sm.active_high is None or est_price > sm.active_high:
+                            sm.active_high = est_price
+                            sm.active_high_time = now
+                        if sm.active_low is None or est_price < sm.active_low:
+                            sm.active_low = est_price
+                            sm.active_low_time = now
 
         if not self.is_running or not self.config:
             self.last_nifty_price = nifty_ltp
@@ -371,6 +408,9 @@ class StrategyEngine:
                 instrument = opt["symbol"]
                 strike = opt["strike"]
                 expiry = opt["expiry"]
+                # Estimate and cache option price first to prevent fallback to real Kite
+                if self.mock_mode:
+                    self._option_ltp[instrument] = estimate_option_price(instrument, nifty_ltp)
                 mock_ltp = self._get_mock_option_ltp(instrument)
 
                 order = self.order_manager.place_buy_order(
@@ -469,6 +509,10 @@ class StrategyEngine:
                 mock_ltp=exit_price,
                 trigger_nifty=nifty_ltp,
                 lot_size=sm.lot_size,
+                active_high=sm.active_high,
+                active_low=sm.active_low,
+                active_high_time=sm.active_high_time,
+                active_low_time=sm.active_low_time,
             )
 
         # Unsubscribe from option ticks — position closed
@@ -627,7 +671,7 @@ class StrategyEngine:
         from app.services.kite_service import get_user_kite_service
         ks = get_user_kite_service(self.user_id)
 
-        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
+        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
             try:
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:
@@ -697,7 +741,7 @@ class StrategyEngine:
         from app.services.kite_service import get_user_kite_service
         ks = get_user_kite_service(self.user_id)
 
-        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("23150.00")):
+        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
             try:
                 live_prev_close = ks.get_nifty_prev_close()
                 if live_prev_close:

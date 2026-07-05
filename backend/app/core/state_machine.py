@@ -47,6 +47,12 @@ class StateMachine:
     total_qty: int = 0                         # total quantity bought
     level3_entry_price: Optional[Decimal] = None  # Price at which Level 3 was filled
 
+    # Active price tracking (Phase 4 Extension)
+    active_high: Optional[Decimal] = None
+    active_high_time: Optional[object] = None  # datetime.datetime
+    active_low: Optional[Decimal] = None
+    active_low_time: Optional[object] = None  # datetime.datetime
+
     # P&L
     realized_pnl: Decimal = Decimal("0")
 
@@ -72,6 +78,10 @@ class StateMachine:
         self.total_qty = 0
         self.realized_pnl = Decimal("0")
         self.blocked_levels = set()
+        self.active_high = None
+        self.active_low = None
+        self.active_high_time = None
+        self.active_low_time = None
 
     def mapped_level(self, lvl: str) -> str:
         if lvl in ("L1", "L2", "L3"):
@@ -123,6 +133,16 @@ class StateMachine:
         self.total_qty = qty
         self.total_invested = fill_price * qty
         self.entry_avg_price = fill_price
+        
+        # Initialize active range tracking
+        from datetime import datetime
+        import pytz
+        now = datetime.now(pytz.utc)
+        self.active_high = fill_price
+        self.active_low = fill_price
+        self.active_high_time = now
+        self.active_low_time = now
+        
         self.state = State.L1_ENTERED
 
         logger.info(
@@ -152,6 +172,18 @@ class StateMachine:
         self.total_invested = self.total_invested + (fill_price * qty)
         self.entry_avg_price = self.total_invested / new_total_qty
         self.total_qty = new_total_qty
+        
+        # Update active range tracking with fill price
+        from datetime import datetime
+        import pytz
+        now = datetime.now(pytz.utc)
+        if self.active_high is None or fill_price > self.active_high:
+            self.active_high = fill_price
+            self.active_high_time = now
+        if self.active_low is None or fill_price < self.active_low:
+            self.active_low = fill_price
+            self.active_low_time = now
+
         self.state = State.L2_ENTERED
 
         logger.info(
@@ -182,6 +214,18 @@ class StateMachine:
         self.entry_avg_price = self.total_invested / new_total_qty
         self.level3_entry_price = fill_price
         self.total_qty = new_total_qty
+        
+        # Update active range tracking with fill price
+        from datetime import datetime
+        import pytz
+        now = datetime.now(pytz.utc)
+        if self.active_high is None or fill_price > self.active_high:
+            self.active_high = fill_price
+            self.active_high_time = now
+        if self.active_low is None or fill_price < self.active_low:
+            self.active_low = fill_price
+            self.active_low_time = now
+
         self.state = State.L3_ENTERED
 
         logger.info(
@@ -272,6 +316,10 @@ class StateMachine:
         self.level3_entry_price = None
         self.total_invested = Decimal("0")
         self.total_qty = 0
+        self.active_high = None
+        self.active_low = None
+        self.active_high_time = None
+        self.active_low_time = None
 
         return result
 
@@ -289,7 +337,12 @@ class StateMachine:
             "locked_strike": self.locked_strike,
             "locked_instrument": self.locked_instrument,
             "entry_avg_price": float(self.entry_avg_price) if self.entry_avg_price else None,
+            "level3_entry_price": float(self.level3_entry_price) if self.level3_entry_price else None,
             "current_ltp": float(current_ltp) if current_ltp else None,
+            "active_high": float(self.active_high) if self.active_high else None,
+            "active_high_time": self.active_high_time.isoformat() if self.active_high_time and hasattr(self.active_high_time, "isoformat") else None,
+            "active_low": float(self.active_low) if self.active_low else None,
+            "active_low_time": self.active_low_time.isoformat() if self.active_low_time and hasattr(self.active_low_time, "isoformat") else None,
             "unrealized_pnl": float(unrealized) if unrealized else None,
             "realized_pnl": float(self.realized_pnl),
             "blocked_levels": list(self.blocked_levels),

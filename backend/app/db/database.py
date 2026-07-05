@@ -126,8 +126,12 @@ def init_db():
         # Expected error if column already exists
         logger.debug(f"Database migration (squareoff_time check/add): {e}")
 
-    # Self-healing migration for post_exit columns
+    # Self-healing migration for trades columns
     for col, col_type in [
+        ("active_high", "NUMERIC(10, 2)"),
+        ("active_high_time", "TIMESTAMP"),
+        ("active_low", "NUMERIC(10, 2)"),
+        ("active_low_time", "TIMESTAMP"),
         ("post_exit_high", "NUMERIC(10, 2)"),
         ("post_exit_high_time", "TIMESTAMP"),
         ("post_exit_low", "NUMERIC(10, 2)"),

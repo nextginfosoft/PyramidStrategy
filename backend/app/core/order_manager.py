@@ -135,6 +135,10 @@ class OrderManager:
         mock_ltp: Optional[Decimal] = None,
         trigger_nifty: Optional[Decimal] = None,
         lot_size: int = 75,
+        active_high: Optional[Decimal] = None,
+        active_low: Optional[Decimal] = None,
+        active_high_time: Optional[datetime] = None,
+        active_low_time: Optional[datetime] = None,
     ) -> dict:
         """
         Place a MARKET EXIT (sell) order for the FULL position.
@@ -187,6 +191,10 @@ class OrderManager:
             expiry_date = open_trades[0].expiry or today_ist()
             for ot in open_trades:
                 ot.status = reason
+                ot.active_high = active_high
+                ot.active_high_time = active_high_time
+                ot.active_low = active_low
+                ot.active_low_time = active_low_time
                 if reason == "TARGET":
                     ot.post_exit_high = exit_price
                     ot.post_exit_high_time = now_utc
@@ -213,6 +221,10 @@ class OrderManager:
             status=reason,
             pnl=pnl_rupees,
             is_paper_trade=self.paper_trade,
+            active_high=active_high,
+            active_high_time=active_high_time,
+            active_low=active_low,
+            active_low_time=active_low_time,
             post_exit_high=exit_price if reason == "TARGET" else None,
             post_exit_high_time=now_utc if reason == "TARGET" else None,
             post_exit_low=exit_price if reason == "TARGET" else None,

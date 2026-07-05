@@ -18,6 +18,7 @@ import { UserSession } from '../../App'
 import { BacktestModal } from '../BacktestModal/BacktestModal'
 import { Analytics } from '../Analytics/AnalyticsModal'
 import { Notification } from '../Notification/Notification'
+import type { SideStatus, StrategyStatus } from '../../types'
 import { UserGuide } from '../UserGuide/UserGuide'
 import { StatusBar } from '../StatusBar/StatusBar'
 import { ChartModal } from '../ChartModal/ChartModal'
@@ -881,6 +882,11 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
                           : '—'}
                       </span>
                     </div>
+                    <PositionRangeVisualizer 
+                      status={status.ce}
+                      targetPoints={config?.target_points ?? 20}
+                      slPoints={config?.sl_points ?? 10}
+                    />
                   </div>
                 ) : (
                   <div className="bg-navy-950/20 border border-navy-850 border-dashed rounded-lg p-2 text-center text-xs text-navy-450 font-medium">
@@ -939,6 +945,11 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
                           : '—'}
                       </span>
                     </div>
+                    <PositionRangeVisualizer 
+                      status={status.pe}
+                      targetPoints={config?.target_points ?? 20}
+                      slPoints={config?.sl_points ?? 10}
+                    />
                   </div>
                 ) : (
                   <div className="bg-navy-950/20 border border-navy-850 border-dashed rounded-lg p-2 text-center text-xs text-navy-450 font-medium">
@@ -1277,6 +1288,9 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
             )}
           </div>
 
+          {/* Active High/Low Tracker */}
+          <ActiveHighLowTracker status={status} trades={trades} />
+
           {/* Kite Connection Status */}
           <KiteStatus />
 
@@ -1421,3 +1435,349 @@ function ConfirmModal({
     </div>
   )
 }
+
+interface PositionRangeVisualizerProps {
+  status: SideStatus
+  targetPoints: number
+  slPoints: number
+}
+
+export function PositionRangeVisualizer({ status, targetPoints, slPoints }: PositionRangeVisualizerProps) {
+  const currentLtp = status.current_ltp
+  const entryAvgPrice = status.entry_avg_price
+  const activeLow = status.active_low
+  const activeHigh = status.active_high
+
+  if (currentLtp == null || entryAvgPrice == null) return null
+
+  // Determine Stop Loss price. 
+  // It is active at L3. We use the level3 entry price if available, otherwise fallback to average entry price.
+  const isL3 = status.state.includes('L3')
+  const slBasePrice = (isL3 && status.level3_entry_price) ? status.level3_entry_price : entryAvgPrice
+  const slPrice = slBasePrice - slPoints
+  const targetPrice = entryAvgPrice + targetPoints
+
+  // Track low and high
+  const lowPrice = activeLow != null ? activeLow : Math.min(currentLtp, entryAvgPrice)
+  const highPrice = activeHigh != null ? activeHigh : Math.max(currentLtp, entryAvgPrice)
+
+  // Calculate percentages (clamped between 0 and 100)
+  const getPercent = (price: number) => {
+    const range = targetPrice - slPrice
+    if (range <= 0) return 0
+    const pct = ((price - slPrice) / range) * 100
+    return Math.min(Math.max(pct, 0), 100)
+  }
+
+  const ltpPct = getPercent(currentLtp)
+  const avgPct = getPercent(entryAvgPrice)
+  const lowPct = getPercent(lowPrice)
+  const highPct = getPercent(highPrice)
+
+  return (
+    <div className="mt-3.5 space-y-1.5 border-t border-navy-800/80 pt-2.5">
+      <div className="flex justify-between text-[9px] text-navy-400 font-mono">
+        <span>SL: ₹{slPrice.toFixed(1)} {!isL3 && <span className="text-[8px] text-navy-500 font-sans italic">(Inactive)</span>}</span>
+        <span>Target: ₹{targetPrice.toFixed(1)}</span>
+      </div>
+
+      <div className="relative h-1.5 bg-navy-900 border border-navy-850 rounded-full my-2.5">
+        {/* Active high/low range bar */}
+        <div 
+          className="absolute h-full bg-blue-500/10 rounded-full border-x border-blue-500/20"
+          style={{ left: `${lowPct}%`, right: `${100 - highPct}%` }}
+        />
+
+        {/* Active Low marker (Red dot) */}
+        <div 
+          className="absolute -top-[3px] w-2.5 h-2.5 bg-red-500 rounded-full border border-navy-950 -ml-1.25 shadow-lg shadow-red-500/30 cursor-help"
+          style={{ left: `${lowPct}%` }}
+          title={`Active Low: ₹${lowPrice.toFixed(2)}`}
+        />
+
+        {/* Active High marker (Green dot) */}
+        <div 
+          className="absolute -top-[3px] w-2.5 h-2.5 bg-green-500 rounded-full border border-navy-950 -ml-1.25 shadow-lg shadow-green-500/30 cursor-help"
+          style={{ left: `${highPct}%` }}
+          title={`Active High: ₹${highPrice.toFixed(2)}`}
+        />
+
+        {/* Avg entry price marker (Yellow diamond/square) */}
+        <div 
+          className="absolute -top-[3px] w-2.5 h-2.5 bg-amber-400 rotate-45 border border-navy-950 -ml-1.25 shadow-lg shadow-amber-400/30 cursor-help"
+          style={{ left: `${avgPct}%` }}
+          title={`Avg Price: ₹${entryAvgPrice.toFixed(2)}`}
+        />
+
+        {/* Current price marker (Glow blue pulse) */}
+        <div 
+          className="absolute -top-1 w-3.5 h-3.5 bg-blue-400 rounded-full border-2 border-navy-950 -ml-1.75 shadow-lg shadow-blue-400/80 animate-pulse cursor-help"
+          style={{ left: `${ltpPct}%` }}
+          title={`Current Price: ₹${currentLtp.toFixed(2)}`}
+        />
+      </div>
+
+      <div className="flex justify-between text-[9px] text-navy-300 font-mono pt-0.5">
+        <span className="text-red-400">Min: ₹{lowPrice.toFixed(1)}</span>
+        <span className="text-amber-400 font-bold">Avg: ₹{entryAvgPrice.toFixed(1)}</span>
+        <span className="text-green-400">Max: ₹{highPrice.toFixed(1)}</span>
+      </div>
+    </div>
+  )
+}
+
+interface ActiveHighLowTrackerProps {
+  status: StrategyStatus | null
+  trades: any[]
+}
+
+export function ActiveHighLowTracker({ status, trades }: ActiveHighLowTrackerProps) {
+  const [lastCE, setLastCE] = useState<SideStatus | null>(() => {
+    try {
+      const saved = localStorage.getItem('last_ce_tracking')
+      return saved ? JSON.parse(saved) : null
+    } catch (e) {
+      return null
+    }
+  })
+
+  const [lastPE, setLastPE] = useState<SideStatus | null>(() => {
+    try {
+      const saved = localStorage.getItem('last_pe_tracking')
+      return saved ? JSON.parse(saved) : null
+    } catch (e) {
+      return null
+    }
+  })
+
+  // Detect active state and store it
+  useEffect(() => {
+    if (status?.ce && status.ce.state !== 'IDLE') {
+      setLastCE(status.ce)
+      localStorage.setItem('last_ce_tracking', JSON.stringify(status.ce))
+    }
+  }, [status?.ce])
+
+  useEffect(() => {
+    if (status?.pe && status.pe.state !== 'IDLE') {
+      setLastPE(status.pe)
+      localStorage.setItem('last_pe_tracking', JSON.stringify(status.pe))
+    }
+  }, [status?.pe])
+
+  // Clear stored last tracking when starting a fresh session or resetting (no trades in logs)
+  useEffect(() => {
+    if (trades.length === 0) {
+      setLastCE(null)
+      setLastPE(null)
+      localStorage.removeItem('last_ce_tracking')
+      localStorage.removeItem('last_pe_tracking')
+    }
+  }, [trades.length])
+
+  if (!status) return null
+
+  const activeCE = status.ce && status.ce.state !== 'IDLE'
+  const activePE = status.pe && status.pe.state !== 'IDLE'
+
+  const formatTime = (timeStr: string | null | undefined) => {
+    if (!timeStr) return ''
+    try {
+      const d = new Date(timeStr)
+      if (isNaN(d.getTime())) return ''
+      return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+    } catch (e) {
+      return ''
+    }
+  }
+
+  const renderLegRange = (leg: SideStatus, side: 'CE' | 'PE', isLive: boolean) => {
+    const current = leg.current_ltp
+    const avg = leg.entry_avg_price
+    const low = leg.active_low
+    const high = leg.active_high
+
+    if (current == null || avg == null || low == null || high == null) {
+      return (
+        <div className="text-[10px] text-navy-450 italic py-2 text-center bg-navy-950/20 border border-navy-850/40 rounded-lg">
+          Awaiting real-time price metrics for {side} leg...
+        </div>
+      )
+    }
+
+    const range = high - low
+    // Calculate percentage position of current ltp within [low, high] range
+    const pct = range > 0 ? Math.max(0, Math.min(100, ((current - low) / range) * 100)) : 50
+    // Calculate percentage position of average entry price within [low, high] range
+    const avgPct = range > 0 ? Math.max(0, Math.min(100, ((avg - low) / range) * 100)) : 50
+
+    const isCE = side === 'CE'
+
+    return (
+      <div className={clsx(
+        'border rounded-lg p-3 space-y-2.5 transition duration-150 shadow-sm relative overflow-hidden',
+        isLive 
+          ? 'bg-navy-950/50 border-navy-800 hover:border-navy-700/60' 
+          : 'bg-navy-950/30 border-navy-850/60 opacity-75'
+      )}>
+        {/* watermark/indicator for historical data */}
+        {!isLive && (
+          <div className="absolute top-0 right-0 left-0 h-[2px] bg-navy-700/50" />
+        )}
+
+        {/* Title / Symbol */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className={clsx('text-[9px] font-extrabold px-1.5 py-0.5 rounded border uppercase tracking-wider',
+              isCE ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20',
+              !isLive && 'filter saturate-50 opacity-80')}>
+              {isCE ? '▲ CE' : '▼ PE'}
+            </span>
+            <span className={clsx('font-mono text-xs font-bold tracking-wide truncate max-w-[130px]',
+              isLive ? 'text-white' : 'text-navy-300')} title={leg.locked_instrument || ''}>
+              {leg.locked_instrument}
+            </span>
+          </div>
+          <span className={clsx('text-[8.5px] font-extrabold px-1.5 py-0.5 border rounded uppercase tracking-wide',
+            isLive 
+              ? 'bg-navy-850 border-navy-800 text-navy-300' 
+              : 'bg-navy-900 border-navy-850 text-navy-450')}>
+            {isLive ? leg.state.replace('_ENTERED', '') : 'SQUARED OFF'}
+          </span>
+        </div>
+
+        {/* Live LTP & PNL */}
+        <div className="flex justify-between items-baseline select-none">
+          <div className="space-y-0.5">
+            <span className="text-[9px] text-navy-450 uppercase font-semibold block">{isLive ? 'Current LTP' : 'Final LTP'}</span>
+            <span className={clsx('text-base font-extrabold font-mono tracking-tight',
+              isLive ? 'text-white' : 'text-navy-200')}>₹{current.toFixed(2)}</span>
+          </div>
+          <div className="text-right space-y-0.5">
+            <span className="text-[9px] text-navy-450 uppercase font-semibold block">{isLive ? 'Unrealized P&L' : 'Final P&L'}</span>
+            <span className={clsx('font-mono text-sm font-extrabold tracking-tight',
+              !isLive ? 'text-navy-400' : (leg.unrealized_pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400')}>
+              {isLive 
+                ? (leg.unrealized_pnl != null ? `${leg.unrealized_pnl >= 0 ? '+' : ''}₹${leg.unrealized_pnl.toFixed(0)}` : '—')
+                : 'Closed'
+              }
+            </span>
+          </div>
+        </div>
+
+        {/* Min/Max Grid */}
+        <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-navy-850/60 select-none">
+          <div className="bg-rose-950/10 p-2 rounded-md border border-rose-950/20 flex flex-col justify-between">
+            <div>
+              <span className="text-rose-400 block text-[8px] uppercase tracking-wider font-bold mb-0.5">📉 Active Low</span>
+              <span className="font-mono font-bold text-rose-450 text-xs">₹{low.toFixed(2)}</span>
+            </div>
+            {leg.active_low_time && (
+              <span className="text-[8px] text-navy-400 font-mono mt-1 block opacity-75">
+                {formatTime(leg.active_low_time)}
+              </span>
+            )}
+          </div>
+          <div className="bg-emerald-950/10 p-2 rounded-md border border-emerald-950/20 flex flex-col justify-between">
+            <div>
+              <span className="text-emerald-400 block text-[8px] uppercase tracking-wider font-bold mb-0.5">📈 Active High</span>
+              <span className="font-mono font-bold text-emerald-450 text-xs">₹{high.toFixed(2)}</span>
+            </div>
+            {leg.active_high_time && (
+              <span className="text-[8px] text-navy-400 font-mono mt-1 block opacity-75">
+                {formatTime(leg.active_high_time)}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Visual Progress Bar representing the range between Low and High */}
+        <div className="space-y-1.5 pt-1.5">
+          <div className="flex justify-between text-[8.5px] text-navy-450 font-mono select-none font-medium">
+            <span>Min: ₹{low.toFixed(1)}</span>
+            <span>Max: ₹{high.toFixed(1)}</span>
+          </div>
+          <div className="relative h-1.5 bg-navy-950 border border-navy-850 rounded-full overflow-visible shadow-inner">
+            {/* The active range highlight between Low and High */}
+            <div className="absolute inset-y-0 bg-blue-500/5 rounded-full left-0 right-0"></div>
+            
+            {/* Avg entry price marker */}
+            <div 
+              className="absolute -top-[3px] w-2.5 h-2.5 bg-amber-400 rotate-45 border border-navy-950 -ml-1.25 shadow-md shadow-amber-400/30 cursor-help"
+              style={{ left: `${avgPct}%` }}
+              title={`Avg: ₹${avg.toFixed(2)}`}
+            />
+
+            {/* Current LTP marker with pulsing glow */}
+            <div 
+              className={clsx(
+                'absolute -top-[3.5px] w-2.5 h-2.5 rounded-full border border-navy-950 -ml-1.25 shadow-lg cursor-help flex items-center justify-center',
+                isLive ? 'bg-blue-400 shadow-blue-400/80' : 'bg-navy-400 shadow-none'
+              )}
+              style={{ left: `${pct}%` }}
+              title={`LTP: ₹${current.toFixed(2)}`}
+            >
+              {isLive && (
+                <span className="absolute w-4 h-4 rounded-full bg-blue-400/35 animate-ping opacity-60"></span>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-between text-[8px] font-mono text-navy-400 pt-0.5 select-none">
+            <span className="text-amber-400/80 font-bold">Avg Entry: ₹{avg.toFixed(1)}</span>
+            <span>LTP at <strong className={isLive ? 'text-white font-bold' : 'text-navy-300'}>{pct.toFixed(0)}%</strong> of range</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Display conditions:
+  // If there are active positions, show live range tracking.
+  // If there are NO active positions, but we have stored last active ranges, show them.
+  // Otherwise, show the idle placeholder.
+
+  const showCE = activeCE || lastCE != null
+  const showPE = activePE || lastPE != null
+
+  const isDisplayingSaved = !activeCE && !activePE && (lastCE != null || lastPE != null)
+  const isCurrentlyActive = activeCE || activePE
+
+  return (
+    <div className="glass-card rounded-xl p-3.5 flex flex-col gap-3 relative overflow-hidden shadow-lg border border-navy-800/40">
+      <div className="flex items-center justify-between border-b border-navy-800 pb-2.5 select-none">
+        <span className="text-xs text-navy-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+          <span className={clsx('text-sky-400', isCurrentlyActive && 'animate-pulse')}>📊</span> 
+          {isDisplayingSaved ? 'Last Tracked Range' : 'Live Range Tracking'}
+        </span>
+        <span className={clsx('text-[8.5px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded border shadow-sm transition-all duration-150 flex items-center gap-1.5',
+          isCurrentlyActive 
+            ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 animate-pulse' 
+            : isDisplayingSaved
+              ? 'text-navy-450 bg-navy-900 border-navy-850'
+              : 'text-green-400 bg-green-500/10 border-green-500/20 animate-pulse'
+        )}>
+          {!isDisplayingSaved && (
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+            </span>
+          )}
+          {isCurrentlyActive ? 'Active Extremes' : isDisplayingSaved ? 'Stopped / Saved' : 'Live Tracking'}
+        </span>
+      </div>
+
+      {!showCE && !showPE ? (
+        <div className="text-navy-450 text-[11px] text-center py-6 border border-dashed border-navy-850 rounded-lg bg-navy-950/20 select-none">
+          <div className="text-sm mb-1 opacity-55">⏳</div>
+          No active positions. Tracking will activate automatically upon entry.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {activeCE ? renderLegRange(status.ce, 'CE', true) : (lastCE && renderLegRange(lastCE, 'CE', false))}
+          {activePE ? renderLegRange(status.pe, 'PE', true) : (lastPE && renderLegRange(lastPE, 'PE', false))}
+        </div>
+      )}
+    </div>
+  )
+}
+

@@ -10,6 +10,8 @@ This is a local record of the versions tagged and published in this repository:
 
 | Version | Release Date | Trigger Branch | Description / Major Changes |
 | :--- | :--- | :--- | :--- |
+| **`v1.1.0`** | 2026-07-05 | `dev` | Added Live Option Leg Range Tracking (Active Extremes / Min-Max price range) with a visual progress bar on the Dashboard, an Active Range column in the Trade Log table, and corresponding database and CSV export fields. |
+| **`v1.0.1`** | 2026-07-04 | `dev` | Fixed packaged executable run-time issue where fakeredis could not locate the commands.json metadata file. Bundled the missing JSON asset in the PyInstaller spec. |
 | **`v1.0.0`** | 2026-07-04 | `dev` | Initial release setup. Fixed packaged executable UI loading, bypassed Uvicorn logging config errors, resolved CORS/domain origin mismatches, and created automated GitHub Release workflow. |
 
 ---
