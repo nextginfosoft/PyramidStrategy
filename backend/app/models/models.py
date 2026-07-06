@@ -42,7 +42,7 @@ class Trade(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     trade_date = Column(Date, nullable=False, index=True)
     side = Column(String(2), nullable=False)          # CE or PE
-    level = Column(String(2), nullable=False)          # R1,R2,R3,S1,S2,S3
+    level = Column(String(10), nullable=False)          # R1,R2,R3,S1,S2,S3, EXIT, etc.
     instrument = Column(String(50), nullable=False)    # NIFTY11JUN2524150PE
     strike = Column(Integer, nullable=False)
     expiry = Column(Date, nullable=False)
