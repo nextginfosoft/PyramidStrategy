@@ -146,3 +146,14 @@ def init_db():
         except Exception as e:
             # Expected error if column already exists
             logger.debug(f"Database migration (trades.{col} check/add): {e}")
+
+    # Self-healing migration to increase trades.level column length to VARCHAR(10)
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE trades ALTER COLUMN level TYPE VARCHAR(10)"))
+            conn.commit()
+            logger.info("Database migration: Altered trades.level type to VARCHAR(10)")
+    except Exception as e:
+        logger.warning(f"Database migration (alter trades.level type): {e}")
+
