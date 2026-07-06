@@ -156,4 +156,3 @@ def init_db():
             logger.info("Database migration: Altered trades.level type to VARCHAR(10)")
     except Exception as e:
         logger.warning(f"Database migration (alter trades.level type): {e}")
-
