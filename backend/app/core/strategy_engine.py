@@ -199,8 +199,6 @@ class StrategyEngine:
 
     async def on_option_tick(self, symbol: str, ltp: Decimal):
         """Callback from KiteTicker for option price updates."""
-        if self.mock_mode:
-            return
         self._option_ltp[symbol] = ltp
         
         # Track active high/low during position lifetime
