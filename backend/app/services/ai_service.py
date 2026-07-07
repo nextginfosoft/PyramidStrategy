@@ -326,19 +326,11 @@ class AIService:
                         url,
                         json={"contents": [{"parts": [{"text": prompt}]}]},
                     )
-                    if resp.status_code == 429:
-                        logger.warning(f"User {self.user_id}: Gemini model {model} returned 429 (Rate Limit). Trying fallback...")
-                        last_exc = httpx.HTTPStatusError(
-                            f"Client error '429' for url {url}",
-                            request=resp.request,
-                            response=resp
-                        )
-                        continue
                     resp.raise_for_status()
                     return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 429:
-                        logger.warning(f"User {self.user_id}: Gemini model {model} returned 429 status error. Trying fallback...")
+                    if e.response.status_code in (429, 500, 502, 503, 504):
+                        logger.warning(f"User {self.user_id}: Gemini model {model} returned status {e.response.status_code}. Trying fallback...")
                         last_exc = e
                         continue
                     raise e
@@ -449,7 +441,7 @@ async def run_pre_market_brief_for_user(db, user_id: int, today) -> dict:
     from app.models.models import StrategyConfig, PreMarketBrief
     from app.services.kite_service import get_user_kite_service
     from app.services.ai_service import get_user_ai_service
-    from app.services.notification import get_user_notification_service
+    from app.services.notification import get_user_notification_service, escape_markdown
     import datetime
     import httpx
     
@@ -597,6 +589,10 @@ async def run_pre_market_brief_for_user(db, user_id: int, today) -> dict:
                 elif g < -5: return f"{g:.1f} pts (Gap Down)"
                 else: return "Flat Open"
                 
+            escaped_vix_analysis = escape_markdown(brief.get("vix_analysis"))
+            escaped_expected_range = escape_markdown(brief.get("expected_range"))
+            escaped_level_assessment = escape_markdown(brief.get("level_assessment"))
+            
             tg_message = (
                 f"🌅 *Pre-Market AI Briefing* ({today.strftime('%d-%b-%Y')})\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -605,9 +601,9 @@ async def run_pre_market_brief_for_user(db, user_id: int, today) -> dict:
                 f"• *INDIA VIX:* {vix:.2f}% (Quality Score: *{brief.get('quality_score')}/100*)\n"
                 f"• *PCR:* {oi_data.get('pcr') if oi_data else 'N/A'} | *Max Pain:* {oi_data.get('max_pain') if oi_data else 'N/A'}\n"
                 f"• *OI Walls:* PE Wall Support: *{oi_data.get('pe_wall') if oi_data else 'N/A'}* | CE Wall Resistance: *{oi_data.get('ce_wall') if oi_data else 'N/A'}*\n\n"
-                f"*VIX Analysis:*\n_{brief.get('vix_analysis')}_\n\n"
-                f"*Expected Range:*\n_{brief.get('expected_range')}_\n\n"
-                f"*Level Critique:*\n_{brief.get('level_assessment')}_\n\n"
+                f"*VIX Analysis:*\n_{escaped_vix_analysis}_\n\n"
+                f"*Expected Range:*\n_{escaped_expected_range}_\n\n"
+                f"*Level Critique:*\n_{escaped_level_assessment}_\n\n"
                 f"*Suggested Levels:*\n"
                 f"• Supports (S1/S2/S3): {brief['suggested_config'].get('s1')} / {brief['suggested_config'].get('s2')} / {brief['suggested_config'].get('s3')}\n"
                 f"• Resistances (R1/R2/R3): {brief['suggested_config'].get('r1')} / {brief['suggested_config'].get('r2')} / {brief['suggested_config'].get('r3')}\n"
@@ -622,7 +618,7 @@ async def run_pre_market_brief_for_user(db, user_id: int, today) -> dict:
 async def run_post_session_review_for_user(db, user_id: int, today) -> dict:
     """Orchestrate EOD post-session review generation and send Telegram alert."""
     from app.services.ai_service import get_user_ai_service
-    from app.services.notification import get_user_notification_service
+    from app.services.notification import get_user_notification_service, escape_markdown
     from app.models.models import Trade, User
     from app.api.routes.trades import get_today_pnl
     
@@ -661,16 +657,21 @@ async def run_post_session_review_for_user(db, user_id: int, today) -> dict:
         win_rate = (winning_trades / total_exits * 100) if total_exits > 0 else 0.0
         gross_pnl = pnl.get("gross_pnl", 0.0)
         
+        escaped_worked = escape_markdown(review.get("what_worked"))
+        escaped_didnt = escape_markdown(review.get("what_didnt_work"))
+        escaped_patterns = escape_markdown(review.get("patterns_observed"))
+        escaped_advice = escape_markdown(review.get("future_advice"))
+        
         tg_message = (
             f"🌆 *Post-Session AI Review* ({today.strftime('%d-%b-%Y')})\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"• *Gross P&L:* Rs {gross_pnl:.2f}\n"
             f"• *Total Exits:* {total_exits} (Wins: *{winning_trades}*)\n"
             f"• *Win Rate:* {win_rate:.1f}%\n\n"
-            f"🟢 *What Worked:*\n_{review.get('what_worked')}_\n\n"
-            f"🔴 *What Didn't Work:*\n_{review.get('what_didnt_work')}_\n\n"
-            f"📈 *Patterns Observed:*\n_{review.get('patterns_observed')}_\n\n"
-            f"💡 *Actionable Advice for Tomorrow:*\n_{review.get('future_advice')}_"
+            f"🟢 *What Worked:*\n_{escaped_worked}_\n\n"
+            f"🔴 *What Didn't Work:*\n_{escaped_didnt}_\n\n"
+            f"📈 *Patterns Observed:*\n_{escaped_patterns}_\n\n"
+            f"💡 *Actionable Advice for Tomorrow:*\n_{escaped_advice}_"
         )
         await ns._send(tg_message)
         logger.info(f"User {user_id}: Sent Post-Session AI Review Telegram alert")

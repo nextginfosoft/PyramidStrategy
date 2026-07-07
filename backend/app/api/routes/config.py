@@ -71,7 +71,7 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
 
     # Dynamic log window config update
     try:
-        from app.main import update_logging_window
+        from app.core.logging_config import update_logging_window
         update_logging_window()
     except Exception as ex:
         logger.error(f"Error updating logging window on config change: {ex}")

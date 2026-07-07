@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.models.models import User, Trade, DailyPnL, AISuggestion, AuditLog, ApiConfig
-from app.services.notification import get_user_notification_service
+from app.services.notification import get_user_notification_service, escape_markdown
 from app.services.whatsapp import get_user_whatsapp_service
 from app.services.pdf_generator import build_daily_report_pdf, build_weekly_report_pdf
 from app.core.time_rules import to_ist_str
@@ -144,13 +144,15 @@ def generate_daily_report(user_id: int, target_date: date, db: Session) -> str:
                     details_str = f"Reason: {log.details['reason']}"
                 else:
                     details_str = str(log.details)
-            msg += f"• `{time_str}` *{log.event_type}* | {log.side or ''} {log.level or ''} | Nifty: {log.nifty_price or '-'} | {details_str[:70]}\n"
+            escaped_details = escape_markdown(details_str[:70])
+            msg += f"• `{time_str}` *{log.event_type}* | {log.side or ''} {log.level or ''} | Nifty: {log.nifty_price or '-'} | {escaped_details}\n"
         msg += "\n"
 
     if ai_suggestions:
         msg += "🤖 *AI Observations*:\n"
         for sugg in ai_suggestions:
-            msg += f"• *{sugg.event} ({sugg.side or 'GEN'})*: {sugg.suggestion}\n"
+            escaped_suggestion = escape_markdown(sugg.suggestion)
+            msg += f"• *{sugg.event} ({sugg.side or 'GEN'})*: {escaped_suggestion}\n"
         msg += "\n"
     
     return msg
