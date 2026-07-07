@@ -146,6 +146,8 @@ class StrategyEngine:
                         self.post_exit_trades[symbol] = []
                     if trade.id not in self.post_exit_trades[symbol]:
                         self.post_exit_trades[symbol].append(trade.id)
+                    if symbol not in self._option_ltp:
+                        self._option_ltp[symbol] = Decimal(str(trade.avg_price)) if trade.avg_price else Decimal("100.00")
                     # Subscribe to live ticks for this instrument
                     self._subscribe_option(symbol)
             logger.info(f"User {self.user_id}: Loaded {len(self.post_exit_trades)} instruments for post-exit tracking")
@@ -197,8 +199,6 @@ class StrategyEngine:
 
     async def on_option_tick(self, symbol: str, ltp: Decimal):
         """Callback from KiteTicker for option price updates."""
-        if self.mock_mode:
-            return
         self._option_ltp[symbol] = ltp
         
         # Track active high/low during position lifetime
@@ -282,23 +282,26 @@ class StrategyEngine:
         except Exception:
             pass
 
-        # In paper trade mode, estimate and update option prices for locked instruments
+        # In paper trade mode, estimate and update option prices for locked instruments ONLY if live ticker is not running
         if self.mock_mode:
-            for sm in [self.ce, self.pe]:
-                if sm.locked_instrument:
-                    est_price = estimate_option_price(sm.locked_instrument, nifty_ltp)
-                    self._option_ltp[sm.locked_instrument] = est_price
-                    # Update active range tracking during simulated ticks
-                    if sm.state != State.IDLE:
-                        import pytz
-                        from datetime import datetime
-                        now = datetime.now(pytz.utc)
-                        if sm.active_high is None or est_price > sm.active_high:
-                            sm.active_high = est_price
-                            sm.active_high_time = now
-                        if sm.active_low is None or est_price < sm.active_low:
-                            sm.active_low = est_price
-                            sm.active_low_time = now
+            from app.services.kite_service import get_user_kite_service
+            kite_service = get_user_kite_service(self.user_id)
+            if not (kite_service.is_authenticated() and kite_service._ticker_running):
+                for sm in [self.ce, self.pe]:
+                    if sm.locked_instrument:
+                        est_price = estimate_option_price(sm.locked_instrument, nifty_ltp)
+                        self._option_ltp[sm.locked_instrument] = est_price
+                        # Update active range tracking during simulated ticks
+                        if sm.state != State.IDLE:
+                            import pytz
+                            from datetime import datetime
+                            now = datetime.now(pytz.utc)
+                            if sm.active_high is None or est_price > sm.active_high:
+                                sm.active_high = est_price
+                                sm.active_high_time = now
+                            if sm.active_low is None or est_price < sm.active_low:
+                                sm.active_low = est_price
+                                sm.active_low_time = now
 
         if not self.is_running or not self.config:
             self.last_nifty_price = nifty_ltp
