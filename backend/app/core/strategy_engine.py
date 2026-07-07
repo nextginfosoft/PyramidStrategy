@@ -369,8 +369,10 @@ class StrategyEngine:
         else:
             await self._handle_ce_levels(sm, nifty_ltp, prev_nifty, s1, s2, s3)
 
-    async def _handle_pe_levels(self, sm: StateMachine, ltp: Decimal, prev_nifty: Optional[Decimal],
-                                  r1: Decimal, r2: Decimal, r3: Decimal):
+    async def _handle_pe_levels(
+        self, sm: StateMachine, ltp: Decimal, prev_nifty: Optional[Decimal],
+        r1: Decimal, r2: Decimal, r3: Decimal
+    ):
         """PE: trigger when NIFTY hits or crosses resistance levels from below."""
         import time
         cooldown_elapsed = time.time() - self.last_entry_time.get("PE", 0.0) >= 60
@@ -384,8 +386,10 @@ class StrategyEngine:
         elif sm.state == State.L2_ENTERED and sm.can_enter_level3() and cooldown_elapsed and prev_nifty is not None and prev_nifty < r3 and ltp >= r3:
             await self._execute_entry(sm, "PE", "L3", ltp, r3)
 
-    async def _handle_ce_levels(self, sm: StateMachine, ltp: Decimal, prev_nifty: Optional[Decimal],
-                                  s1: Decimal, s2: Decimal, s3: Decimal):
+    async def _handle_ce_levels(
+        self, sm: StateMachine, ltp: Decimal, prev_nifty: Optional[Decimal],
+        s1: Decimal, s2: Decimal, s3: Decimal
+    ):
         """CE: trigger when NIFTY hits or crosses support levels from above."""
         import time
         cooldown_elapsed = time.time() - self.last_entry_time.get("CE", 0.0) >= 60
@@ -399,8 +403,10 @@ class StrategyEngine:
         elif sm.state == State.L2_ENTERED and sm.can_enter_level3() and cooldown_elapsed and prev_nifty is not None and prev_nifty > s3 and ltp <= s3:
             await self._execute_entry(sm, "CE", "L3", ltp, s3)
 
-    async def _execute_entry(self, sm: StateMachine, side: str, level: str,
-                               nifty_ltp: Decimal, trigger_level: Decimal):
+    async def _execute_entry(
+        self, sm: StateMachine, side: str, level: str,
+        nifty_ltp: Decimal, trigger_level: Decimal
+    ):
         """Execute an entry at the given level."""
         import time
         self.last_entry_time[side] = time.time()
@@ -496,8 +502,10 @@ class StrategyEngine:
         elif sm.check_sl(option_ltp):
             await self._execute_exit(sm, option_ltp, "SL", nifty_ltp)
 
-    async def _execute_exit(self, sm: StateMachine, exit_price: Decimal,
-                              reason: str, nifty_ltp: Decimal):
+    async def _execute_exit(
+        self, sm: StateMachine, exit_price: Decimal,
+        reason: str, nifty_ltp: Decimal
+    ):
         """Execute full position exit."""
         instrument = sm.locked_instrument
         with SessionLocal() as db:
