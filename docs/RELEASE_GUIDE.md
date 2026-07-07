@@ -10,6 +10,9 @@ This is a local record of the versions tagged and published in this repository:
 
 | Version | Release Date | Trigger Branch | Description / Major Changes |
 | :--- | :--- | :--- | :--- |
+| **`v1.1.3`** | 2026-07-07 | `main` | Fixed paper trade post-exit tracking by removing the `mock_mode` early return in `on_option_tick`, and resolved PEP 8 continuation line indentation warnings in `strategy_engine.py`. |
+| **`v1.1.2`** | 2026-07-07 | `main` | Fixed option LTP and post-exit tracking in paper trade mode (estimates option prices ONLY if live ticker is not running). |
+| **`v1.1.1`** | 2026-07-07 | `main` | Fixed duplicate logging, Telegram EOD report markdown parsing, and Gemini fallback on 5xx errors. |
 | **`v1.1.0`** | 2026-07-05 | `dev` | Added Live Option Leg Range Tracking (Active Extremes / Min-Max price range) with a visual progress bar on the Dashboard, an Active Range column in the Trade Log table, and corresponding database and CSV export fields. |
 | **`v1.0.1`** | 2026-07-04 | `dev` | Fixed packaged executable run-time issue where fakeredis could not locate the commands.json metadata file. Bundled the missing JSON asset in the PyInstaller spec. |
 | **`v1.0.0`** | 2026-07-04 | `dev` | Initial release setup. Fixed packaged executable UI loading, bypassed Uvicorn logging config errors, resolved CORS/domain origin mismatches, and created automated GitHub Release workflow. |
