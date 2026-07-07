@@ -25,6 +25,16 @@ IST = pytz.timezone("Asia/Kolkata")
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
+def escape_markdown(text: str) -> str:
+    """Escape special markdown v1 characters for Telegram."""
+    if not text:
+        return ""
+    # For Telegram Markdown v1, the characters to escape are: \, _, *, [, `
+    for char in ('\\', '_', '*', '[', '`'):
+        text = text.replace(char, f"\\{char}")
+    return text
+
+
 class NotificationService:
     def __init__(self, user_id: int = 1):
         self.user_id = user_id
