@@ -417,10 +417,10 @@ class StrategyEngine:
                 instrument = opt["symbol"]
                 strike = opt["strike"]
                 expiry = opt["expiry"]
-                # Estimate and cache option price first to prevent fallback to real Kite
-                if self.mock_mode:
-                    self._option_ltp[instrument] = estimate_option_price(instrument, nifty_ltp)
+                # Get the option LTP (falls back to estimate_option_price if live feed is down/not authenticated)
                 mock_ltp = self._get_mock_option_ltp(instrument)
+                if self.mock_mode:
+                    self._option_ltp[instrument] = mock_ltp
 
                 order = self.order_manager.place_buy_order(
                     db=db, side=side, level=level,
