@@ -56,6 +56,15 @@
 - Show suggested levels alongside manual input in Settings
 - User retains full control — suggestions are advisory only
 
+### R21: Global Strategy Configuration / Level Synchronization
+**Priority:** High  
+**Why:** Allow an administrator or master account to set Nifty Support/Resistance levels once and have them automatically propagate to all active user engines with their respective Zerodha accounts.
+
+- Implement a global configuration database table (`global_strategy_config`) to decouple pricing levels from user identities.
+- Create an administrative interface/API to update levels globally.
+- Automatically hot-reload levels in all running `StrategyEngine` instances in the `EngineManager` when updated.
+- Retain user-specific settings (like lot size and paper trade mode) separately.
+
 ---
 
 ## MID-TERM (Month 4-6)

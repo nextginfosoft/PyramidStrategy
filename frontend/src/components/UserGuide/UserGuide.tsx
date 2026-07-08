@@ -204,6 +204,16 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
                   </p>
                 </div>
 
+                {/* Milestone 2.5 */}
+                <div className="relative">
+                  <div className="absolute -left-[21px] top-0.5 bg-navy-700 w-2.5 h-2.5 rounded-full border border-navy-950" />
+                  <span className="text-navy-300 font-bold block text-[11px]">PHASE 4.5: Global Level Sync (Multi-Account Setup)</span>
+                  <span className="text-[10px] text-navy-400">Status: PLANNED</span>
+                  <p className="text-navy-300 text-[11px] mt-1">
+                    Decouple pricing levels from individual user IDs so administrators can update Nifty support/resistance settings once and sync them to all active client accounts automatically.
+                  </p>
+                </div>
+
                 {/* Milestone 3 */}
                 <div className="relative">
                   <div className="absolute -left-[21px] top-0.5 bg-navy-700 w-2.5 h-2.5 rounded-full border border-navy-950" />
