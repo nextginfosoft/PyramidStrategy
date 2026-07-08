@@ -350,6 +350,15 @@ Every day before trading, you must complete the Kite OAuth flow to get a fresh a
 8. You see: `{"status": "authenticated", "message": "Kite login successful"}`
 9. Return to the dashboard — the Kite panel shows **Authenticated ✓**
 
+> [!NOTE]
+> **First-Time Authorization (Consent Screen Redirect Error):**
+> If you are connecting a new Client ID or API Key for the first time, Zerodha requires manual consent and will render a "Consent" page ("Authorize app to connect?"). This results in a status code `200` instead of a `302` redirect, causing the daily auto-login check to throw an error.
+>
+> **To bypass this:**
+> 1. Copy the login URL: `https://kite.zerodha.com/connect/login?api_key=YOUR_API_KEY&v=3`
+> 2. Paste it in a browser window where you are logged in to the target Zerodha account.
+> 3. Click the **Authorize** button manually. Once Zerodha records your authorization, future automated daily logins will bypass this consent page.
+
 > **If the redirect page shows an error:** Make sure the backend is running on port 8000 and the Redirect URL in your Kite app settings exactly matches `http://localhost:8000/auth/kite/callback`
 
 ---

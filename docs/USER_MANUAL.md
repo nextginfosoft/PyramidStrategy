@@ -37,6 +37,15 @@ To stream market prices and execute trades, the system must connect to your **Ze
 4. Once successfully logged in, the tab will close or redirect. Return to the PyramidStrategy dashboard tab.
 5. Click the **Validate** button to verify the session token is active. The *Auth token* indicator dot will turn **green**.
 
+> [!TIP]
+> **First-Time Authorization (Consent Screen Redirect Error):**
+> If this is your first time using a new Client ID or API Key, Zerodha will display a "Consent" page (*"Authorize app to connect?"*) which can cause an automated login redirection error (Got status 200/Approval error).
+> To bypass this:
+> 1. Copy the login URL from the error: `https://kite.zerodha.com/connect/login?api_key=YOUR_API_KEY&v=3`
+> 2. Paste it in a browser window where you are logged in to Zerodha.
+> 3. Click the **Authorize** button manually. Once consent is registered, all future daily automated logins will bypass this screen.
+
+
 ### Step 2.3: Load NFO Instruments
 Options contracts change daily. You must load the active contracts from the exchange:
 1. Click the **Load NFO Instruments** button in the Zerodha card.

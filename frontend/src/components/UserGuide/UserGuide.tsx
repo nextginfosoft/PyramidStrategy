@@ -298,6 +298,13 @@ export function UserGuide({ onClose }: { onClose: () => void }) {
                   A: No. AI metrics and spacing recommendations are strictly advisory and require you to review and click **Approve** on the pre-market panel to update active values.
                 </p>
               </div>
+
+              <div className="space-y-1">
+                <span className="text-orange-400 font-bold block">Q: Why do I get "Expected redirect (302), got 200" on first login?</span>
+                <p className="text-navy-300 text-[11px]">
+                  A: This happens when Zerodha displays a first-time consent authorization page. Open a browser logged into your Zerodha account, navigate to: <span className="text-white">https://kite.zerodha.com/connect/login?api_key=YOUR_API_KEY&v=3</span>, and click "Authorize" manually once. Subsequent daily logins will be fully automated.
+                </p>
+              </div>
             </div>
           )}
 
