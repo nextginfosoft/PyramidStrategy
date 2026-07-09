@@ -27,6 +27,7 @@ export const strategyApi = {
   start: () => api.post('/strategy/start').then(r => r.data),
   stop: () => api.post('/strategy/stop').then(r => r.data),
   reset: () => api.post('/strategy/reset-daily').then(r => r.data),
+  emergencyExit: () => api.post('/strategy/emergency-exit').then(r => r.data),
   simulateTick: (price: number) =>
     api.post(`/strategy/simulate-tick?nifty_price=${price}`).then(r => r.data),
 }

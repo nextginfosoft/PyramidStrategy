@@ -121,6 +121,22 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
     })
   }
 
+  const handleEmergencyExitClick = () => {
+    setConfirmAction({
+      title: '🚨 EMERGENCY EXIT CONFIRMATION 🚨',
+      message: 'Are you absolutely sure you want to trigger EMERGENCY EXIT? This will immediately stop the engine and exit ALL open positions at MARKET price.',
+      confirmText: 'Yes, Exit All Positions',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      confirmButtonId: 'confirm-emergency-btn',
+      cancelButtonId: 'cancel-emergency-btn',
+      onConfirm: () => {
+        emergencyExitMut.mutate()
+        setConfirmAction(null)
+      },
+    })
+  }
+
   const handleResetClick = () => {
     setConfirmAction({
       title: 'Reset Daily Strategy State',
@@ -245,6 +261,20 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
   const stopMut = useMutation({
     mutationFn: strategyApi.stop,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['strategy-status'] }),
+  })
+  const emergencyExitMut = useMutation({
+    mutationFn: strategyApi.emergencyExit,
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['strategy-status'] })
+      qc.invalidateQueries({ queryKey: ['trades-today'] })
+      qc.invalidateQueries({ queryKey: ['pnl-today'] })
+      qc.invalidateQueries({ queryKey: ['trades-log-data'] })
+      addToast(`Emergency Exit Completed! Exited ${data?.exited_count || 0} position(s).`, 'success')
+    },
+    onError: (err: any) => {
+      const detail = err.response?.data?.detail
+      addToast(detail || 'Emergency exit failed. Check broker terminal manually!', 'error')
+    }
   })
   const simMut = useMutation({
     mutationFn: (p: number) => strategyApi.simulateTick(p),
@@ -579,6 +609,12 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
               <span aria-hidden="true">🔄</span> RESET
             </button>
           </div>
+          {hasOpenPositions && (
+            <button onClick={handleEmergencyExitClick}
+              className="w-full py-1.5 mt-2 bg-red-650 hover:bg-red-600 text-white font-extrabold text-[10px] uppercase tracking-wider rounded border border-red-500/30 shadow-md shadow-red-950/20 animate-pulse transition duration-150 focus:outline-none focus:ring-2 focus:ring-red-500">
+              🚨 Emergency Exit
+            </button>
+          )}
         </div>
 
         {/* Navigation links */}
@@ -714,6 +750,23 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
                 </span>
               }
               onClose={() => stopMut.reset()}
+            />
+          </div>
+        )}
+
+        {emergencyExitMut.isError && (
+          <div className="px-4 py-2 border-b border-red-800 bg-red-950/20">
+            <Notification
+              type="error"
+              message={
+                <span>
+                  Emergency exit failed: {(() => {
+                    const errData = (emergencyExitMut.error as any)?.response?.data?.detail;
+                    return errData?.message || errData || emergencyExitMut.error?.message;
+                  })()}
+                </span>
+              }
+              onClose={() => emergencyExitMut.reset()}
             />
           </div>
         )}

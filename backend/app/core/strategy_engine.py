@@ -126,16 +126,20 @@ class StrategyEngine:
             logger.warning(f"Failed to send engine started alert: {e}")
 
     def load_post_exit_trades(self):
-        """Load today's TARGET trades to continue post-exit high/low tracking after restarts."""
+        """Load today's TARGET trades to continue post-exit high/low tracking and restore blocked levels after restarts."""
         self.post_exit_trades = {}
         try:
             with SessionLocal() as db:
                 from app.models.models import Trade
                 from app.core.time_rules import today_ist
                 target_date = today_ist()
+
+                # Fetch all today's trades for this user
                 all_trades = db.query(Trade).filter(
                     Trade.user_id == self.user_id
                 ).all()
+
+                # 1. Restore post-exit tracking for TARGET trades
                 target_trades = [
                     t for t in all_trades
                     if t.trade_date == target_date and t.status == "TARGET"
@@ -150,9 +154,29 @@ class StrategyEngine:
                         self._option_ltp[symbol] = Decimal(str(trade.avg_price)) if trade.avg_price else Decimal("100.00")
                     # Subscribe to live ticks for this instrument
                     self._subscribe_option(symbol)
-            logger.info(f"User {self.user_id}: Loaded {len(self.post_exit_trades)} instruments for post-exit tracking")
+
+                # 2. Restore blocked levels for state machines (Rule 2.3 Point 5)
+                # Find all BUY trades today that have been exited (status is not OPEN)
+                exited_buys = [
+                    t for t in all_trades
+                    if t.trade_date == target_date and t.action == "BUY" and t.status != "OPEN"
+                ]
+                for trade in exited_buys:
+                    # Map S1/R1 -> L1, S2/R2 -> L2, S3/R3 -> L3
+                    lvl_char = trade.level[1] if trade.level and len(trade.level) > 1 else None
+                    if lvl_char in ("1", "2", "3"):
+                        mapped_lvl = f"L{lvl_char}"
+                        if trade.side == "CE":
+                            self.ce.blocked_levels.add(mapped_lvl)
+                        elif trade.side == "PE":
+                            self.pe.blocked_levels.add(mapped_lvl)
+
+            logger.info(
+                f"User {self.user_id}: Loaded {len(self.post_exit_trades)} instruments for post-exit tracking | "
+                f"Restored blocked levels: CE={self.ce.blocked_levels}, PE={self.pe.blocked_levels}"
+            )
         except Exception as e:
-            logger.warning(f"Error loading post-exit trades: {e}")
+            logger.warning(f"Error loading post-exit trades & blocked levels: {e}")
 
     def stop(self):
         self.is_running = False
@@ -637,7 +661,30 @@ class StrategyEngine:
 
         self.stop()
 
+    async def emergency_exit(self) -> dict:
+        """Force close all open positions immediately and stop the engine."""
+        self.is_running = False
+        exited_count = 0
+        total_pnl = Decimal("0")
+
+        for sm in (self.ce, self.pe):
+            if sm.state not in (State.IDLE, State.BLOCKED):
+                option_ltp = self.get_option_ltp(sm.locked_instrument) or sm.entry_avg_price or Decimal("0")
+                logger.warning(f"User {self.user_id} [{sm.side}] EMERGENCY EXIT triggered")
+                exit_res = await self._execute_exit(sm, option_ltp, "MANUAL", Decimal("0"))
+                exited_count += 1
+                if exit_res:
+                    total_pnl += Decimal(str(exit_res.get("pnl_rupees", "0")))
+
+        self.stop()
+        return {
+            "status": "emergency_exited",
+            "exited_count": exited_count,
+            "pnl_rupees": float(total_pnl)
+        }
+
     # ── Kite Option Subscription ─────────────────────────────────────────────
+
 
     def _subscribe_option(self, symbol: Optional[str]):
         """Subscribe to live option ticks after entry (Phase 2)."""
