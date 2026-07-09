@@ -659,6 +659,13 @@ class StrategyEngine:
         except Exception as e:
             logger.warning(f"Failed to send squareoff alert: {e}")
 
+        # Send EOD report immediately upon squareoff completion
+        try:
+            from app.services.reporting import send_daily_report
+            asyncio.create_task(send_daily_report(self.user_id, today_ist()))
+        except Exception as e:
+            logger.warning(f"Failed to trigger EOD PDF report on squareoff: {e}")
+
         self.stop()
 
     async def emergency_exit(self) -> dict:
