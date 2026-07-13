@@ -10,6 +10,7 @@ This is a local record of the versions tagged and published in this repository:
 
 | Version | Release Date | Trigger Branch | Description / Major Changes |
 | :--- | :--- | :--- | :--- |
+| **`v1.1.8`** | 2026-07-13 | `main` | Reduced minimum required account margin check from ₹50,000 to ₹15,000 in safety checks. |
 | **`v1.1.7`** | 2026-07-13 | `main` | Fixed `AttributeError` for `'KiteService' object has no attribute 'kite'` by exposing a property wrapper on `KiteService`. |
 | **`v1.1.6`** | 2026-07-13 | `main` | Fixed daily EOD PDF report to trigger immediately on force square-off. |
 | **`v1.1.5`** | 2026-07-13 | `main` | Added emergency exit override kill-switch and restored blocked levels on engine start. |

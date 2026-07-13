@@ -9,7 +9,7 @@ Checks:
   2. KiteTicker connected and receiving ticks
   3. NFO instruments loaded (option chain available)
   4. Strategy config set (R/S levels defined)
-  5. Sufficient account funds (min 50,000 INR available margin)
+  5. Sufficient account funds (min 15,000 INR available margin)
   6. Time check — not after 11:00 AM (too late to start)
   7. No existing open positions from a previous session (CAUTION flag)
 """
@@ -22,7 +22,7 @@ import pytz
 from app.core.time_rules import now_ist, get_entry_cutoff_time, get_time_from_str  # module-level so tests can patch it
 
 IST = pytz.timezone("Asia/Kolkata")
-MIN_REQUIRED_MARGIN = Decimal("50000")  # ₹50,000 minimum
+MIN_REQUIRED_MARGIN = Decimal("15000")  # ₹15,000 minimum
 
 
 def run_safety_checks(
