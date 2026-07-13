@@ -10,6 +10,9 @@ This is a local record of the versions tagged and published in this repository:
 
 | Version | Release Date | Trigger Branch | Description / Major Changes |
 | :--- | :--- | :--- | :--- |
+| **`v1.1.7`** | 2026-07-13 | `main` | Fixed `AttributeError` for `'KiteService' object has no attribute 'kite'` by exposing a property wrapper on `KiteService`. |
+| **`v1.1.6`** | 2026-07-13 | `main` | Fixed daily EOD PDF report to trigger immediately on force square-off. |
+| **`v1.1.5`** | 2026-07-13 | `main` | Added emergency exit override kill-switch and restored blocked levels on engine start. |
 | **`v1.1.4`** | 2026-07-08 | `main` | Fixed paper trade entry price discrepancy by fetching actual live price on entry when Kite ticker is active, and resolved status bar missing session start time. |
 | **`v1.1.3`** | 2026-07-07 | `main` | Fixed paper trade post-exit tracking by removing the `mock_mode` early return in `on_option_tick`, and resolved PEP 8 continuation line indentation warnings in `strategy_engine.py`. |
 | **`v1.1.2`** | 2026-07-07 | `main` | Fixed option LTP and post-exit tracking in paper trade mode (estimates option prices ONLY if live ticker is not running). |

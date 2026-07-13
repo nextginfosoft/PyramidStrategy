@@ -58,6 +58,15 @@ class KiteService:
 
         logger.info(f"KiteService initialized for User {user_id} (unauthenticated)")
 
+    @property
+    def kite(self):
+        """Expose the underlying KiteConnect REST client."""
+        return self._kite
+
+    @kite.setter
+    def kite(self, value):
+        self._kite = value
+
     # ── Configuration & Auth ─────────────────────────────────────────────────
 
     def configure(self, api_key: str, api_secret: str):
