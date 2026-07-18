@@ -1374,7 +1374,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
       </footer>
         </div>
 
-      {showSettings && <Settings onClose={() => { setShowSettings(false); qc.invalidateQueries() }} />}
+      {showSettings && <Settings user={user} onClose={() => { setShowSettings(false); qc.invalidateQueries() }} />}
       {showLiveLogs && <LiveLogModal onClose={() => setShowLiveLogs(false)} />}
       {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
       {showPDFReports && <PDFReportsModal onClose={() => setShowPDFReports(false)} />}

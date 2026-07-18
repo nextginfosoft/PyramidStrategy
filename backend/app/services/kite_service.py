@@ -56,6 +56,10 @@ class KiteService:
         # REST LTP cache to prevent rate limiting (symbol -> (timestamp, value))
         self._rest_ltp_cache: dict[str, tuple[float, Optional[Decimal]]] = {}
 
+        # Available margin cache (to prevent rate limits)
+        self._available_margin: Optional[float] = None
+        self._last_margin_fetch_time: float = 0.0
+
         logger.info(f"KiteService initialized for User {user_id} (unauthenticated)")
 
     @property
@@ -656,6 +660,13 @@ class KiteService:
         if self._last_nifty_tick_time:
             last_seconds = int(time.time() - self._last_nifty_tick_time)
 
+        # Trigger background margin update if authenticated and cache expired
+        now = time.time()
+        if self.is_authenticated() and (self._available_margin is None or now - self._last_margin_fetch_time > 300):
+            self._last_margin_fetch_time = now
+            import threading
+            threading.Thread(target=self._bg_fetch_margin, daemon=True).start()
+
         return {
             "authenticated": self.is_authenticated(),
             "ticker_connected": self._is_connected,
@@ -666,7 +677,16 @@ class KiteService:
             "last_nifty_tick_seconds_ago": last_seconds,
             "last_api_error": self._last_api_error,
             "last_ticker_error": self._last_ticker_error,
+            "available_margin": self._available_margin,
         }
+
+    def _bg_fetch_margin(self):
+        try:
+            if self.is_authenticated() and self._kite:
+                margins = self._kite.margins()
+                self._available_margin = float(margins.get("equity", {}).get("net", 0.0))
+        except Exception as e:
+            logger.warning(f"User {self.user_id}: Failed to fetch margin in background: {e}")
 
     def clear_credentials(self):
         """Remove access token (called on logout)."""
