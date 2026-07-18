@@ -1,5 +1,5 @@
 """
-Admin Routes — Manage User Approvals and Privileges
+Admin Routes ΓÇö Manage User Approvals and Privileges
 Enforces require_admin route guards and Super Admin safety rules.
 """
 
@@ -66,7 +66,7 @@ def approve_user(target_id: int, db: Session = Depends(get_db), current_user: Us
             ns.load_from_db()
             import asyncio
             asyncio.create_task(ns._send(
-                f"✅ *PyramidStrategy ACTIVATED*\nYour account has been approved by the administrator. "
+                f"Γ£à *PyramidStrategy ACTIVATED*\nYour account has been approved by the administrator. "
                 f"You can now log in and deploy your strategy."
             ))
         except Exception:
@@ -120,7 +120,7 @@ def delete_user(target_id: int, db: Session = Depends(get_db), current_user: Use
     return {"status": "success", "message": f"User {user.username} deleted and purged successfully"}
 
 
-# ── Multi-User Admin Extensions ───────────────────────────────────────────────
+# ΓöÇΓöÇ Multi-User Admin Extensions ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 from datetime import date
 from decimal import Decimal
@@ -287,12 +287,12 @@ def get_all_users_status(
                 "ce_lots": engine_status.get("ce", {}).get("lots", 0),
                 "pe_lots": engine_status.get("pe", {}).get("lots", 0),
                 "realized_pnl": (
-                    engine_status.get("ce", {}).get("realized_pnl", 0.0) +
-                    engine_status.get("pe", {}).get("realized_pnl", 0.0)
+                    engine_status.get("ce", {}).get("realized_pnl", 0.0)
+                    + engine_status.get("pe", {}).get("realized_pnl", 0.0)
                 ),
                 "unrealized_pnl": (
-                    (engine_status.get("ce", {}).get("unrealized_pnl") or 0.0) +
-                    (engine_status.get("pe", {}).get("unrealized_pnl") or 0.0)
+                    (engine_status.get("ce", {}).get("unrealized_pnl") or 0.0)
+                    + (engine_status.get("pe", {}).get("unrealized_pnl") or 0.0)
                 )
             },
             "kite": {
@@ -514,11 +514,11 @@ def admin_update_user(
 
     # Update Zerodha API credentials
     has_zerodha = (
-        payload.zerodha_api_key is not None or
-        payload.zerodha_api_secret is not None or
-        payload.zerodha_username is not None or
-        payload.zerodha_password is not None or
-        payload.zerodha_totp_secret is not None
+        payload.zerodha_api_key is not None
+        or payload.zerodha_api_secret is not None
+        or payload.zerodha_username is not None
+        or payload.zerodha_password is not None
+        or payload.zerodha_totp_secret is not None
     )
 
     if has_zerodha:
@@ -599,6 +599,3 @@ def admin_test_credentials_dry_run(
             status_code=400,
             detail=f"Verification failed: {str(e)}"
         )
-
-
-
