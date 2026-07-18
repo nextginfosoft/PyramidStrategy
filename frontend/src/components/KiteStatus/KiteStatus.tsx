@@ -16,6 +16,7 @@ interface KiteStatusData {
   instruments_loaded: boolean;
   subscribed_options: number;
   api_key_masked: string | null;
+  available_margin?: number | null;
 }
 
 export default function KiteStatus() {
@@ -150,6 +151,14 @@ export default function KiteStatus() {
           {status.api_key_masked && (
             <div className="col-span-2 text-navy-400 font-mono text-[11px]">
               API key: {status.api_key_masked}
+            </div>
+          )}
+          {status.available_margin != null && (
+            <div className="col-span-2 pt-2 mt-1.5 border-t border-navy-800/80 flex items-center justify-between text-[11px]">
+              <span className="text-navy-400 font-semibold uppercase tracking-wider">Available Balance:</span>
+              <span className="font-bold text-cyan-400 font-mono text-xs">
+                ₹{status.available_margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>
             </div>
           )}
         </div>

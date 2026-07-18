@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { configApi, aiApi, notificationApi, kiteApi } from '../../services/api'
+import { configApi, aiApi, notificationApi, kiteApi, adminApi } from '../../services/api'
 import { Notification } from '../Notification/Notification'
 
+export interface UserSession {
+  username: string
+  is_approved: boolean
+  is_admin: boolean
+}
 
 type StatusMsg = { text: string; ok: boolean }
 
-export function Settings({ onClose }: { onClose: () => void }) {
+export function Settings({ onClose, user }: { onClose: () => void; user?: UserSession | null }) {
   const qc = useQueryClient()
   const { data: cfg } = useQuery({ queryKey: ['strategy-config'], queryFn: configApi.getStrategy })
   const { data: apiKeys } = useQuery({ queryKey: ['api-keys'], queryFn: configApi.getApiKeys })
@@ -20,6 +25,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }
 
   const [activeTab, setActiveTab] = useState<'strategy' | 'zerodha' | 'ai' | 'telegram' | 'whatsapp' | 'reporting'>('strategy')
+  const [syncGlobally, setSyncGlobally] = useState(false)
 
   const [levels, setLevels] = useState({
     r1: cfg?.r1 ?? 23170, r2: cfg?.r2 ?? 23220, r3: cfg?.r3 ?? 23250,
@@ -140,10 +146,27 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }
 
   const saveLevels = useMutation({
-    mutationFn: configApi.saveStrategy,
+    mutationFn: (payload: any) => {
+      if (syncGlobally) {
+        return adminApi.syncLevelsGlobally({
+          r1: payload.r1,
+          r2: payload.r2,
+          r3: payload.r3,
+          s1: payload.s1,
+          s2: payload.s2,
+          s3: payload.s3
+        })
+      }
+      return configApi.saveStrategy(payload)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['strategy-config'] })
-      showStatus('✓ Strategy configurations saved successfully', true)
+      showStatus(
+        syncGlobally 
+          ? '✓ Strategy configurations saved and synced to all traders successfully' 
+          : '✓ Strategy configurations saved successfully', 
+        true
+      )
     },
     onError: (err: any) => {
       let errMsg = 'Failed to save strategy configuration';
@@ -584,6 +607,21 @@ export function Settings({ onClose }: { onClose: () => void }) {
                     </div>
                   </div>
                 </div>
+
+                {user?.is_admin && (
+                  <div className="flex items-center gap-2 px-1 mb-2">
+                    <input
+                      type="checkbox"
+                      id="syncGlobally"
+                      checked={syncGlobally}
+                      onChange={(e) => setSyncGlobally(e.target.checked)}
+                      className="w-4 h-4 bg-navy-900 border-navy-700 text-orange-500 rounded focus:ring-orange-500 cursor-pointer"
+                    />
+                    <label htmlFor="syncGlobally" className="text-xs font-bold text-cyan-400 select-none cursor-pointer">
+                      Sync R1-R3 / S1-S3 levels to all trading accounts
+                    </label>
+                  </div>
+                )}
 
                 <div className="flex justify-end">
                   <button 

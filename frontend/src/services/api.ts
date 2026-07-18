@@ -165,6 +165,15 @@ export const adminApi = {
   approveUser: (id: number) => api.post(`/admin/users/${id}/approve`).then(r => r.data),
   toggleAdmin: (id: number) => api.post(`/admin/users/${id}/toggle-admin`).then(r => r.data),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`).then(r => r.data),
+  createUser: (payload: any) => api.post('/admin/users/create', payload).then(r => r.data),
+  updateUser: (id: number, payload: any) => api.put(`/admin/users/${id}`, payload).then(r => r.data),
+  syncLevelsGlobally: (levels: { r1: number; r2: number; r3: number; s1: number; s2: number; s3: number }) => 
+    api.post('/admin/strategy/sync-levels', levels).then(r => r.data),
+  getUsersStatus: (): Promise<any[]> => api.get('/admin/users/status').then(r => r.data),
+  getUserAnalytics: (userId: number, startDate: string, endDate: string): Promise<any> =>
+    api.get(`/admin/users/${userId}/analytics`, { params: { start_date: startDate, end_date: endDate } }).then(r => r.data),
+  testCredentialsDryRun: (payload: any) => api.post('/admin/users/test-credentials-dry-run', payload).then(r => r.data),
+  testCredentials: (id: number) => api.post(`/admin/users/${id}/test-credentials`).then(r => r.data),
 }
 
 // Restore token on module load
