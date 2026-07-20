@@ -262,6 +262,50 @@ def sync_levels_globally(
     return {"status": "success", "synced_users": updated_count}
 
 
+@router.post("/strategy/emergency-exit-all")
+async def admin_emergency_exit_all(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin-only: Force-close ALL open positions for every active user engine concurrently.
+
+    Returns a summary with the total number of users exited and a per-user breakdown.
+    """
+    from decimal import Decimal
+    from loguru import logger
+
+    logger.warning(
+        f"ADMIN EMERGENCY EXIT ALL triggered by admin user '{current_user.username}' (id={current_user.id})"
+    )
+
+    results = await engine_manager.emergency_exit_all()
+
+    # Broadcast updated status to each affected user's WebSocket clients
+    for entry in results:
+        uid = entry.get("user_id")
+        if uid is None:
+            continue
+        try:
+            user_engine = engine_manager.get_engine(uid)
+            nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
+            await user_engine._broadcast_status(nifty_price)
+        except Exception as exc:
+            logger.warning(f"Post-emergency broadcast failed for user {uid}: {exc}")
+
+    total_exited = sum(
+        r.get("exited_count", 0) for r in results if r.get("status") == "emergency_exited"
+    )
+    errored = [r for r in results if r.get("status") == "error"]
+
+    return {
+        "status": "ok",
+        "users_processed": len(results),
+        "total_positions_exited": total_exited,
+        "errors": len(errored),
+        "results": results,
+    }
+
+
 @router.get("/users/status")
 def get_all_users_status(
     db: Session = Depends(get_db), 

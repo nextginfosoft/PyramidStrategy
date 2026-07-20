@@ -611,6 +611,8 @@ class StrategyEngine:
 
         asyncio.create_task(self._notify_ai("EXIT", sm.side, reason, nifty_ltp))
 
+        return exit_result
+
     async def _force_squareoff(self):
         """Force close all open positions at configured squareoff time."""
         self.squareoff_triggered = True
@@ -683,6 +685,7 @@ class StrategyEngine:
                 if exit_res:
                     total_pnl += Decimal(str(exit_res.get("pnl_rupees", "0")))
 
+        self.mock_feed.stop()
         self.stop()
         return {
             "status": "emergency_exited",
