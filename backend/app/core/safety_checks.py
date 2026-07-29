@@ -92,8 +92,30 @@ def run_safety_checks(
 
     # ── 6. Funds check ────────────────────────────────────────────────────
     try:
+        # When called with segment="equity", Kite returns the segment data
+        # directly (not nested under an "equity" key). We also call without
+        # segment as a fallback so both call styles are handled correctly.
         margins = kite_service.kite.margins(segment="equity")
-        available = Decimal(str(margins.get("equity", {}).get("available", {}).get("live_balance", 0)))
+
+        # Try direct segment response first (margins(segment="equity") → flat dict)
+        avail_block = margins.get("available", {})
+        live_balance = avail_block.get("live_balance", None)
+
+        # Fallback: response may be wrapped under "equity" key
+        if live_balance is None:
+            equity_block = margins.get("equity", {})
+            avail_block = equity_block.get("available", {})
+            live_balance = avail_block.get("live_balance", None)
+
+        # Further fallbacks: use cash, then net
+        if live_balance is None:
+            live_balance = (
+                avail_block.get("cash", None)
+                or margins.get("equity", {}).get("net", None)
+                or margins.get("net", 0)
+            )
+
+        available = Decimal(str(live_balance or 0))
         if available < MIN_REQUIRED_MARGIN:
             errors.append(
                 f"Insufficient margin: ₹{available:,.0f} available, "
