@@ -37,6 +37,23 @@ def get_strategy_config(db: Session = Depends(get_db), user: User = Depends(requ
     return cfg
 
 
+@router.get("/strategy/history", response_model=list[StrategyConfigResponse])
+def get_strategy_config_history(
+    from_date: str = None,
+    to_date: str = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth)
+):
+    query = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id)
+    if from_date:
+        query = query.filter(StrategyConfig.created_at >= f"{from_date} 00:00:00")
+    if to_date:
+        query = query.filter(StrategyConfig.created_at <= f"{to_date} 23:59:59")
+    
+    return query.order_by(StrategyConfig.created_at.desc()).limit(limit).all()
+
+
 @router.post("/strategy", response_model=StrategyConfigResponse)
 def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(get_db), user: User = Depends(require_auth)):
     # Deactivate existing configs for this user

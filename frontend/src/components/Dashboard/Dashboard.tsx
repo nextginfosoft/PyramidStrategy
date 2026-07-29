@@ -22,6 +22,7 @@ import type { SideStatus, StrategyStatus } from '../../types'
 import { UserGuide } from '../UserGuide/UserGuide'
 import { StatusBar } from '../StatusBar/StatusBar'
 import { ChartModal } from '../ChartModal/ChartModal'
+import { LevelHistoryModal } from '../LevelPanel/LevelHistoryModal'
 import { AreaChart as SparkAreaChart, Area as SparkArea, ResponsiveContainer as SparkContainer } from 'recharts'
 
 const formatTimeTo12Hour = (timeStr: string): string => {
@@ -68,6 +69,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
   const [showBacktest, setShowBacktest] = useState(false)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showChart, setShowChart] = useState(false)
+  const [showLevelHistory, setShowLevelHistory] = useState(false)
   const [simPrice, setSimPrice] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true'
@@ -644,6 +646,11 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
           <button onClick={() => setShowChart(true)}
             className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
             <span aria-hidden="true" className="mr-2 text-sm">🕯️</span> Live Nifty Chart
+          </button>
+
+          <button onClick={() => setShowLevelHistory(true)}
+            className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
+            <span aria-hidden="true" className="mr-2 text-sm">📜</span> Level History
           </button>
 
           <button onClick={() => setShowUserGuide(true)}
@@ -1382,6 +1389,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
       {showUserGuide && <UserGuide onClose={() => setShowUserGuide(false)} />}
       {showAnalytics && <Analytics onClose={() => setShowAnalytics(false)} />}
       {showChart && <ChartModal onClose={() => setShowChart(false)} />}
+      {showLevelHistory && <LevelHistoryModal isOpen={showLevelHistory} onClose={() => setShowLevelHistory(false)} />}
 
       {confirmAction && (
         <ConfirmModal

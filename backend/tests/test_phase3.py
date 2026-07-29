@@ -495,3 +495,31 @@ class TestSessionRoutes:
         assert resp.status_code == 200
         assert resp.json()["username"] == "admin"
         assert resp.json()["authenticated"] is True
+
+
+class TestStrategyConfigHistory:
+    """Test GET /api/config/strategy/history route."""
+
+    @pytest.fixture
+    def client(self):
+        from fastapi.testclient import TestClient
+        from fastapi import FastAPI
+        from app.api.routes.config import router
+        from app.api.routes.session import router as session_router
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        app.include_router(session_router, prefix="/api")
+        return TestClient(app)
+
+    def test_history_requires_auth(self, client):
+        resp = client.get("/api/config/strategy/history")
+        assert resp.status_code in (401, 403)
+
+    def test_history_returns_list(self, client):
+        login = client.post("/api/session/login", json={"username": "admin", "password": "pyramid123"})
+        token = login.json()["access_token"]
+        resp = client.get("/api/config/strategy/history", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+

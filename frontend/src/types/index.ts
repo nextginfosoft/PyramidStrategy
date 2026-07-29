@@ -76,6 +76,8 @@ export interface StrategyConfig {
   paper_trade: boolean
   squareoff_time?: string
   is_active: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export type WSMessage =

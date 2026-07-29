@@ -34,6 +34,8 @@ export const strategyApi = {
 
 export const configApi = {
   getStrategy: (): Promise<StrategyConfig> => api.get('/config/strategy').then(r => r.data),
+  getStrategyHistory: (params?: { from_date?: string; to_date?: string; limit?: number }): Promise<StrategyConfig[]> =>
+    api.get('/config/strategy/history', { params }).then(r => r.data),
   saveStrategy: (cfg: Omit<StrategyConfig, 'id' | 'is_active'>) =>
     api.post('/config/strategy', cfg).then(r => r.data),
   getApiKeys: () => api.get('/config/api-keys').then(r => r.data),
