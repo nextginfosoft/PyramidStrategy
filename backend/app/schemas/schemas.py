@@ -12,11 +12,11 @@ class StrategyConfigBase(BaseModel):
     s1: float
     s2: Optional[float] = 0.0
     s3: Optional[float] = 0.0
-    lot_size: int = 75
-    target_points: float = 20.0
+    lot_size: int = 65
+    target_points: float = 30.0
     sl_points: float = 10.0
     paper_trade: bool = True
-    squareoff_time: str = "11:30"
+    squareoff_time: str = "15:20"
     strategy_type: str = "PYRAMID"
 
     @field_validator("squareoff_time")

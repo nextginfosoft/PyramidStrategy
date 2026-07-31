@@ -453,7 +453,22 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setLevels(p => ({ ...p, strategy_type: 'PYRAMID' }))}
+                    onClick={async () => {
+                      try {
+                        const existing = await configApi.getStrategy('PYRAMID')
+                        setLevels({
+                          strategy_type: 'PYRAMID',
+                          r1: existing?.r1 ?? 23170, r2: existing?.r2 ?? 23220, r3: existing?.r3 ?? 23250,
+                          s1: existing?.s1 ?? 23070, s2: existing?.s2 ?? 23025, s3: existing?.s3 ?? 22950,
+                          lot_size: existing?.lot_size ?? 65,
+                          target_points: existing?.target_points ?? 30,
+                          sl_points: existing?.sl_points ?? 10,
+                          squareoff_time: existing?.squareoff_time ?? '15:20',
+                        })
+                      } catch {
+                        setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                      }
+                    }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
                       levels.strategy_type === 'PYRAMID'
                         ? 'bg-blue-500/10 border-blue-500/40 text-blue-400 shadow-lg shadow-blue-950/20'
@@ -469,7 +484,22 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
 
                   <button
                     type="button"
-                    onClick={() => setLevels(p => ({ ...p, strategy_type: 'DESTINY' }))}
+                    onClick={async () => {
+                      try {
+                        const existing = await configApi.getStrategy('DESTINY')
+                        setLevels({
+                          strategy_type: 'DESTINY',
+                          r1: existing?.r1 ?? 24100, r2: existing?.r2 ?? 24200, r3: existing?.r3 ?? 24300,
+                          s1: existing?.s1 ?? 23900, s2: existing?.s2 ?? 23800, s3: existing?.s3 ?? 23700,
+                          lot_size: existing?.lot_size ?? 65,
+                          target_points: existing?.target_points ?? 30,
+                          sl_points: existing?.sl_points ?? 10,
+                          squareoff_time: existing?.squareoff_time ?? '15:20',
+                        })
+                      } catch {
+                        setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                      }
+                    }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
                       levels.strategy_type === 'DESTINY'
                         ? 'bg-purple-500/10 border-purple-500/40 text-purple-400 shadow-lg shadow-purple-950/20'

@@ -16,20 +16,25 @@ router = APIRouter(prefix="/config", tags=["config"])
 from datetime import datetime
 
 @router.get("/strategy", response_model=StrategyConfigResponse)
-def get_strategy_config(db: Session = Depends(get_db), user: User = Depends(require_auth)):
-    cfg = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).order_by(StrategyConfig.id.desc()).first()
+def get_strategy_config(strategy_type: str = None, db: Session = Depends(get_db), user: User = Depends(require_auth)):
+    query = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id)
+    if strategy_type:
+        query = query.filter(StrategyConfig.strategy_type == strategy_type)
+    cfg = query.order_by(StrategyConfig.id.desc()).first()
     if not cfg:
         # Return a default initial config if none exists for this user
         now = datetime.utcnow()
+        is_destiny = strategy_type == "DESTINY"
         return StrategyConfigResponse(
             id=0,
-            r1=23170, r2=23220, r3=23250,
-            s1=23070, s2=23025, s3=22950,
-            lot_size=75,
-            target_points=20,
+            r1=24100 if is_destiny else 23170, r2=24200 if is_destiny else 23220, r3=24300 if is_destiny else 23250,
+            s1=23900 if is_destiny else 23070, s2=23800 if is_destiny else 23025, s3=23700 if is_destiny else 22950,
+            lot_size=65,
+            target_points=30,
             sl_points=10,
             paper_trade=True,
-            squareoff_time="11:30",
+            squareoff_time="15:20",
+            strategy_type=strategy_type or "PYRAMID",
             is_active=False,
             created_at=now,
             updated_at=now
