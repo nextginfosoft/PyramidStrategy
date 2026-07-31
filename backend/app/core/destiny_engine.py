@@ -159,7 +159,8 @@ class DestinyStrategyEngine:
         if not self.is_running:
             return
 
-        now = datetime.now()
+        from app.core.time_rules import now_ist
+        now = now_ist()
         current_time = now.time()
 
         # Rule 3: 3:20 PM Square Off
@@ -217,7 +218,9 @@ class DestinyStrategyEngine:
         }
 
     async def _enter_trade(self, side: str, nifty_ltp: Decimal, trigger_level: Decimal):
-        exp_date, symbol = get_option_details(side, nifty_ltp)
+        opt_details = get_option_details(side, nifty_ltp)
+        symbol = opt_details["symbol"]
+        exp_date = opt_details["expiry"]
         entry_price = estimate_option_price(symbol, nifty_ltp)
 
         target_price = entry_price + self.target_pts
@@ -231,22 +234,19 @@ class DestinyStrategyEngine:
 
         db = SessionLocal()
         try:
-            trade_record = self.order_manager.place_buy_order(
+            order_res = self.order_manager.place_buy_order(
                 db=db,
-                user_id=self.user_id,
                 side=side,
                 level="R" if side == "PE" else "S",
+                instrument=symbol,
+                strike=opt_details["strike"],
+                expiry=opt_details["expiry"],
                 lots=1,
                 lot_size=self.lot_size,
-                symbol=symbol,
-                act_price=entry_price,
-                avg_price=entry_price,
-                target_price=target_price,
-                sl_price=sl_price,
-                paper_trade=self.paper_trade,
                 trigger_nifty=nifty_ltp,
+                mock_ltp=entry_price if self.paper_trade else None,
             )
-            db_id = trade_record.id
+            db_id = order_res["trade_id"]
             db.commit()
         except Exception as e:
             logger.error(f"[DestinyEngine] Order placement failed for {side}: {e}")
