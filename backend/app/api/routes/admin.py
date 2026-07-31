@@ -13,6 +13,7 @@ from app.db.database import get_db
 from app.models.models import User, StrategyConfig, Trade, ApiConfig, DailyPnL, AuditLog, AISuggestion
 from app.api.routes.session import require_auth
 from app.config import settings
+from loguru import logger
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
