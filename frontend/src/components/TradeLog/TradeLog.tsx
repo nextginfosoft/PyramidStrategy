@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { Trade } from '../../types'
+import type { Trade, StrategyConfig } from '../../types'
 import { tradesApi, configApi } from '../../services/api'
 import clsx from 'clsx'
 import { format } from 'date-fns'
@@ -79,9 +79,9 @@ export function TradeLog() {
   }, [dateRange, customFrom, customTo])
 
   // Fetch strategy configuration to calculate target & SL prices
-  const { data: config } = useQuery({
+  const { data: config } = useQuery<StrategyConfig>({
     queryKey: ['strategy-config'],
-    queryFn: configApi.getStrategy,
+    queryFn: () => configApi.getStrategy(),
   })
 
   const targetPoints = config?.target_points ?? 20

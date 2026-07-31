@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import type { StrategyConfig } from '../../types'
 import { configApi, backtestApi } from '../../services/api'
 import clsx from 'clsx'
 import { useToastStore } from '../../store/toastStore'
@@ -57,9 +58,9 @@ type BacktestResult = {
 
 export function BacktestModal({ onClose }: Props) {
   const addToast = useToastStore(state => state.addToast)
-  const { data: cfg } = useQuery({
+  const { data: cfg } = useQuery<StrategyConfig>({
     queryKey: ['strategy-config'],
-    queryFn: configApi.getStrategy,
+    queryFn: () => configApi.getStrategy(),
   })
 
   // Date range (defaults to last 7 days)

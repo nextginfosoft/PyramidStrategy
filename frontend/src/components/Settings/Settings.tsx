@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { StrategyConfig } from '../../types'
 import { configApi, aiApi, notificationApi, kiteApi, adminApi } from '../../services/api'
 import { Notification } from '../Notification/Notification'
 
@@ -13,7 +14,7 @@ type StatusMsg = { text: string; ok: boolean }
 
 export function Settings({ onClose, user }: { onClose: () => void; user?: UserSession | null }) {
   const qc = useQueryClient()
-  const { data: cfg } = useQuery({ queryKey: ['strategy-config'], queryFn: configApi.getStrategy })
+  const { data: cfg } = useQuery<StrategyConfig>({ queryKey: ['strategy-config'], queryFn: () => configApi.getStrategy() })
   const { data: apiKeys } = useQuery({ queryKey: ['api-keys'], queryFn: configApi.getApiKeys })
 
   const getMaskedKey = (provider: string) => {

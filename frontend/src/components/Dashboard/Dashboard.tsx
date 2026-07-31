@@ -18,7 +18,7 @@ import { UserSession } from '../../App'
 import { BacktestModal } from '../BacktestModal/BacktestModal'
 import { Analytics } from '../Analytics/AnalyticsModal'
 import { Notification } from '../Notification/Notification'
-import type { SideStatus, StrategyStatus } from '../../types'
+import type { SideStatus, StrategyStatus, StrategyConfig } from '../../types'
 import { UserGuide } from '../UserGuide/UserGuide'
 import { StatusBar } from '../StatusBar/StatusBar'
 import { ChartModal } from '../ChartModal/ChartModal'
@@ -222,9 +222,9 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
     }
   }
 
-  const { data: config, isLoading: isConfigLoading } = useQuery({
+  const { data: config, isLoading: isConfigLoading } = useQuery<StrategyConfig>({
     queryKey: ['strategy-config'],
-    queryFn: configApi.getStrategy,
+    queryFn: () => configApi.getStrategy(),
     retry: false,
     enabled: user?.is_approved !== false,
   })

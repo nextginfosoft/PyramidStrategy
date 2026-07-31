@@ -33,8 +33,10 @@ export const strategyApi = {
 }
 
 export const configApi = {
-  getStrategy: (strategyType?: string): Promise<StrategyConfig> => 
-    api.get('/config/strategy', { params: { strategy_type: strategyType } }).then(r => r.data),
+  getStrategy: (strategyType?: string | Record<string, any>): Promise<StrategyConfig> => {
+    const typeStr = typeof strategyType === 'string' ? strategyType : undefined
+    return api.get('/config/strategy', { params: typeStr ? { strategy_type: typeStr } : undefined }).then(r => r.data)
+  },
   getStrategyHistory: (params?: { from_date?: string; to_date?: string; limit?: number }): Promise<StrategyConfig[]> =>
     api.get('/config/strategy/history', { params }).then(r => r.data),
   saveStrategy: (cfg: Omit<StrategyConfig, 'id' | 'is_active'>) =>
