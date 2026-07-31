@@ -429,14 +429,19 @@ class TestSessionRoutes:
         from app.api.routes.session import get_password_hash
         init_db()
         with SessionLocal() as db:
-            db.query(User).filter(User.username == "admin").delete()
-            db.add(User(
-                id=1,
-                username="admin",
-                hashed_password=get_password_hash("pyramid123"),
-                is_approved=True,
-                is_admin=True
-            ))
+            user = db.query(User).filter(User.username == "admin").first()
+            if not user:
+                user = User(
+                    username="admin",
+                    hashed_password=get_password_hash("pyramid123"),
+                    is_approved=True,
+                    is_admin=True
+                )
+                db.add(user)
+            else:
+                user.hashed_password = get_password_hash("pyramid123")
+                user.is_approved = True
+                user.is_admin = True
             db.commit()
 
     @pytest.fixture
@@ -505,7 +510,26 @@ class TestStrategyConfigHistory:
         from fastapi.testclient import TestClient
         from fastapi import FastAPI
         from app.api.routes.config import router
-        from app.api.routes.session import router as session_router
+        from app.api.routes.session import router as session_router, get_password_hash
+        from app.db.database import SessionLocal, init_db
+        from app.models.models import User
+
+        init_db()
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.username == "admin").first()
+            if not user:
+                user = User(
+                    username="admin",
+                    hashed_password=get_password_hash("pyramid123"),
+                    is_approved=True,
+                    is_admin=True
+                )
+                db.add(user)
+            else:
+                user.hashed_password = get_password_hash("pyramid123")
+                user.is_approved = True
+                user.is_admin = True
+            db.commit()
 
         app = FastAPI()
         app.include_router(router, prefix="/api")

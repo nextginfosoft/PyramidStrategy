@@ -24,10 +24,11 @@ def mock_user_and_config():
             db.commit()
             db.refresh(user)
 
-        config = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).first()
+        user_id = user.id
+        config = db.query(StrategyConfig).filter(StrategyConfig.user_id == user_id).first()
         if not config:
             config = StrategyConfig(
-                user_id=user.id,
+                user_id=user_id,
                 r1=24100.0,
                 s1=23900.0,
                 r2=24200.0,
@@ -41,15 +42,15 @@ def mock_user_and_config():
             )
             db.add(config)
             db.commit()
-        return user, config
+        return user_id
     finally:
         db.close()
 
 
 @pytest.mark.asyncio
 async def test_destiny_engine_pe_entry_and_target(mock_user_and_config):
-    user, _ = mock_user_and_config
-    engine = DestinyStrategyEngine(user_id=user.id)
+    user_id = mock_user_and_config
+    engine = DestinyStrategyEngine(user_id=user_id)
     engine.start()
 
     assert engine.r_level == Decimal("24100.00")
@@ -76,8 +77,8 @@ async def test_destiny_engine_pe_entry_and_target(mock_user_and_config):
 
 @pytest.mark.asyncio
 async def test_destiny_engine_custom_params(mock_user_and_config):
-    user, _ = mock_user_and_config
-    engine = DestinyStrategyEngine(user_id=user.id)
+    user_id = mock_user_and_config
+    engine = DestinyStrategyEngine(user_id=user_id)
     engine.load_config({
         "r1": 24500.0,
         "s1": 24000.0,
