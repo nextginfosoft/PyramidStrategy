@@ -126,6 +126,16 @@ def init_db():
         # Expected error if column already exists
         logger.debug(f"Database migration (squareoff_time check/add): {e}")
 
+    # Self-healing migration for strategy_type
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE strategy_config ADD COLUMN strategy_type VARCHAR(50) DEFAULT 'PYRAMID'"))
+            conn.commit()
+            logger.info("Database migration: Added strategy_type to strategy_config")
+    except Exception as e:
+        logger.debug(f"Database migration (strategy_type check/add): {e}")
+
     # Self-healing migration for trades columns
     for col, col_type in [
         ("active_high", "NUMERIC(10, 2)"),

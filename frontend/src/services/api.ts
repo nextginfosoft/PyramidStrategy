@@ -169,7 +169,7 @@ export const adminApi = {
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`).then(r => r.data),
   createUser: (payload: any) => api.post('/admin/users/create', payload).then(r => r.data),
   updateUser: (id: number, payload: any) => api.put(`/admin/users/${id}`, payload).then(r => r.data),
-  syncLevelsGlobally: (levels: { r1: number; r2: number; r3: number; s1: number; s2: number; s3: number }) => 
+  syncLevelsGlobally: (levels: { r1: number; r2: number; r3: number; s1: number; s2: number; s3: number; strategy_type?: string }) => 
     api.post('/admin/strategy/sync-levels', levels).then(r => r.data),
   getUsersStatus: (): Promise<any[]> => api.get('/admin/users/status').then(r => r.data),
   getUserAnalytics: (userId: number, startDate: string, endDate: string): Promise<any> =>

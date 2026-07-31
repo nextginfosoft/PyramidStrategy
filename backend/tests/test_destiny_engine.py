@@ -1,0 +1,97 @@
+import pytest
+from decimal import Decimal
+from datetime import date
+from unittest.mock import AsyncMock, patch
+
+from app.core.destiny_engine import DestinyStrategyEngine
+from app.models.models import StrategyConfig, User
+
+
+from app.db.database import SessionLocal, init_db
+
+@pytest.fixture(autouse=True)
+def setup_database():
+    init_db()
+
+@pytest.fixture
+def mock_user_and_config():
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == "destiny_user").first()
+        if not user:
+            user = User(username="destiny_user", hashed_password="hashed_pw", is_approved=True)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+        config = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).first()
+        if not config:
+            config = StrategyConfig(
+                user_id=user.id,
+                r1=24100.0,
+                s1=23900.0,
+                r2=24200.0,
+                r3=24300.0,
+                s2=23800.0,
+                s3=23700.0,
+                lot_size=75,
+                target_points=30.0,
+                sl_points=30.0,
+                paper_trade=True,
+            )
+            db.add(config)
+            db.commit()
+        return user, config
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_destiny_engine_pe_entry_and_target(mock_user_and_config):
+    user, _ = mock_user_and_config
+    engine = DestinyStrategyEngine(user_id=user.id)
+    engine.start()
+
+    assert engine.r_level == Decimal("24100.00")
+    assert engine.s_level == Decimal("23900.00")
+
+    # Tick below R - No trade
+    await engine.on_nifty_tick(Decimal("24050.00"))
+    assert engine.active_pe_trade is None
+
+    # Tick hits R (24100) -> Triggers PE Entry
+    await engine.on_nifty_tick(Decimal("24100.00"))
+    assert engine.active_pe_trade is not None
+    assert engine.active_pe_trade["side"] == "PE"
+    assert engine.active_pe_trade["target_price"] == engine.active_pe_trade["entry_price"] + Decimal("30.00")
+
+    # Move NIFTY higher to increase PE option value and hit target
+    target_trigger_nifty = Decimal("24250.00")
+    await engine.on_nifty_tick(target_trigger_nifty)
+
+    # Trade should exit on target and mark R level completed
+    assert engine.active_pe_trade is None
+    assert engine.r_level_completed is True
+
+
+@pytest.mark.asyncio
+async def test_destiny_engine_custom_params(mock_user_and_config):
+    user, _ = mock_user_and_config
+    engine = DestinyStrategyEngine(user_id=user.id)
+    engine.load_config({
+        "r1": 24500.0,
+        "s1": 24000.0,
+        "lot_size": 130,
+        "target_points": 45.0,
+        "sl_points": 20.0,
+        "squareoff_time": "15:15",
+        "paper_trade": True,
+        "strategy_type": "DESTINY",
+    })
+
+    assert engine.r_level == Decimal("24500.0")
+    assert engine.s_level == Decimal("24000.0")
+    assert engine.lot_size == 130
+    assert engine.target_pts == Decimal("45.0")
+    assert engine.sl_pts == Decimal("20.0")
+    assert engine.squareoff_time_str == "15:15"

@@ -1022,7 +1022,12 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
 
           {/* Level panel */}
           <div className="glass-card rounded-xl p-3">
-            <div className="text-xs text-navy-300 mb-2 font-semibold">LEVELS</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs text-navy-300 font-semibold">LEVELS</div>
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wide bg-navy-850 text-navy-300 border border-navy-700/60">
+                {config?.strategy_type === 'DESTINY' ? 'Destiny Strategy' : 'Pyramid Strategy'}
+              </span>
+            </div>
             <LevelPanel status={status} config={config ?? null} isLoading={isConfigLoading} />
           </div>
 

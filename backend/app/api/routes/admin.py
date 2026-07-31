@@ -149,6 +149,7 @@ class BulkSyncLevelsRequest(BaseModel):
     s1: float
     s2: float
     s3: float
+    strategy_type: Optional[str] = "PYRAMID"
 
 
 @router.post("/users/create", status_code=status.HTTP_201_CREATED)
@@ -229,11 +230,13 @@ def sync_levels_globally(
         sl_points = current_cfg.sl_points if current_cfg else 10
         paper_trade = current_cfg.paper_trade if current_cfg else True
         squareoff_time = current_cfg.squareoff_time if current_cfg else "11:30"
+        strategy_type = payload.strategy_type or (current_cfg.strategy_type if current_cfg else "PYRAMID")
 
         db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).update({"is_active": False})
 
         new_cfg = StrategyConfig(
             user_id=user.id,
+            strategy_type=strategy_type,
             r1=payload.r1, r2=payload.r2, r3=payload.r3,
             s1=payload.s1, s2=payload.s2, s3=payload.s3,
             lot_size=lot_size,
@@ -255,6 +258,7 @@ def sync_levels_globally(
             "sl_points": float(sl_points),
             "paper_trade": paper_trade,
             "squareoff_time": squareoff_time,
+            "strategy_type": strategy_type,
         })
         updated_count += 1
 

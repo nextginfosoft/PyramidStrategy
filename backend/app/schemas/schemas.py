@@ -7,16 +7,17 @@ from decimal import Decimal
 # ── Strategy Config ───────────────────────────────────────────────────────────
 class StrategyConfigBase(BaseModel):
     r1: float
-    r2: float
-    r3: float
+    r2: Optional[float] = 0.0
+    r3: Optional[float] = 0.0
     s1: float
-    s2: float
-    s3: float
+    s2: Optional[float] = 0.0
+    s3: Optional[float] = 0.0
     lot_size: int = 75
     target_points: float = 20.0
     sl_points: float = 10.0
     paper_trade: bool = True
     squareoff_time: str = "11:30"
+    strategy_type: str = "PYRAMID"
 
     @field_validator("squareoff_time")
     @classmethod
@@ -38,12 +39,13 @@ class StrategyConfigBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_levels(self):
-        # PE levels must be ascending
-        if not (self.r1 < self.r2 < self.r3):
-            raise ValueError("Resistance levels must be ascending: R1 < R2 < R3")
-        # CE levels must be descending
-        if not (self.s1 > self.s2 > self.s3):
-            raise ValueError("Support levels must be descending: S1 > S2 > S3")
+        if self.strategy_type == "PYRAMID":
+            # PE levels must be ascending
+            if not (self.r1 < self.r2 < self.r3):
+                raise ValueError("Resistance levels must be ascending: R1 < R2 < R3")
+            # CE levels must be descending
+            if not (self.s1 > self.s2 > self.s3):
+                raise ValueError("Support levels must be descending: S1 > S2 > S3")
         return self
 
 

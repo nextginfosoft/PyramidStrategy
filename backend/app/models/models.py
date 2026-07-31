@@ -31,6 +31,7 @@ class StrategyConfig(Base):
     paper_trade = Column(Boolean, default=True)
     squareoff_time = Column(String(5), default="11:30")
     is_active = Column(Boolean, default=False)
+    strategy_type = Column(String(50), default="PYRAMID", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 

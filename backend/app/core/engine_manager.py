@@ -6,24 +6,40 @@ Distributes incoming NIFTY spot tick feeds to all active user engines.
 
 import asyncio
 from decimal import Decimal
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 from loguru import logger
 
 from app.core.strategy_engine import StrategyEngine
+from app.core.destiny_engine import DestinyStrategyEngine
+from app.db.database import SessionLocal
+from app.models.models import StrategyConfig
 
 
 class EngineManager:
     def __init__(self):
-        # Maps user_id (int) -> StrategyEngine
-        self._engines: dict[int, StrategyEngine] = {}
+        # Maps user_id (int) -> StrategyEngine or DestinyStrategyEngine
+        self._engines: dict[int, Any] = {}
         # Global WebSocket broadcast function
         self.broadcast_fn: Optional[Callable] = None
 
-    def get_engine(self, user_id: int) -> StrategyEngine:
-        """Retrieve or instantiate StrategyEngine for a user."""
+    def get_engine(self, user_id: int) -> Any:
+        """Retrieve or instantiate Strategy Engine for a user based on DB strategy_type."""
         if user_id not in self._engines:
-            logger.info(f"Creating StrategyEngine instance for user_id={user_id}")
-            engine = StrategyEngine(user_id=user_id)
+            strategy_type = "PYRAMID"
+            db = SessionLocal()
+            try:
+                cfg = db.query(StrategyConfig).filter(StrategyConfig.user_id == user_id).first()
+                if cfg and getattr(cfg, "strategy_type", None):
+                    strategy_type = cfg.strategy_type
+            finally:
+                db.close()
+
+            logger.info(f"Creating Engine instance ({strategy_type}) for user_id={user_id}")
+            if strategy_type == "DESTINY":
+                engine = DestinyStrategyEngine(user_id=user_id)
+            else:
+                engine = StrategyEngine(user_id=user_id)
+
             engine.broadcast_fn = self.broadcast_fn
             self._engines[user_id] = engine
         return self._engines[user_id]

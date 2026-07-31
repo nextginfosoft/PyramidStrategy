@@ -61,6 +61,7 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
 
     cfg = StrategyConfig(
         user_id=user.id,
+        strategy_type=payload.strategy_type or "PYRAMID",
         r1=payload.r1, r2=payload.r2, r3=payload.r3,
         s1=payload.s1, s2=payload.s2, s3=payload.s3,
         lot_size=payload.lot_size,
@@ -74,17 +75,27 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
     db.commit()
     db.refresh(cfg)
 
-    # Push new config to running engine for this specific user
+    # Force re-instantiate / update user engine instance in EngineManager based on strategy_type
+    if user.id in engine_manager._engines:
+        old_engine = engine_manager._engines[user.id]
+        if old_engine.is_running:
+            old_engine.stop()
+        del engine_manager._engines[user.id]
+
     user_engine = engine_manager.get_engine(user.id)
-    user_engine.load_config({
-        "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
-        "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
-        "lot_size": cfg.lot_size,
-        "target_points": float(cfg.target_points),
-        "sl_points": float(cfg.sl_points),
-        "paper_trade": cfg.paper_trade,
-        "squareoff_time": cfg.squareoff_time,
-    })
+    if hasattr(user_engine, 'load_config'):
+        user_engine.load_config({
+            "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
+            "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),
+            "lot_size": cfg.lot_size,
+            "target_points": float(cfg.target_points),
+            "sl_points": float(cfg.sl_points),
+            "paper_trade": cfg.paper_trade,
+            "squareoff_time": cfg.squareoff_time,
+            "strategy_type": cfg.strategy_type,
+        })
+    elif hasattr(user_engine, '_load_config'):
+        user_engine._load_config()
 
     # Dynamic log window config update
     try:

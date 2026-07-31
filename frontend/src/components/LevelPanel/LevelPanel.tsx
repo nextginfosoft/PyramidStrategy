@@ -51,15 +51,23 @@ export function LevelPanel({ status, config, isLoading }: Props) {
   const pe = status?.pe
   const ce = status?.ce
 
-  const levels = [
-    { label: 'R3', value: config.r3, side: 'PE', lvl: 'L3', color: 'border-red-800 bg-red-950/30' },
-    { label: 'R2', value: config.r2, side: 'PE', lvl: 'L2', color: 'border-red-900 bg-red-950/20' },
-    { label: 'R1', value: config.r1, side: 'PE', lvl: 'L1', color: 'border-red-950 bg-red-950/10' },
-    { label: '─── NIFTY ───', value: status?.nifty_ltp ?? '─', side: null, lvl: null, color: 'border-blue-700 bg-blue-950/30' },
-    { label: 'S1', value: config.s1, side: 'CE', lvl: 'L1', color: 'border-green-950 bg-green-950/10' },
-    { label: 'S2', value: config.s2, side: 'CE', lvl: 'L2', color: 'border-green-900 bg-green-950/20' },
-    { label: 'S3', value: config.s3, side: 'CE', lvl: 'L3', color: 'border-green-800 bg-green-950/30' },
-  ]
+  const isDestiny = config.strategy_type === 'DESTINY'
+
+  const levels = isDestiny
+    ? [
+        { label: 'R (Resistance)', value: config.r1, side: 'PE', lvl: 'L1', color: 'border-red-900 bg-red-950/20' },
+        { label: '─── NIFTY ───', value: status?.nifty_ltp ?? '─', side: null, lvl: null, color: 'border-blue-700 bg-blue-950/30' },
+        { label: 'S (Support)', value: config.s1, side: 'CE', lvl: 'L1', color: 'border-green-900 bg-green-950/20' },
+      ]
+    : [
+        { label: 'R3', value: config.r3, side: 'PE', lvl: 'L3', color: 'border-red-800 bg-red-950/30' },
+        { label: 'R2', value: config.r2, side: 'PE', lvl: 'L2', color: 'border-red-900 bg-red-950/20' },
+        { label: 'R1', value: config.r1, side: 'PE', lvl: 'L1', color: 'border-red-950 bg-red-950/10' },
+        { label: '─── NIFTY ───', value: status?.nifty_ltp ?? '─', side: null, lvl: null, color: 'border-blue-700 bg-blue-950/30' },
+        { label: 'S1', value: config.s1, side: 'CE', lvl: 'L1', color: 'border-green-950 bg-green-950/10' },
+        { label: 'S2', value: config.s2, side: 'CE', lvl: 'L2', color: 'border-green-900 bg-green-950/20' },
+        { label: 'S3', value: config.s3, side: 'CE', lvl: 'L3', color: 'border-green-800 bg-green-950/30' },
+      ]
 
   const isActive = (side: string | null, lvl: string | null) => {
     if (!side || !lvl || !status) return false

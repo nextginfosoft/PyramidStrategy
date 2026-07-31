@@ -28,6 +28,7 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
   const [syncGlobally, setSyncGlobally] = useState(false)
 
   const [levels, setLevels] = useState({
+    strategy_type: cfg?.strategy_type ?? 'PYRAMID',
     r1: cfg?.r1 ?? 23170, r2: cfg?.r2 ?? 23220, r3: cfg?.r3 ?? 23250,
     s1: cfg?.s1 ?? 23070, s2: cfg?.s2 ?? 23025, s3: cfg?.s3 ?? 22950,
     lot_size: cfg?.lot_size ?? 65,
@@ -118,6 +119,7 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
   useEffect(() => {
     if (cfg && !isInitialized) {
       setLevels({
+        strategy_type: cfg.strategy_type ?? 'PYRAMID',
         r1: cfg.r1, r2: cfg.r2, r3: cfg.r3,
         s1: cfg.s1, s2: cfg.s2, s3: cfg.s3,
         lot_size: cfg.lot_size,
@@ -154,7 +156,8 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
           r3: payload.r3,
           s1: payload.s1,
           s2: payload.s2,
-          s3: payload.s3
+          s3: payload.s3,
+          strategy_type: payload.strategy_type,
         })
       }
       return configApi.saveStrategy(payload)
@@ -210,16 +213,18 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
   const handleSaveLevels = (e: React.FormEvent) => {
     e.preventDefault()
 
-    const { r1, r2, r3, s1, s2, s3 } = levels;
+    const { r1, r2, r3, s1, s2, s3, strategy_type } = levels;
 
-    if (s1 <= s2 || s2 <= s3) {
-      showStatus('✗ Support levels must be descending (S1 > S2 > S3)', false)
-      return
-    }
+    if (strategy_type === 'PYRAMID') {
+      if (s1 <= s2 || s2 <= s3) {
+        showStatus('✗ Support levels must be descending (S1 > S2 > S3)', false)
+        return
+      }
 
-    if (r1 >= r2 || r2 >= r3) {
-      showStatus('✗ Resistance levels must be ascending (R1 < R2 < R3)', false)
-      return
+      if (r1 >= r2 || r2 >= r3) {
+        showStatus('✗ Resistance levels must be ascending (R1 < R2 < R3)', false)
+        return
+      }
     }
 
     saveLevels.mutate({
@@ -442,6 +447,44 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
           {/* TAB 1: STRATEGY RULES */}
           {activeTab === 'strategy' && (
             <div className="space-y-5">
+              {/* Strategy Engine Selector card */}
+              <div className="bg-navy-900/30 border border-navy-700 rounded-xl p-4 space-y-3">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-navy-300 block">🎯 Active Strategy Model</span>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setLevels(p => ({ ...p, strategy_type: 'PYRAMID' }))}
+                    className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
+                      levels.strategy_type === 'PYRAMID'
+                        ? 'bg-blue-500/10 border-blue-500/40 text-blue-400 shadow-lg shadow-blue-950/20'
+                        : 'bg-navy-900/40 border-navy-700 text-navy-300 hover:border-navy-600 hover:text-navy-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-base">🔺</span>
+                      <span className="font-bold">Pyramid Strategy</span>
+                    </div>
+                    <span className="text-[10px] text-navy-400 font-normal">Multi-leg scaling (R1, R2, R3 & S1, S2, S3)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setLevels(p => ({ ...p, strategy_type: 'DESTINY' }))}
+                    className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
+                      levels.strategy_type === 'DESTINY'
+                        ? 'bg-purple-500/10 border-purple-500/40 text-purple-400 shadow-lg shadow-purple-950/20'
+                        : 'bg-navy-900/40 border-navy-700 text-navy-300 hover:border-navy-600 hover:text-navy-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-base">🎯</span>
+                      <span className="font-bold">Destiny Strategy</span>
+                    </div>
+                    <span className="text-[10px] text-navy-400 font-normal">Single-lot Option Buying at Support (S) & Resistance (R)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Execution mode card */}
               <div className="bg-navy-900/30 border border-navy-700 rounded-xl p-4">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-navy-300 block mb-2.5">⚡ Execution Channel</span>
@@ -490,12 +533,14 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                   <div className="bg-red-950/5 border border-red-900/20 rounded-xl p-4 space-y-3">
                     <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 border-b border-red-900/20 pb-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                      Bearish Levels (Resistance / PE)
+                      {levels.strategy_type === 'DESTINY' ? 'Resistance Level (R)' : 'Bearish Levels (Resistance / PE)'}
                     </span>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['r1', 'r2', 'r3'] as const).map(k => (
+                    <div className={`grid ${levels.strategy_type === 'DESTINY' ? 'grid-cols-1' : 'grid-cols-3'} gap-2`}>
+                      {(levels.strategy_type === 'DESTINY' ? (['r1'] as const) : (['r1', 'r2', 'r3'] as const)).map(k => (
                         <label key={k} className="block space-y-1">
-                          <span className="text-[9px] text-navy-300 font-bold uppercase">{k} Level</span>
+                          <span className="text-[9px] text-navy-300 font-bold uppercase">
+                            {levels.strategy_type === 'DESTINY' ? 'Resistance (R)' : `${k.toUpperCase()} Level`}
+                          </span>
                           <input
                             type="number"
                             required
@@ -513,12 +558,14 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                   <div className="bg-green-950/5 border border-green-900/20 rounded-xl p-4 space-y-3">
                     <span className="text-xs font-bold text-green-400 flex items-center gap-1.5 border-b border-green-900/20 pb-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                      Bullish Levels (Support / CE)
+                      {levels.strategy_type === 'DESTINY' ? 'Support Level (S)' : 'Bullish Levels (Support / CE)'}
                     </span>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['s1', 's2', 's3'] as const).map(k => (
+                    <div className={`grid ${levels.strategy_type === 'DESTINY' ? 'grid-cols-1' : 'grid-cols-3'} gap-2`}>
+                      {(levels.strategy_type === 'DESTINY' ? (['s1'] as const) : (['s1', 's2', 's3'] as const)).map(k => (
                         <label key={k} className="block space-y-1">
-                          <span className="text-[9px] text-navy-300 font-bold uppercase">{k} Level</span>
+                          <span className="text-[9px] text-navy-300 font-bold uppercase">
+                            {levels.strategy_type === 'DESTINY' ? 'Support (S)' : `${k.toUpperCase()} Level`}
+                          </span>
                           <input
                             type="number"
                             required
