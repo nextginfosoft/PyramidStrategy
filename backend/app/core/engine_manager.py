@@ -28,7 +28,10 @@ class EngineManager:
             strategy_type = "PYRAMID"
             db = SessionLocal()
             try:
-                cfg = db.query(StrategyConfig).filter(StrategyConfig.user_id == user_id).first()
+                cfg = db.query(StrategyConfig).filter(
+                    StrategyConfig.user_id == user_id,
+                    StrategyConfig.is_active == True
+                ).order_by(StrategyConfig.id.desc()).first()
                 if cfg and getattr(cfg, "strategy_type", None):
                     strategy_type = cfg.strategy_type
             finally:
@@ -90,16 +93,15 @@ class EngineManager:
         return list(results)
 
     async def broadcast_nifty_tick(self, nifty_ltp: Decimal):
-        """Distribute the NIFTY spot tick to all running engines concurrently."""
-        running_engines = []
+        """Distribute the NIFTY spot tick to all registered engines concurrently."""
+        all_engines = []
         tasks = []
         for uid, engine in list(self._engines.items()):
-            if engine.is_running:
-                running_engines.append(engine)
-                tasks.append(engine.on_nifty_tick(nifty_ltp))
+            all_engines.append(engine)
+            tasks.append(engine.on_nifty_tick(nifty_ltp))
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for engine, res in zip(running_engines, results):
+            for engine, res in zip(all_engines, results):
                 if isinstance(res, Exception):
                     logger.error(
                         f"User {engine.user_id}: Exception swallowed in on_nifty_tick: {res}",
