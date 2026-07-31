@@ -621,7 +621,9 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                     </div>
 
                     <div className="block space-y-1">
-                      <span className="text-[10px] text-navy-300 font-medium">SL Points (L3 Only)</span>
+                      <span className="text-[10px] text-navy-300 font-medium">
+                        {levels.strategy_type === 'DESTINY' ? 'SL Points' : 'SL Points (L3 Only)'}
+                      </span>
                       <div className="relative">
                         <input
                           type="number"
@@ -633,7 +635,9 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                         />
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">🛑</span>
                       </div>
-                      <span className="text-[9px] text-navy-400 block">Active at Level 3</span>
+                      <span className="text-[9px] text-navy-400 block">
+                        {levels.strategy_type === 'DESTINY' ? 'Active on position entry' : 'Active at Level 3'}
+                      </span>
                     </div>
 
                     <div className="block space-y-1">
