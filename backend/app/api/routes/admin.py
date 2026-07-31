@@ -249,17 +249,37 @@ def sync_levels_globally(
         db.add(new_cfg)
         db.flush()
 
+        # Force re-instantiate / update user engine instance in EngineManager based on strategy_type
+        if user.id in engine_manager._engines:
+            old_engine = engine_manager._engines[user.id]
+            if old_engine.is_running:
+                old_engine.stop()
+            del engine_manager._engines[user.id]
+
         user_engine = engine_manager.get_engine(user.id)
-        user_engine.load_config({
-            "r1": float(payload.r1), "r2": float(payload.r2), "r3": float(payload.r3),
-            "s1": float(payload.s1), "s2": float(payload.s2), "s3": float(payload.s3),
-            "lot_size": lot_size,
-            "target_points": float(target_points),
-            "sl_points": float(sl_points),
-            "paper_trade": paper_trade,
-            "squareoff_time": squareoff_time,
-            "strategy_type": strategy_type,
-        })
+        if hasattr(user_engine, 'load_config'):
+            user_engine.load_config({
+                "r1": float(payload.r1), "r2": float(payload.r2), "r3": float(payload.r3),
+                "s1": float(payload.s1), "s2": float(payload.s2), "s3": float(payload.s3),
+                "lot_size": lot_size,
+                "target_points": float(target_points),
+                "sl_points": float(sl_points),
+                "paper_trade": paper_trade,
+                "squareoff_time": squareoff_time,
+                "strategy_type": strategy_type,
+            })
+        elif hasattr(user_engine, '_load_config'):
+            user_engine._load_config()
+
+        # Update active KiteService ticker callbacks to new engine
+        try:
+            from app.services.kite_service import get_user_kite_service
+            ks = get_user_kite_service(user.id)
+            if ks._ticker_running:
+                ks.update_callbacks(user_engine.on_nifty_tick, user_engine.on_option_tick)
+        except Exception as e:
+            logger.warning(f"Failed to update KiteTicker callbacks for user {user.id}: {e}")
+
         updated_count += 1
 
     db.commit()

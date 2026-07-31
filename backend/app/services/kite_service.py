@@ -338,6 +338,12 @@ class KiteService:
 
     # ── KiteTicker WebSocket ─────────────────────────────────────────────────
 
+    def update_callbacks(self, on_nifty_tick: Callable, on_option_tick: Callable):
+        """Update tick handlers dynamically when user strategy engine changes."""
+        self._on_nifty_tick = on_nifty_tick
+        self._on_option_tick = on_option_tick
+        logger.info(f"User {self.user_id}: Updated KiteTicker callbacks for active strategy engine.")
+
     def start_ticker(
         self,
         on_nifty_tick: Callable,

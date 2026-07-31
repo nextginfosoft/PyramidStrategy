@@ -102,6 +102,15 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
     elif hasattr(user_engine, '_load_config'):
         user_engine._load_config()
 
+    # Update active KiteService ticker callbacks to new engine
+    try:
+        from app.services.kite_service import get_user_kite_service
+        ks = get_user_kite_service(user.id)
+        if ks._ticker_running:
+            ks.update_callbacks(user_engine.on_nifty_tick, user_engine.on_option_tick)
+    except Exception as e:
+        logger.warning(f"Failed to update KiteTicker callbacks for user {user.id}: {e}")
+
     # Dynamic log window config update
     try:
         from app.core.logging_config import update_logging_window
