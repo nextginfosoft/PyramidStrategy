@@ -46,6 +46,10 @@ class DestinyStrategyEngine:
         self.paper_trade: bool = True
         self.squareoff_time_str: str = "15:20"
 
+        self.last_nifty_price: Optional[Decimal] = None
+        self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
+        self._option_ltp: Dict[str, Decimal] = {}
+
         # Trade State tracking for the day
         self.active_pe_trade: Optional[Dict[str, Any]] = None
         self.active_ce_trade: Optional[Dict[str, Any]] = None
@@ -111,8 +115,47 @@ class DestinyStrategyEngine:
             except Exception as e:
                 logger.error(f"[DestinyEngine] Broadcast error: {e}")
 
+    async def on_option_tick(self, symbol: str, ltp: Decimal):
+        """Callback from KiteTicker for option price updates."""
+        self._option_ltp[symbol] = ltp
+
+    async def _broadcast_status(self, nifty_ltp: Decimal):
+        if not self.broadcast_fn:
+            return
+        from app.services.kite_service import get_user_kite_service
+        ks = get_user_kite_service(self.user_id)
+
+        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
+            try:
+                live_prev_close = ks.get_nifty_prev_close()
+                if live_prev_close:
+                    self.nifty_prev_close = live_prev_close
+            except Exception as e:
+                logger.warning(f"[DestinyEngine] Error fetching live NIFTY previous close: {e}")
+
+        status = {
+            "type": "strategy_status",
+            "user_id": self.user_id,
+            "data": {
+                "nifty_ltp": float(nifty_ltp),
+                "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
+                "is_running": self.is_running,
+                "paper_trade": self.paper_trade,
+                "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str),
+                "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
+                "ce": {"active": bool(self.active_ce_trade), "trade": self.active_ce_trade},
+                "pe": {"active": bool(self.active_pe_trade), "trade": self.active_pe_trade},
+                "health": ks.get_status(),
+                "strategy_type": "DESTINY",
+            },
+        }
+        await self.broadcast_fn(self.user_id, status)
+
     async def on_nifty_tick(self, nifty_ltp: Decimal):
         """Process incoming NIFTY spot tick."""
+        self.last_nifty_price = nifty_ltp
+        await self._broadcast_status(nifty_ltp)
+
         if not self.is_running:
             return
 
@@ -143,54 +186,85 @@ class DestinyStrategyEngine:
             if nifty_ltp <= self.s_level:
                 await self._enter_trade(side="CE", nifty_ltp=nifty_ltp, trigger_level=self.s_level)
 
-    async def _enter_trade(self, side: str, nifty_ltp: Decimal, trigger_level: Decimal):
-        today = date.today()
-        opt_details = get_option_details(side, nifty_ltp, today)
-        symbol = opt_details["symbol"]
-        strike = opt_details["strike"]
-        expiry = opt_details["expiry"]
+    def get_full_status(self) -> Dict[str, Any]:
+        """Return full current engine status for REST API and UI rendering."""
+        from app.db.database import get_redis_client
+        nifty_ltp_str = get_redis_client().get("nifty:ltp")
+        nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else self.last_nifty_price
 
-        estimated_entry = estimate_option_price(symbol, nifty_ltp)
+        from app.services.kite_service import get_user_kite_service
+        ks = get_user_kite_service(self.user_id)
+
+        if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
+            try:
+                live_prev_close = ks.get_nifty_prev_close()
+                if live_prev_close:
+                    self.nifty_prev_close = live_prev_close
+            except Exception:
+                pass
+
+        return {
+            "is_running": self.is_running,
+            "paper_trade": self.paper_trade,
+            "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
+            "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
+            "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str),
+            "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
+            "ce": {"active": bool(self.active_ce_trade), "trade": self.active_ce_trade},
+            "pe": {"active": bool(self.active_pe_trade), "trade": self.active_pe_trade},
+            "health": ks.get_status(),
+            "strategy_type": "DESTINY",
+        }
+
+    async def _enter_trade(self, side: str, nifty_ltp: Decimal, trigger_level: Decimal):
+        exp_date, symbol = get_option_details(side, nifty_ltp)
+        entry_price = estimate_option_price(symbol, nifty_ltp)
+
+        target_price = entry_price + self.target_pts
+        sl_price = entry_price - self.sl_pts
+        total_qty = self.lot_size
+
+        logger.info(
+            f"[DestinyEngine] Placed {side} BUY order for {symbol} @ {entry_price:.2f} | "
+            f"Qty={total_qty}, Trigger={trigger_level}, Target={target_price:.2f}, SL={sl_price:.2f}"
+        )
 
         db = SessionLocal()
         try:
-            order_res = self.order_manager.place_buy_order(
+            trade_record = self.order_manager.place_buy_order(
                 db=db,
+                user_id=self.user_id,
                 side=side,
-                level=f"{'R' if side == 'PE' else 'S'}",
-                instrument=symbol,
-                strike=strike,
-                expiry=expiry,
+                level="R" if side == "PE" else "S",
                 lots=1,
                 lot_size=self.lot_size,
+                symbol=symbol,
+                act_price=entry_price,
+                avg_price=entry_price,
+                target_price=target_price,
+                sl_price=sl_price,
+                paper_trade=self.paper_trade,
                 trigger_nifty=nifty_ltp,
-                mock_ltp=estimated_entry if self.paper_trade else None,
             )
+            db_id = trade_record.id
             db.commit()
         except Exception as e:
-            logger.error(f"[DestinyEngine] Entry order failed for {side} {symbol}: {e}")
+            logger.error(f"[DestinyEngine] Order placement failed for {side}: {e}")
             return
         finally:
             db.close()
 
-        entry_price = order_res["fill_price"]
-        target_price = entry_price + self.target_pts
-        sl_price = entry_price - self.sl_pts
-
         trade_info = {
-            "side": side,
-            "level": f"{'R' if side == 'PE' else 'S'}",
+            "db_id": db_id,
             "symbol": symbol,
-            "strike": strike,
-            "expiry": expiry,
+            "side": side,
+            "level": "R" if side == "PE" else "S",
             "entry_price": entry_price,
             "target_price": target_price,
             "sl_price": sl_price,
-            "nifty_trigger": nifty_ltp,
-            "entry_time": datetime.now(),
-            "lots": 1,
-            "qty": self.lot_size,
-            "db_id": order_res["trade_id"],
+            "qty": total_qty,
+            "expiry": str(exp_date),
+            "entry_time": datetime.now().isoformat(),
         }
 
         if side == "PE":
