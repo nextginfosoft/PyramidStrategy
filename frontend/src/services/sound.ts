@@ -61,6 +61,11 @@ class SoundService {
   public playWarningAlert() {
     this.playTone([220, 180, 220, 180], [0.1, 0.1, 0.1, 0.22], 'triangle')
   }
+
+  // 💡 Soft bell chime for motivational quote popups
+  public playMotivationalChime() {
+    this.playTone([440, 554.37, 659.25], [0.15, 0.12, 0.25], 'sine') // A4 -> C#5 -> E5
+  }
 }
 
 export const soundService = new SoundService()

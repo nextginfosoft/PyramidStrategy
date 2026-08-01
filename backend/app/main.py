@@ -3,6 +3,7 @@ PyramidStrategy — FastAPI Application Entry Point
 Multi-User refactored entry point.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -74,6 +75,13 @@ def schedule_jobs():
             logger.warning(f"Scheduler token check job failed: {e}")
 
     scheduler.add_job(token_check, "cron", hour=8, minute=0, id="token_check")
+
+    # 8:45 AM — pre-fetch daily AI gamification quotes
+    async def ai_quotes_job():
+        from app.gamification.ai_quotes import generate_daily_ai_quotes
+        await generate_daily_ai_quotes(user_id=1)
+
+    scheduler.add_job(ai_quotes_job, "cron", hour=8, minute=45, id="ai_quotes_job")
 
     # 9:00 AM — daily reset + reload NFO instruments
     async def daily_startup():
@@ -235,6 +243,10 @@ async def lifespan(app: FastAPI):
             for cfg in ai_configs:
                 ai_serv = get_user_ai_service(cfg.user_id)
                 ai_serv.load_from_db()
+
+        # Pre-fetch daily AI motivational quotes on startup
+        from app.gamification.ai_quotes import generate_daily_ai_quotes
+        asyncio.create_task(generate_daily_ai_quotes(user_id=1))
     except Exception as e:
         logger.warning(f"AI service init failed (non-critical): {e}")
 

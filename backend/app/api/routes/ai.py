@@ -265,3 +265,19 @@ async def get_post_session_review(
         
     review = await ai_service.generate_post_session_review(trades_list, pnl)
     return review
+
+
+@router.post("/quotes/refresh")
+async def refresh_ai_quotes(user: User = Depends(require_auth)):
+    """Manually trigger AI daily motivational quotes generation for gamification."""
+    from app.gamification.ai_quotes import generate_daily_ai_quotes
+    success = await generate_daily_ai_quotes(user_id=user.id)
+    if not success:
+        return {
+            "status": "warning",
+            "message": "AI generation skipped or failed (check if AI Provider API key is configured). Hardcoded quotes remain active."
+        }
+    return {
+        "status": "success",
+        "message": "AI daily quotes successfully generated and loaded into gamification engine!"
+    }

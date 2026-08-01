@@ -676,3 +676,39 @@ def admin_test_credentials_dry_run(
             status_code=400,
             detail=f"Verification failed: {str(e)}"
         )
+
+@router.get("/test-gamification/{target_user_id}")
+async def trigger_gamification_test(target_user_id: int):
+    """Temporary endpoint to test all gamification features sequentially."""
+    from app.gamification.hooks import (
+        fire_engine_start_quote, fire_entry_quote, fire_target_quote,
+        fire_sl_quote, fire_squareoff_quote
+    )
+    import asyncio
+    
+    async def run_tests():
+        # Trigger Engine Start
+        await fire_engine_start_quote(target_user_id)
+        await asyncio.sleep(6)
+        
+        # Trigger L1 Entry
+        await fire_entry_quote(target_user_id, "CE", "L1", "NIFTY24MAY22000CE", 105.50)
+        await asyncio.sleep(6)
+        
+        # Trigger L3 Entry with SL Active
+        await fire_entry_quote(target_user_id, "CE", "L3", "NIFTY24MAY22000CE", 115.00, sl_price=105.00)
+        await asyncio.sleep(6)
+        
+        # Trigger Target Hit
+        await fire_target_quote(target_user_id, "CE", "NIFTY24MAY22000CE", 2500.00)
+        await asyncio.sleep(6)
+        
+        # Trigger SL Hit
+        await fire_sl_quote(target_user_id, "PE", "NIFTY24MAY21500PE", -1500.00)
+        await asyncio.sleep(6)
+        
+        # Trigger Squareoff
+        await fire_squareoff_quote(target_user_id, 1000.00)
+        
+    asyncio.create_task(run_tests())
+    return {"message": "Gamification test sequence started. Check UI and Telegram."}

@@ -3,6 +3,7 @@ import { Dashboard } from './components/Dashboard/Dashboard'
 import { Login } from './components/Login/Login'
 import { sessionApi } from './services/api'
 import { ToastContainer } from './components/Toast/Toast'
+import { MotivationalToast } from './components/MotivationalToast/MotivationalToast'
 
 export interface UserSession {
   username: string
@@ -85,6 +86,7 @@ export default function App() {
       <>
         <Login onLogin={handleLogin} />
         <ToastContainer />
+        <MotivationalToast />
       </>
     )
   }
@@ -93,6 +95,7 @@ export default function App() {
     <>
       <Dashboard user={user} onLogout={handleLogout} />
       <ToastContainer />
+      <MotivationalToast />
     </>
   )
 }
