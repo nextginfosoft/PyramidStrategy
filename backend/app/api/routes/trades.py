@@ -127,7 +127,8 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
         "Active High", "Active High Time",
         "Active Low", "Active Low Time",
         "Post-Exit High", "Post-Exit High Time",
-        "Post-Exit Low", "Post-Exit Low Time"
+        "Post-Exit Low", "Post-Exit Low Time",
+        "Price @ 3:20 PM"
     ])
 
     for entry in entries:
@@ -158,6 +159,7 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
         active_high_time = to_ist_str(entry.active_high_time)
         active_low = float(entry.active_low) if entry.active_low is not None else ""
         active_low_time = to_ist_str(entry.active_low_time)
+        price_at_320 = float(entry.price_at_320) if entry.price_at_320 is not None else (float(matching_exit.price_at_320) if matching_exit and matching_exit.price_at_320 is not None else "")
 
         if matching_exit:
             exit_time_str = to_ist_str(matching_exit.created_at)
@@ -204,7 +206,8 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             post_exit_high,
             post_exit_high_time,
             post_exit_low,
-            post_exit_low_time
+            post_exit_low_time,
+            price_at_320
         ])
 
     output.seek(0)

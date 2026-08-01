@@ -63,6 +63,7 @@ export interface Trade {
   post_exit_high_time?: string | null
   post_exit_low?: number | null
   post_exit_low_time?: string | null
+  price_at_320?: number | null
   created_at: string
 }
 

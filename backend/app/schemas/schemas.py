@@ -88,6 +88,7 @@ class TradeResponse(BaseModel):
     post_exit_high_time: Optional[datetime] = None
     post_exit_low: Optional[float] = None
     post_exit_low_time: Optional[datetime] = None
+    price_at_320: Optional[float] = None
     created_at: datetime
 
     @field_validator("created_at", "active_high_time", "active_low_time", "post_exit_high_time", "post_exit_low_time", mode="before")

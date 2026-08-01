@@ -145,7 +145,8 @@ def init_db():
         ("post_exit_high", "NUMERIC(10, 2)"),
         ("post_exit_high_time", "TIMESTAMP"),
         ("post_exit_low", "NUMERIC(10, 2)"),
-        ("post_exit_low_time", "TIMESTAMP")
+        ("post_exit_low_time", "TIMESTAMP"),
+        ("price_at_320", "NUMERIC(10, 2)")
     ]:
         try:
             from sqlalchemy import text

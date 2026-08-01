@@ -308,6 +308,35 @@ class StrategyEngine:
         finally:
             self._processing_option_symbols.discard(symbol)
 
+    async def _record_320_prices(self):
+        """Fetch and update price_at_320 for all trades executed today."""
+        try:
+            from app.core.time_rules import today_ist
+            target_date = today_ist()
+            with SessionLocal() as db:
+                from app.models.models import Trade
+                trades = db.query(Trade).filter(
+                    Trade.user_id == self.user_id,
+                    Trade.trade_date == target_date,
+                    Trade.price_at_320.is_(None)
+                ).all()
+
+                if not trades:
+                    return
+
+                updated = False
+                for t in trades:
+                    price = self.get_option_ltp(t.instrument)
+                    if price is not None:
+                        t.price_at_320 = Decimal(str(price))
+                        updated = True
+
+                if updated:
+                    db.commit()
+                    logger.info(f"User {self.user_id}: Recorded 3:20 PM prices for today's trades")
+        except Exception as e:
+            logger.warning(f"Failed to record 3:20 PM prices: {e}")
+
     # ── Main Tick Processor ──────────────────────────────────────────────────
 
     async def on_nifty_tick(self, nifty_ltp: Decimal):
@@ -360,6 +389,13 @@ class StrategyEngine:
                     self.squareoff_triggered = True
                     await self._force_squareoff()
                 return
+
+            # Check and record price at 3:20 PM IST (15:20) for all today's traded instruments
+            from app.core.time_rules import now_ist
+            cur_time = now_ist().time()
+            if cur_time.hour == 15 and cur_time.minute >= 20 and not getattr(self, "_recorded_320_price", False):
+                self._recorded_320_price = True
+                asyncio.create_task(self._record_320_prices())
 
             # Process both sides independently
             await asyncio.gather(

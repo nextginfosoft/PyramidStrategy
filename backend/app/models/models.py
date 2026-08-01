@@ -64,6 +64,7 @@ class Trade(Base):
     post_exit_high_time = Column(DateTime(timezone=True))
     post_exit_low = Column(Numeric(10, 2))
     post_exit_low_time = Column(DateTime(timezone=True))
+    price_at_320 = Column(Numeric(10, 2))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
