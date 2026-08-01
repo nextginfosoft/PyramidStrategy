@@ -10,7 +10,7 @@ export interface MotivationalQuote {
   side: string
   level: string
   duration: number
-  extra: Record<string, unknown>
+  extra: Record<string, any>
   createdAt: number
 }
 
@@ -26,7 +26,7 @@ interface GamificationStore {
     side: string
     level: string
     duration: number
-    extra: Record<string, unknown>
+    extra: Record<string, any>
   }) => void
   dismissQuote: () => void
 }
