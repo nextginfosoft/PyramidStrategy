@@ -2,9 +2,9 @@ name: CI/CD — Staging Pipeline
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, gamification]
   pull_request:
-    branches: [main]
+    branches: [dev, main]
 
 jobs:
   test-and-validate:
