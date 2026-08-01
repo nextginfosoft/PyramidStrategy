@@ -133,6 +133,31 @@ class DestinyStrategyEngine:
             except Exception as e:
                 logger.warning(f"[DestinyEngine] Error fetching live NIFTY previous close: {e}")
 
+        ce_status = {
+            "state": "L1_ENTERED" if self.active_ce_trade else ("BLOCKED" if self.s_level_completed else "IDLE"),
+            "lots": 1 if self.active_ce_trade else 0,
+            "locked_strike": self.active_ce_trade.get("strike") if self.active_ce_trade else None,
+            "locked_instrument": self.active_ce_trade.get("symbol") if self.active_ce_trade else None,
+            "entry_avg_price": self.active_ce_trade.get("entry_price") if self.active_ce_trade else None,
+            "current_ltp": float(self._option_ltp.get(self.active_ce_trade.get("symbol"), 0.0)) if self.active_ce_trade else None,
+            "unrealized_pnl": None,
+            "realized_pnl": 0.0,
+            "blocked_levels": ["L1"] if self.s_level_completed and not self.active_ce_trade else [],
+            "trade": self.active_ce_trade,
+        }
+        pe_status = {
+            "state": "L1_ENTERED" if self.active_pe_trade else ("BLOCKED" if self.r_level_completed else "IDLE"),
+            "lots": 1 if self.active_pe_trade else 0,
+            "locked_strike": self.active_pe_trade.get("strike") if self.active_pe_trade else None,
+            "locked_instrument": self.active_pe_trade.get("symbol") if self.active_pe_trade else None,
+            "entry_avg_price": self.active_pe_trade.get("entry_price") if self.active_pe_trade else None,
+            "current_ltp": float(self._option_ltp.get(self.active_pe_trade.get("symbol"), 0.0)) if self.active_pe_trade else None,
+            "unrealized_pnl": None,
+            "realized_pnl": 0.0,
+            "blocked_levels": ["L1"] if self.r_level_completed and not self.active_pe_trade else [],
+            "trade": self.active_pe_trade,
+        }
+
         status = {
             "type": "strategy_status",
             "user_id": self.user_id,
@@ -143,8 +168,8 @@ class DestinyStrategyEngine:
                 "paper_trade": self.paper_trade,
                 "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str),
                 "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
-                "ce": {"active": bool(self.active_ce_trade), "trade": self.active_ce_trade},
-                "pe": {"active": bool(self.active_pe_trade), "trade": self.active_pe_trade},
+                "ce": ce_status,
+                "pe": pe_status,
                 "health": ks.get_status(),
                 "strategy_type": "DESTINY",
             },
@@ -204,6 +229,31 @@ class DestinyStrategyEngine:
             except Exception:
                 pass
 
+        ce_status = {
+            "state": "L1_ENTERED" if self.active_ce_trade else ("BLOCKED" if self.s_level_completed else "IDLE"),
+            "lots": 1 if self.active_ce_trade else 0,
+            "locked_strike": self.active_ce_trade.get("strike") if self.active_ce_trade else None,
+            "locked_instrument": self.active_ce_trade.get("symbol") if self.active_ce_trade else None,
+            "entry_avg_price": self.active_ce_trade.get("entry_price") if self.active_ce_trade else None,
+            "current_ltp": float(self._option_ltp.get(self.active_ce_trade.get("symbol"), 0.0)) if self.active_ce_trade else None,
+            "unrealized_pnl": None,
+            "realized_pnl": 0.0,
+            "blocked_levels": ["L1"] if self.s_level_completed and not self.active_ce_trade else [],
+            "trade": self.active_ce_trade,
+        }
+        pe_status = {
+            "state": "L1_ENTERED" if self.active_pe_trade else ("BLOCKED" if self.r_level_completed else "IDLE"),
+            "lots": 1 if self.active_pe_trade else 0,
+            "locked_strike": self.active_pe_trade.get("strike") if self.active_pe_trade else None,
+            "locked_instrument": self.active_pe_trade.get("symbol") if self.active_pe_trade else None,
+            "entry_avg_price": self.active_pe_trade.get("entry_price") if self.active_pe_trade else None,
+            "current_ltp": float(self._option_ltp.get(self.active_pe_trade.get("symbol"), 0.0)) if self.active_pe_trade else None,
+            "unrealized_pnl": None,
+            "realized_pnl": 0.0,
+            "blocked_levels": ["L1"] if self.r_level_completed and not self.active_pe_trade else [],
+            "trade": self.active_pe_trade,
+        }
+
         return {
             "is_running": self.is_running,
             "paper_trade": self.paper_trade,
@@ -211,8 +261,8 @@ class DestinyStrategyEngine:
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
             "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str),
             "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
-            "ce": {"active": bool(self.active_ce_trade), "trade": self.active_ce_trade},
-            "pe": {"active": bool(self.active_pe_trade), "trade": self.active_pe_trade},
+            "ce": ce_status,
+            "pe": pe_status,
             "health": ks.get_status(),
             "strategy_type": "DESTINY",
         }
