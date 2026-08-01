@@ -85,6 +85,7 @@ export type WSMessage =
   | { type: 'trade_event'; data: Record<string, unknown> }
   | { type: 'ai_suggestion'; data: { suggestion: string; event: string; side: string } }
   | { type: 'error'; data: { message: string } }
+  | { type: 'gamification_event'; data: { event_type: string; quote: string; author: string; emoji: string; label: string; side: string; level: string; duration: number; extra: Record<string, unknown> } }
   | { type: 'pong' }
 
 export interface DailyPnL {

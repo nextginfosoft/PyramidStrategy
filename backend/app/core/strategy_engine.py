@@ -125,6 +125,13 @@ class StrategyEngine:
         except Exception as e:
             logger.warning(f"Failed to send engine started alert: {e}")
 
+        # Gamification: motivational quote on engine start
+        try:
+            from app.gamification.hooks import fire_engine_start_quote
+            asyncio.create_task(fire_engine_start_quote(self.user_id, paper_trade=self.mock_mode))
+        except Exception as e:
+            logger.warning(f"Gamification engine start hook failed (non-critical): {e}")
+
     def load_post_exit_trades(self):
         """Load today's TARGET trades to continue post-exit high/low tracking and restore blocked levels after restarts."""
         self.post_exit_trades = {}
@@ -192,6 +199,13 @@ class StrategyEngine:
             ns.notify_engine_stopped()
         except Exception as e:
             logger.warning(f"Failed to send engine stopped alert: {e}")
+
+        # Gamification: motivational quote on engine stop
+        try:
+            from app.gamification.hooks import fire_engine_stop_quote
+            asyncio.create_task(fire_engine_stop_quote(self.user_id))
+        except Exception as e:
+            logger.warning(f"Gamification engine stop hook failed (non-critical): {e}")
 
     def update_option_ltp(self, symbol: str, ltp: Decimal):
         """Called by market data feed when option price updates."""
@@ -509,6 +523,21 @@ class StrategyEngine:
         except Exception as e:
             logger.warning(f"Failed to send trade entry alert: {e}")
 
+        # Gamification: motivational quote on trade entry
+        try:
+            from app.gamification.hooks import fire_entry_quote
+            sl_price = None
+            if level == "L3" and sm.level3_entry_price is not None:
+                sl_price = float(sm.level3_entry_price) - float(self.config.get("sl_points", 10)) if self.config else None
+            asyncio.create_task(fire_entry_quote(
+                self.user_id, side, level,
+                instrument=sm.locked_instrument or "",
+                fill_price=order.get("fill_price"),
+                sl_price=sl_price,
+            ))
+        except Exception as e:
+            logger.warning(f"Gamification entry hook failed (non-critical): {e}")
+
         # Fire AI analysis AFTER order — non-blocking
         asyncio.create_task(self._notify_ai("ENTRY", side, level, nifty_ltp))
 
@@ -609,6 +638,24 @@ class StrategyEngine:
         except Exception as e:
             logger.warning(f"Failed to send trade exit alert: {e}")
 
+        # Gamification: motivational quote on exit
+        try:
+            from app.gamification.hooks import fire_target_quote, fire_sl_quote
+            if reason == "TARGET":
+                asyncio.create_task(fire_target_quote(
+                    self.user_id, sm.side,
+                    instrument=instrument_val or "",
+                    pnl_rupees=pnl_rupees_val,
+                ))
+            elif reason == "SL":
+                asyncio.create_task(fire_sl_quote(
+                    self.user_id, sm.side,
+                    instrument=instrument_val or "",
+                    pnl_rupees=pnl_rupees_val,
+                ))
+        except Exception as e:
+            logger.warning(f"Gamification exit hook failed (non-critical): {e}")
+
         asyncio.create_task(self._notify_ai("EXIT", sm.side, reason, nifty_ltp))
 
         return exit_result
@@ -660,6 +707,14 @@ class StrategyEngine:
             ns.notify_squareoff(ce_pnl, pe_pnl, sq_time_str)
         except Exception as e:
             logger.warning(f"Failed to send squareoff alert: {e}")
+
+        # Gamification: motivational quote on squareoff
+        try:
+            from app.gamification.hooks import fire_squareoff_quote
+            total_pnl = ce_pnl + pe_pnl
+            asyncio.create_task(fire_squareoff_quote(self.user_id, total_pnl=total_pnl))
+        except Exception as e:
+            logger.warning(f"Gamification squareoff hook failed (non-critical): {e}")
 
         # Send EOD report immediately upon squareoff completion
         try:

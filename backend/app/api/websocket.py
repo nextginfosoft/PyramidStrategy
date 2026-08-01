@@ -83,6 +83,13 @@ async def websocket_endpoint(websocket: WebSocket):
     user_engine = engine_manager.get_engine(user_id)
     user_engine.broadcast_fn = manager.broadcast
 
+    # Wire gamification listener to use the same broadcast function
+    try:
+        from app.gamification.event_listener import get_gamification_listener
+        get_gamification_listener().set_broadcast_fn(manager.broadcast)
+    except Exception:
+        pass  # Gamification is non-critical
+
     # Send current status immediately on connect
     try:
         status = user_engine.get_full_status()
