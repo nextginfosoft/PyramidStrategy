@@ -81,13 +81,22 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
     db.refresh(cfg)
 
     # Force re-instantiate / update user engine instance in EngineManager based on strategy_type
+    was_running = False
+    last_nifty = None
     if user.id in engine_manager._engines:
         old_engine = engine_manager._engines[user.id]
+        was_running = getattr(old_engine, "is_running", False)
+        last_nifty = getattr(old_engine, "last_nifty_price", None)
         if old_engine.is_running:
             old_engine.stop()
         del engine_manager._engines[user.id]
 
     user_engine = engine_manager.get_engine(user.id)
+    if was_running:
+        user_engine.is_running = True
+    if last_nifty is not None:
+        user_engine.last_nifty_price = last_nifty
+
     if hasattr(user_engine, 'load_config'):
         user_engine.load_config({
             "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
@@ -101,6 +110,10 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         })
     elif hasattr(user_engine, '_load_config'):
         user_engine._load_config()
+
+    # Ensure engine broadcast_fn is attached
+    from app.api.websocket import manager
+    user_engine.broadcast_fn = manager.broadcast
 
     # Update active KiteService ticker callbacks to new engine
     try:

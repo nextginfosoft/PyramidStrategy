@@ -251,13 +251,21 @@ def sync_levels_globally(
         db.flush()
 
         # Force re-instantiate / update user engine instance in EngineManager based on strategy_type
+        was_running = False
         if user.id in engine_manager._engines:
             old_engine = engine_manager._engines[user.id]
+            was_running = getattr(old_engine, "is_running", False)
             if old_engine.is_running:
                 old_engine.stop()
             del engine_manager._engines[user.id]
 
         user_engine = engine_manager.get_engine(user.id)
+        if was_running:
+            user_engine.is_running = True
+
+        from app.api.websocket import manager
+        user_engine.broadcast_fn = manager.broadcast
+
         if hasattr(user_engine, 'load_config'):
             user_engine.load_config({
                 "r1": float(payload.r1), "r2": float(payload.r2), "r3": float(payload.r3),

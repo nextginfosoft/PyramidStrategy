@@ -327,8 +327,11 @@ class StrategyEngine:
                                 sm.active_low = est_price
                                 sm.active_low_time = now
 
+        prev_nifty = self.last_nifty_price
+        self.last_nifty_price = nifty_ltp
+        await self._broadcast_status(nifty_ltp)
+
         if not self.is_running or not self.config:
-            self.last_nifty_price = nifty_ltp
             return
 
         if self._is_processing_tick:
@@ -339,13 +342,10 @@ class StrategyEngine:
         try:
             # Check squareoff first (highest priority)
             if should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
-                self.last_nifty_price = nifty_ltp
                 if not self.squareoff_triggered:
                     self.squareoff_triggered = True
                     await self._force_squareoff()
                 return
-
-            prev_nifty = self.last_nifty_price
 
             # Process both sides independently
             await asyncio.gather(
@@ -353,8 +353,6 @@ class StrategyEngine:
                 self._process_side("CE", nifty_ltp, prev_nifty),
                 return_exceptions=True,
             )
-
-            self.last_nifty_price = nifty_ltp
 
             # Broadcast updated status to frontend
             await self._broadcast_status(nifty_ltp)
@@ -829,4 +827,5 @@ class StrategyEngine:
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
             "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
             "health": ks.get_status(),
+            "strategy_type": "PYRAMID",
         }

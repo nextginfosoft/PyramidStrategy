@@ -395,6 +395,18 @@ app.include_router(backtest.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
+# With /api/v1 prefix
+app.include_router(session.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(config.router, prefix="/api/v1")
+app.include_router(trades.router, prefix="/api/v1")
+app.include_router(strategy.router, prefix="/api/v1")
+app.include_router(ai.router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
+app.include_router(backtest.router, prefix="/api/v1")
+app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
+
 # ── Callback Route Aliases ───────────────────────────────────────────────────
 # Redirect/callback targets configured in the Zerodha Developer Console vary.
 # These aliases capture the request regardless of path (/callback, /api/callback, /auth/callback, etc.)
