@@ -844,6 +844,8 @@ class StrategyEngine:
                 "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
                 "is_running": self.is_running,
                 "paper_trade": self.mock_mode,
+                "started_at": self.started_at,
+                "stopped_at": self.stopped_at,
                 "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
                 "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
                 "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
