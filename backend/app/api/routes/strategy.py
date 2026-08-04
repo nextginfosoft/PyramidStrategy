@@ -102,8 +102,11 @@ async def start_strategy(
 @router.post("/stop")
 async def stop_strategy(user: User = Depends(require_auth)):
     user_engine = engine_manager.get_engine(user.id)
-    user_engine.stop()
-    user_engine.mock_feed.stop()
+    try:
+        user_engine.stop()
+        user_engine.mock_feed.stop()
+    except Exception as e:
+        logger.error(f"Error stopping strategy engine for user {user.id}: {e}")
 
     # Broadcast status immediately so frontend knows it is stopped
     nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
@@ -114,7 +117,13 @@ async def stop_strategy(user: User = Depends(require_auth)):
 @router.post("/emergency-exit")
 async def emergency_exit(user: User = Depends(require_auth)):
     user_engine = engine_manager.get_engine(user.id)
-    res = await user_engine.emergency_exit()
+    try:
+        res = await user_engine.emergency_exit()
+    except Exception as e:
+        logger.error(f"Error during emergency exit for user {user.id}: {e}")
+        user_engine.stop()
+        user_engine.mock_feed.stop()
+        res = {"status": "emergency_exited_with_warnings", "detail": str(e)}
 
     # Broadcast status immediately so frontend knows it is stopped
     nifty_price = user_engine.last_nifty_price or Decimal("23200.00")

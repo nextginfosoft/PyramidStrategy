@@ -314,17 +314,62 @@ class OrderManager:
         raise OrderError(f"Order failed after {max_retries} attempts: {context}") from last_error
 
     def _place_kite_order(self, instrument: str, transaction_type: str, qty: int) -> tuple:
-        """Place live order via Kite Connect. Returns (order_id, fill_price, status)."""
-        order_id = self.kite.kite.place_order(
-            variety="regular",
-            exchange="NFO",
-            tradingsymbol=instrument,
-            transaction_type=transaction_type,
-            quantity=qty,
-            order_type="MARKET",
-            product="MIS",  # Intraday — crucial
-        )
-        logger.info(f"[LIVE] Kite order placed: {order_id} | {transaction_type} {qty} {instrument}")
+        """
+        Place live order via Kite Connect. Returns (order_id, fill_price, status).
+        Uses marketable LIMIT orders to comply with Zerodha API requirements for option orders.
+        """
+        ltp_val = None
+        if hasattr(self.kite, "get_option_ltp"):
+            try:
+                res = self.kite.get_option_ltp(instrument)
+                if isinstance(res, (int, float, str, Decimal)):
+                    ltp_val = Decimal(str(res))
+            except Exception:
+                ltp_val = None
+
+        if ltp_val is None or ltp_val <= Decimal("0"):
+            # Fallback to fetching directly if cache is empty
+            try:
+                if hasattr(self.kite, "kite") and hasattr(self.kite.kite, "quote"):
+                    quote = self.kite.kite.quote([f"NFO:{instrument}"])
+                    if isinstance(quote, dict):
+                        last_p = quote.get(f"NFO:{instrument}", {}).get("last_price", 0)
+                        if isinstance(last_p, (int, float, str, Decimal)):
+                            ltp_val = Decimal(str(last_p))
+            except Exception as e:
+                logger.warning(f"Could not fetch quote for {instrument}: {e}")
+            
+            if ltp_val is None or not isinstance(ltp_val, Decimal):
+                ltp_val = Decimal("0")
+
+        # Buffer: 2% (min 2.0 pts) for BUY, 3% (min 3.0 pts) for SELL
+        if transaction_type == "BUY":
+            buffer_pts = max(Decimal("2.00"), ltp_val * Decimal("0.02"))
+            target_price = ltp_val + buffer_pts if ltp_val > 0 else Decimal("0")
+        else:
+            buffer_pts = max(Decimal("3.00"), ltp_val * Decimal("0.03"))
+            target_price = max(Decimal("0.05"), ltp_val - buffer_pts) if ltp_val > 0 else Decimal("0.05")
+
+        # Round price to nearest 0.05 tick size
+        limit_price = float((target_price / Decimal("0.05")).quantize(Decimal("1")) * Decimal("0.05"))
+
+        order_params = {
+            "variety": "regular",
+            "exchange": "NFO",
+            "tradingsymbol": instrument,
+            "transaction_type": transaction_type,
+            "quantity": qty,
+            "product": "MIS",
+        }
+
+        if limit_price > 0:
+            order_params["order_type"] = "LIMIT"
+            order_params["price"] = limit_price
+        else:
+            order_params["order_type"] = "MARKET"
+
+        order_id = self.kite.kite.place_order(**order_params)
+        logger.info(f"[LIVE] Kite order placed: {order_id} | {transaction_type} {qty} {instrument} | type={order_params['order_type']} price={order_params.get('price', 'MARKET')}")
 
         for i in range(_FILL_POLL_SECS):
             time.sleep(1)
