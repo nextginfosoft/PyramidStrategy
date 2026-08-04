@@ -190,6 +190,52 @@ export function StatusBar() {
       });
     }
 
+    // 6. Wealth Ladder & Life Goals Ticker Items
+    parts.push({
+      text: `👑 WEALTH TARGET: Level 1 (₹25 Lakh Focus)`,
+      colorClass: 'text-amber-400 font-extrabold'
+    });
+    parts.push({
+      text: `🏢 GOAL #1: Own a penthouse`,
+      colorClass: 'text-rose-400 font-bold'
+    });
+    parts.push({
+      text: `💸 GOAL #1: Pay ₹1 Crore in income tax within a year`,
+      colorClass: 'text-rose-400 font-bold'
+    });
+    parts.push({
+      text: `🏎️ GOAL #2: Own a BMW`,
+      colorClass: 'text-amber-300 font-bold'
+    });
+    parts.push({
+      text: `✈️ GOAL #3: Visit Dubai`,
+      colorClass: 'text-amber-300 font-bold'
+    });
+    parts.push({
+      text: `🗺️ GOAL #3: Travel across India`,
+      colorClass: 'text-amber-300 font-bold'
+    });
+    parts.push({
+      text: `🏖️ GOAL #5: Visit Goa once every year`,
+      colorClass: 'text-cyan-300 font-bold'
+    });
+    parts.push({
+      text: `🌍 GOAL #6: Take at least one international trip every year`,
+      colorClass: 'text-cyan-300 font-bold'
+    });
+    parts.push({
+      text: `🗽 GOAL #7: Visit the Statue of Liberty`,
+      colorClass: 'text-cyan-300 font-bold'
+    });
+    parts.push({
+      text: `🏡 GOAL #8: Own a farmhouse`,
+      colorClass: 'text-emerald-400 font-bold'
+    });
+    parts.push({
+      text: `❤️ GOAL #9: Start an NGO`,
+      colorClass: 'text-emerald-400 font-bold'
+    });
+
     return parts;
   }, [status, isCriticalError, paperTrade, lastNiftyTickSec, apiError, tickerError, wsConnected, health]);
 
