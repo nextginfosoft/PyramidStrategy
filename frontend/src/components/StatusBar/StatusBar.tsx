@@ -260,7 +260,7 @@ export function StatusBar() {
           <div className="w-full whitespace-nowrap overflow-hidden">
             <div 
               className="animate-marquee hover:pause cursor-help select-text inline-block animate-marquee-hover font-semibold"
-              style={{ animationDuration: '36s' }}
+              style={{ animationDuration: '85s' }}
             >
               {tickerMessageParts.map((part, idx) => (
                 <span key={idx} className={clsx("inline-block", part.colorClass)}>
