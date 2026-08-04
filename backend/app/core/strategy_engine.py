@@ -308,7 +308,7 @@ class StrategyEngine:
         finally:
             self._processing_option_symbols.discard(symbol)
 
-    async def _record_320_prices(self):
+    async def _record_320_prices(self, nifty_ltp: Optional[Decimal] = None):
         """Fetch and update price_at_320 for all trades executed today."""
         try:
             from app.core.time_rules import today_ist
@@ -327,6 +327,11 @@ class StrategyEngine:
                 updated = False
                 for t in trades:
                     price = self.get_option_ltp(t.instrument)
+                    if price is None and nifty_ltp is not None:
+                        try:
+                            price = estimate_option_price(t.instrument, nifty_ltp)
+                        except Exception:
+                            price = None
                     if price is not None:
                         t.price_at_320 = Decimal(str(price))
                         updated = True
@@ -383,19 +388,19 @@ class StrategyEngine:
 
         self._is_processing_tick = True
         try:
-            # Check squareoff first (highest priority)
-            if should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
-                if not self.squareoff_triggered:
-                    self.squareoff_triggered = True
-                    await self._force_squareoff()
-                return
-
             # Check and record price at 3:20 PM IST (15:20) for all today's traded instruments
             from app.core.time_rules import now_ist
             cur_time = now_ist().time()
             if cur_time.hour == 15 and cur_time.minute >= 20 and not getattr(self, "_recorded_320_price", False):
                 self._recorded_320_price = True
-                asyncio.create_task(self._record_320_prices())
+                asyncio.create_task(self._record_320_prices(nifty_ltp))
+
+            # Check squareoff after recording (highest priority for execution)
+            if should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
+                if not self.squareoff_triggered:
+                    self.squareoff_triggered = True
+                    await self._force_squareoff()
+                return
 
             # Process both sides independently
             await asyncio.gather(
