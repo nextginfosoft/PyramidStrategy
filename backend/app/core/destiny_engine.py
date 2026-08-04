@@ -57,6 +57,9 @@ class DestinyStrategyEngine:
         self.r_level_completed: bool = False
         self.s_level_completed: bool = False
 
+        self.started_at: Optional[str] = None
+        self.stopped_at: Optional[str] = None
+
         self.order_manager = OrderManager(user_id=self.user_id)
         self.broadcast_fn: Optional[Callable] = None
 
@@ -64,12 +67,21 @@ class DestinyStrategyEngine:
         """Start the engine and load configuration."""
         self._load_config()
         self.is_running = True
-        logger.info(f"[DestinyEngine] User {self.user_id}: Started. R={self.r_level}, S={self.s_level}")
+        from datetime import datetime
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        self.started_at = datetime.now(ist).strftime("%I:%M:%S %p")
+        self.stopped_at = None
+        logger.info(f"[DestinyEngine] User {self.user_id}: Started at {self.started_at}. R={self.r_level}, S={self.s_level}")
 
     def stop(self):
         """Stop the engine."""
         self.is_running = False
-        logger.info(f"[DestinyEngine] User {self.user_id}: Stopped.")
+        from datetime import datetime
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        self.stopped_at = datetime.now(ist).strftime("%I:%M:%S %p")
+        logger.info(f"[DestinyEngine] User {self.user_id}: Stopped at {self.stopped_at}.")
 
     def load_config(self, config_dict: Optional[Dict[str, Any]] = None):
         """Dynamic runtime configuration reload."""
@@ -251,6 +263,8 @@ class DestinyStrategyEngine:
         return {
             "is_running": self.is_running,
             "paper_trade": self.paper_trade,
+            "started_at": self.started_at,
+            "stopped_at": self.stopped_at,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
             "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str),
