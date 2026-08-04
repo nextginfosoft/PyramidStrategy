@@ -23,6 +23,7 @@ import { UserGuide } from '../UserGuide/UserGuide'
 import { StatusBar } from '../StatusBar/StatusBar'
 import { ChartModal } from '../ChartModal/ChartModal'
 import { LevelHistoryModal } from '../LevelPanel/LevelHistoryModal'
+import { GoalsModal } from '../GoalsModal/GoalsModal'
 import { AreaChart as SparkAreaChart, Area as SparkArea, ResponsiveContainer as SparkContainer } from 'recharts'
 
 const formatTimeTo12Hour = (timeStr: string): string => {
@@ -70,6 +71,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [showChart, setShowChart] = useState(false)
   const [showLevelHistory, setShowLevelHistory] = useState(false)
+  const [showGoals, setShowGoals] = useState(false)
   const [simPrice, setSimPrice] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true'
@@ -623,6 +625,11 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           <div className="text-[9px] text-navy-400 font-extrabold uppercase tracking-widest px-1 mb-2">Navigation</div>
           
+          <button onClick={() => setShowGoals(true)}
+            className="w-full flex items-center px-3 py-2 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 text-amber-400 font-bold rounded-lg text-xs transition duration-150 border border-amber-500/20 mb-2">
+            <span aria-hidden="true" className="mr-2 text-sm">🏆</span> Wealth & Life Goals
+          </button>
+
           <button onClick={() => setShowLiveLogs(true)}
             className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
             <span aria-hidden="true" className="mr-2 text-sm">📄</span> Trade Log
@@ -1395,6 +1402,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
       {showAnalytics && <Analytics onClose={() => setShowAnalytics(false)} />}
       {showChart && <ChartModal onClose={() => setShowChart(false)} />}
       {showLevelHistory && <LevelHistoryModal isOpen={showLevelHistory} onClose={() => setShowLevelHistory(false)} />}
+      <GoalsModal isOpen={showGoals} onClose={() => setShowGoals(false)} />
 
       {confirmAction && (
         <ConfirmModal
