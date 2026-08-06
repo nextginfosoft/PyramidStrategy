@@ -905,6 +905,16 @@ class StrategyEngine:
         from app.services.kite_service import get_user_kite_service
         ks = get_user_kite_service(self.user_id)
 
+        # Fallback to Kite REST API for NIFTY spot LTP if no live ticker ticks are available yet
+        if nifty_ltp is None and ks.is_authenticated():
+            try:
+                spot_price = ks.get_nifty_spot_ltp()
+                if spot_price:
+                    nifty_ltp = spot_price
+                    self.last_nifty_price = spot_price
+            except Exception as e:
+                logger.warning(f"Failed to fetch NIFTY spot LTP via REST in get_full_status: {e}")
+
         if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
             try:
                 live_prev_close = ks.get_nifty_prev_close()
