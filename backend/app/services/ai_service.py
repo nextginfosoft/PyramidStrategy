@@ -25,8 +25,9 @@ BASE_PROMPT = (
 PROVIDER_MODELS = {
     "openai": "gpt-4o",
     "anthropic": "claude-3-5-sonnet-20241022",
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-1.5-flash",
 }
+
 
 
 class AIService:
@@ -266,6 +267,53 @@ class AIService:
                 context += f" | Exit reason: {extra['reason']}"
         return f"{BASE_PROMPT}\n\n{context}\n\nProvide a 2-3 sentence observation."
 
+
+        ctx = extra_context or {}
+        lots = ctx.get("lots", 1)
+        pnl = ctx.get("pnl", 0.0)
+        avg_price = ctx.get("avg_price", 0.0)
+        reason = ctx.get("reason", "")
+        today = today_ist().strftime("%Y-%m-%d")
+
+        prompt = (
+            f"{BASE_PROMPT}\n\n"
+            f"Date: {today}\n"
+            f"Event: {event}\n"
+            f"Side: {side}\n"
+            f"Level Triggered: {level}\n"
+            f"NIFTY Spot Price: {nifty_ltp:.2f}\n"
+            f"Position Size: {lots} lot(s)\n"
+        )
+        if avg_price:
+            prompt += f"Avg Entry Price: {avg_price:.2f}\n"
+        if pnl:
+            prompt += f"Trade P&L so far: {pnl:+.2f}\n"
+        if reason:
+            prompt += f"Trigger Reason: {reason}\n"
+
+        prompt += "\nProvide a brief 2-3 sentence market observation and risk note for this trade event."
+        return prompt
+
+    def _save_suggestion(self, event: str, side: str, level: str, nifty_ltp: float, suggestion: str):
+        try:
+            from app.db.database import SessionLocal
+            from app.models.models import AISuggestion
+            with SessionLocal() as db:
+                rec = AISuggestion(
+                    user_id=self.user_id,
+                    trade_date=today_ist(),
+                    event=event,
+                    side=side,
+                    level=level,
+                    nifty_ltp=nifty_ltp,
+                    provider=self._provider,
+                    suggestion=suggestion,
+                )
+                db.add(rec)
+                db.commit()
+        except Exception as e:
+            logger.warning(f"User {self.user_id}: Failed to save AI suggestion: {e}")
+
     async def _call_openai(self, prompt: str) -> str:
         import httpx
         async with httpx.AsyncClient(timeout=12) as client:
@@ -274,9 +322,11 @@ class AIService:
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json={
                     "model": PROVIDER_MODELS["openai"],
-                    "messages": [{"role": "user", "content": prompt}],
+                    "messages": [
+                        {"role": "system", "content": BASE_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
                     "max_tokens": 150,
-                    "temperature": 0.3,
                 },
             )
             resp.raise_for_status()
@@ -304,12 +354,11 @@ class AIService:
     async def _call_gemini(self, prompt: str) -> str:
         import httpx
         models_to_try = [
-            PROVIDER_MODELS["gemini"],
-            "gemini-2.5-flash-lite",
-            "gemini-3.1-flash-lite"
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
         ]
         
-        # De-duplicate while preserving order
         seen = set()
         unique_models = []
         for m in models_to_try:
@@ -322,14 +371,17 @@ class AIService:
             for model in unique_models:
                 try:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self._api_key}"
-                    resp = await client.post(
-                        url,
-                        json={"contents": [{"parts": [{"text": prompt}]}]},
-                    )
+                    payload = {
+                        "contents": [{"parts": [{"text": prompt}]}]
+                    }
+                    resp = await client.post(url, json=payload)
                     resp.raise_for_status()
-                    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    candidate = resp.json()["candidates"][0]
+                    parts = candidate["content"]["parts"]
+                    text_parts = [p["text"] for p in parts if "text" in p]
+                    return "\n".join(text_parts).strip()
                 except httpx.HTTPStatusError as e:
-                    if e.response.status_code in (429, 500, 502, 503, 504):
+                    if e.response.status_code in (400, 429, 500, 502, 503, 504):
                         logger.warning(f"User {self.user_id}: Gemini model {model} returned status {e.response.status_code}. Trying fallback...")
                         last_exc = e
                         continue

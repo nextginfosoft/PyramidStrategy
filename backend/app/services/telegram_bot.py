@@ -157,9 +157,26 @@ class TelegramBotService:
             return
 
         if text:
-            await self._process_command(chat_id, text)
+            if text.startswith("/"):
+                await self._process_command(chat_id, text)
+            else:
+                # Non-command text message: evaluate as market news item
+                from app.services.ai_news_analyst import ai_news_analyst
+                headline = text.split("\n")[0]
+                summary = "\n".join(text.split("\n")[1:]) if "\n" in text else ""
+                chat_username = message.get("chat", {}).get("username") if message else None
+                asyncio.create_task(
+                    ai_news_analyst.analyze_and_process(
+                        headline=headline,
+                        summary=summary,
+                        chat_id=chat_id,
+                        message_id=message["message_id"] if message else None,
+                        chat_username=chat_username
+                    )
+                )
         elif callback_data:
             await self._process_callback(chat_id, callback_query["id"], callback_data, user_id)
+
 
     async def _process_command(self, chat_id: str, text: str):
         """Interpret text commands."""
