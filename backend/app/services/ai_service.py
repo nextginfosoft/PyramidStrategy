@@ -268,32 +268,6 @@ class AIService:
         return f"{BASE_PROMPT}\n\n{context}\n\nProvide a 2-3 sentence observation."
 
 
-        ctx = extra_context or {}
-        lots = ctx.get("lots", 1)
-        pnl = ctx.get("pnl", 0.0)
-        avg_price = ctx.get("avg_price", 0.0)
-        reason = ctx.get("reason", "")
-        today = today_ist().strftime("%Y-%m-%d")
-
-        prompt = (
-            f"{BASE_PROMPT}\n\n"
-            f"Date: {today}\n"
-            f"Event: {event}\n"
-            f"Side: {side}\n"
-            f"Level Triggered: {level}\n"
-            f"NIFTY Spot Price: {nifty_ltp:.2f}\n"
-            f"Position Size: {lots} lot(s)\n"
-        )
-        if avg_price:
-            prompt += f"Avg Entry Price: {avg_price:.2f}\n"
-        if pnl:
-            prompt += f"Trade P&L so far: {pnl:+.2f}\n"
-        if reason:
-            prompt += f"Trigger Reason: {reason}\n"
-
-        prompt += "\nProvide a brief 2-3 sentence market observation and risk note for this trade event."
-        return prompt
-
     def _save_suggestion(self, event: str, side: str, level: str, nifty_ltp: float, suggestion: str):
         try:
             from app.db.database import SessionLocal

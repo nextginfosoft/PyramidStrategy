@@ -204,4 +204,3 @@ class AINewsAnalyst:
 
 
 ai_news_analyst = AINewsAnalyst()
-
