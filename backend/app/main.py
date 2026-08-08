@@ -270,7 +270,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Telegram Bot service startup failed: {e}")
 
+    # Schedule Real-time Gemini Web News Monitor (Every 5 minutes during market hours)
+    try:
+        from app.services.ai_news_analyst import ai_news_analyst
+        scheduler.add_job(
+            ai_news_analyst.fetch_and_evaluate_realtime_news,
+            "cron",
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="*/5",
+            id="realtime_news_monitor",
+            replace_existing=True,
+        )
+        logger.info("Real-time Gemini News Monitor scheduled (Mon-Fri, 9 AM - 3 PM, every 5m)")
+    except Exception as e:
+        logger.warning(f"Real-time news monitor scheduling failed: {e}")
+
     yield
+
 
     # Shutdown
     try:
