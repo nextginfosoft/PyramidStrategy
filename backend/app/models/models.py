@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Numeric, Boolean, Date, DateTime, Text, JSON, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Numeric, Boolean, Date, DateTime, Text, JSON, ForeignKey, UniqueConstraint, Float
 from sqlalchemy.sql import func
 from app.db.database import Base
+
 
 
 class User(Base):
@@ -130,6 +131,33 @@ class AuditLog(Base):
     level = Column(String(2))
     nifty_price = Column(Numeric(10, 2))
     details = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class MarketNewsAnalysis(Base):
+    __tablename__ = "market_news_analysis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    news_hash = Column(String(64), unique=True, index=True)
+    headline = Column(Text, nullable=False)
+    summary = Column(Text, nullable=True)
+    telegram_message_link = Column(String(500), nullable=True)
+    
+    relevant = Column(Boolean, nullable=False, default=False)
+    category = Column(String(100), nullable=True)
+    impact_magnitude = Column(String(30), nullable=True)
+    direction = Column(String(30), nullable=True)
+    confidence = Column(Float, nullable=True)
+    level_target = Column(String(50), nullable=True)
+    time_horizon = Column(String(50), nullable=True)
+    affected_sectors = Column(JSON, nullable=True)
+    affected_stocks = Column(JSON, nullable=True)
+    mechanism = Column(Text, nullable=True)
+    invalidation_trigger = Column(Text, nullable=True)
+    already_priced_in = Column(Boolean, nullable=True)
+    recommended_action = Column(String(50), nullable=True)
+    trader_summary = Column(Text, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
