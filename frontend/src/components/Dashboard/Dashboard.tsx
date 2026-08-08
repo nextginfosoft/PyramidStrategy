@@ -21,6 +21,7 @@ import { Notification } from '../Notification/Notification'
 import type { SideStatus, StrategyStatus, StrategyConfig } from '../../types'
 import { UserGuide } from '../UserGuide/UserGuide'
 import { StatusBar } from '../StatusBar/StatusBar'
+import { DevotionalHeaderBar } from '../DevotionalHeaderBar/DevotionalHeaderBar'
 import { ChartModal } from '../ChartModal/ChartModal'
 import { LevelHistoryModal } from '../LevelPanel/LevelHistoryModal'
 import { GoalsModal } from '../GoalsModal/GoalsModal'
@@ -695,6 +696,9 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
+        {/* Dedicated Devotional Mantra Top Banner (Option B) */}
+        <DevotionalHeaderBar />
+
         {/* Top ribbon container with collapse trigger & Status Marquee */}
         <div className="flex items-center bg-navy-950 border-b border-navy-800 select-none pr-4 sticky top-0 z-20 shadow-md">
           <button
