@@ -561,12 +561,12 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
       )}>
         {/* Brand / Connection */}
         <div className="p-4 border-b border-navy-800 space-y-2">
-          <div className="flex items-center gap-1.5">
-            <span className="text-orange-500 text-base font-bold">🔺</span>
-            <span className="text-sm font-black uppercase tracking-wider bg-gradient-to-r from-orange-400 to-amber-500 bg-clip-text text-transparent whitespace-nowrap">
-              Pyramid Strategy
+          <div className="flex items-center gap-2">
+            <img src="/destiny-shield-icon.png" alt="Destiny Shield Icon" className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+            <span className="text-base font-black uppercase tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent whitespace-nowrap">
+              DESTINY
             </span>
-            <span className="text-[8px] bg-navy-950/60 border border-navy-850 text-navy-400 px-1 py-0.5 rounded font-mono font-bold select-none ml-1">
+            <span className="text-[8px] bg-navy-950/60 border border-navy-850 text-navy-400 px-1 py-0.5 rounded font-mono font-bold select-none ml-0.5">
               2026
             </span>
           </div>
@@ -716,11 +716,11 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
           
           {sidebarCollapsed && (
             <div className="flex items-center gap-1.5 pl-3 pr-3 h-11 shrink-0 select-none animate-fade-in">
-              <span className="text-orange-500 text-base font-bold">🔺</span>
-              <span className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-orange-400 to-amber-500 bg-clip-text text-transparent whitespace-nowrap">
-                Pyramid Strategy
+              <img src="/destiny-shield-icon.png" alt="Destiny Shield Icon" className="w-6 h-6 object-contain filter drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]" />
+              <span className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent whitespace-nowrap">
+                DESTINY
               </span>
-              <span className="text-[8px] bg-navy-850/60 border border-navy-800 text-navy-450 px-1 py-0.5 rounded font-mono font-bold select-none ml-1">
+              <span className="text-[8px] bg-navy-850/60 border border-navy-800 text-navy-450 px-1 py-0.5 rounded font-mono font-bold select-none ml-0.5">
                 2026
               </span>
             </div>
