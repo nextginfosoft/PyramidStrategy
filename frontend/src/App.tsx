@@ -76,7 +76,7 @@ export default function App() {
   if (authenticated === null) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="text-gray-400 text-sm">Loading PyramidStrategy...</div>
+        <div className="text-gray-400 text-sm">Loading Destiny...</div>
       </div>
     )
   }

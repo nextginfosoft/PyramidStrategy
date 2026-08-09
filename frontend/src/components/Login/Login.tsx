@@ -72,10 +72,10 @@ export function Login({ onLogin }: Props) {
         {/* Logo / Header */}
         <div className="text-center mb-8 animate-fade-in">
           <div className="inline-block p-4 bg-navy-900/80 border border-navy-700 rounded-2xl shadow-xl mb-4">
-            <span className="text-4xl filter drop-shadow-[0_0_10px_rgba(249,115,22,0.4)]">📐</span>
+            <img src="/destiny-shield-icon.png" alt="Destiny Shield Icon" className="w-16 h-16 object-contain filter drop-shadow-[0_0_18px_rgba(245,158,11,0.6)]" />
           </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight bg-gradient-to-r from-orange-400 via-amber-200 to-violet-400 bg-clip-text text-transparent">
-            PyramidStrategy
+          <h1 className="text-3xl font-extrabold text-white tracking-wider uppercase bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+            DESTINY
           </h1>
           <p className="text-sm text-navy-300 mt-2">Automated Multi-User NIFTY Options Trading</p>
         </div>
