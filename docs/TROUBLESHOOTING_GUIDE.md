@@ -102,3 +102,25 @@ Created and added `.dockerignore` files at the root, `backend/`, and `frontend/`
 * Local SQLite databases (`*.db`) and execution logs (`*.log`)
 
 Ensure these files are pulled on your VPS before doing any subsequent container builds.
+
+---
+
+## 5. Backend Crashing: `FATAL: password authentication failed for user "postgres"`
+
+### Symptom:
+The `pyramid_backend` container continuously restarts. Checking `docker compose logs backend` reveals a traceback ending with:
+`sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "db" (172.20.0.3), port 5432 failed: FATAL: password authentication failed for user "postgres"`
+
+### Root Cause:
+* **Explanation:** When Docker creates the `postgres_data` volume for the first time, PostgreSQL initializes and stores credentials from the initial `POSTGRES_PASSWORD` environment variable. If `docker-compose.yml` environment settings or password configurations are updated later, the persisted PostgreSQL data volume retains the old password hash and rejects connection attempts from `DATABASE_URL`.
+
+### Resolution:
+Reset the Docker volume so PostgreSQL initializes a fresh database with matching credentials:
+```bash
+# Stop containers and delete the existing database volume
+sudo docker compose down -v
+
+# Re-create containers with fresh matching DB initialization
+sudo docker compose up -d
+```
+
