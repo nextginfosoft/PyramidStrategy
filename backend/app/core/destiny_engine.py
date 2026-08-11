@@ -60,6 +60,10 @@ class DestinyStrategyEngine:
         self.started_at: Optional[str] = None
         self.stopped_at: Optional[str] = None
 
+        # Post-exit target tracking trades (symbol -> list of trade IDs)
+        self.post_exit_trades: Dict[str, list] = {}
+        self._processing_option_symbols: set = set()
+
         self.order_manager = OrderManager(user_id=self.user_id)
         self.broadcast_fn: Optional[Callable] = None
 
@@ -73,6 +77,68 @@ class DestinyStrategyEngine:
         self.started_at = datetime.now(ist).strftime("%I:%M:%S %p")
         self.stopped_at = None
         logger.info(f"[DestinyEngine] User {self.user_id}: Started at {self.started_at}. R={self.r_level}, S={self.s_level}")
+        
+        # Load any existing open/target trades for today to restore engine state
+        self.load_existing_trades()
+
+    def load_existing_trades(self):
+        """Restore active trade state, completed levels, and post-exit tracking after mid-day server restarts."""
+        self.post_exit_trades = {}
+        try:
+            with SessionLocal() as db:
+                from app.models.models import Trade
+                from app.core.time_rules import today_ist
+                target_date = today_ist()
+
+                all_trades = db.query(Trade).filter(
+                    Trade.user_id == self.user_id,
+                    Trade.trade_date == target_date
+                ).all()
+
+                for t in all_trades:
+                    symbol = t.instrument
+                    # Restore active open trades
+                    if t.status == "OPEN" and t.action == "BUY":
+                        trade_info = {
+                            "db_id": t.id,
+                            "symbol": symbol,
+                            "side": t.side,
+                            "level": t.level,
+                            "entry_price": Decimal(str(t.avg_price)) if t.avg_price else Decimal("100.00"),
+                            "target_price": Decimal(str(t.avg_price or 100)) + self.target_pts,
+                            "sl_price": Decimal(str(t.avg_price or 100)) - self.sl_pts,
+                            "qty": t.qty or self.lot_size,
+                            "expiry": str(t.expiry) if t.expiry else "",
+                            "entry_time": t.created_at.isoformat() if t.created_at else datetime.now().isoformat(),
+                        }
+                        if t.side == "PE":
+                            self.active_pe_trade = trade_info
+                        else:
+                            self.active_ce_trade = trade_info
+                        self._subscribe_option(symbol)
+                    
+                    # Restore completed levels for day if exited
+                    elif t.status in ("TARGET", "SL", "SQUAREOFF", "CLOSED"):
+                        if t.side == "PE":
+                            self.r_level_completed = True
+                        elif t.side == "CE":
+                            self.s_level_completed = True
+
+                    # Restore post-exit tracking for TARGET trades
+                    if t.status == "TARGET":
+                        if symbol not in self.post_exit_trades:
+                            self.post_exit_trades[symbol] = []
+                        if t.id not in self.post_exit_trades[symbol]:
+                            self.post_exit_trades[symbol].append(t.id)
+                        self._subscribe_option(symbol)
+
+            logger.info(
+                f"[DestinyEngine] User {self.user_id}: Restored existing trades | "
+                f"PE_Active={bool(self.active_pe_trade)}, PE_Completed={self.r_level_completed} | "
+                f"CE_Active={bool(self.active_ce_trade)}, CE_Completed={self.s_level_completed}"
+            )
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Error loading existing trades: {e}")
 
     def stop(self):
         """Stop the engine."""
@@ -132,6 +198,93 @@ class DestinyStrategyEngine:
     async def on_option_tick(self, symbol: str, ltp: Decimal):
         """Callback from KiteTicker for option price updates."""
         self._option_ltp[symbol] = ltp
+
+        # Track active high/low during position lifetime
+        for trade in [self.active_pe_trade, self.active_ce_trade]:
+            if trade and trade.get("symbol") == symbol:
+                import pytz
+                from datetime import datetime
+                now = datetime.now(pytz.utc)
+                if trade.get("active_high") is None or ltp > trade["active_high"]:
+                    trade["active_high"] = ltp
+                    trade["active_high_time"] = now
+                if trade.get("active_low") is None or ltp < trade["active_low"]:
+                    trade["active_low"] = ltp
+                    trade["active_low_time"] = now
+
+        await self._process_post_exit_tick(symbol, ltp)
+
+    async def _process_post_exit_tick(self, symbol: str, ltp: Decimal):
+        """Check and update post-exit high/low for completed target trades on this instrument."""
+        if not hasattr(self, "post_exit_trades") or not self.post_exit_trades:
+            return
+
+        trade_ids = self.post_exit_trades.get(symbol)
+        if not trade_ids:
+            return
+
+        if symbol in self._processing_option_symbols:
+            return
+        self._processing_option_symbols.add(symbol)
+        try:
+            import pytz
+            from datetime import datetime
+            now = datetime.now(pytz.utc)
+
+            updated_any = False
+            with SessionLocal() as db:
+                from app.models.models import Trade
+                trades = db.query(Trade).filter(Trade.id.in_(trade_ids)).all()
+                for trade in trades:
+                    updated_trade = False
+                    ltp_dec = Decimal(str(ltp))
+                    if trade.post_exit_high is None or ltp_dec > Decimal(str(trade.post_exit_high)):
+                        trade.post_exit_high = ltp_dec
+                        trade.post_exit_high_time = now
+                        updated_trade = True
+                    if trade.post_exit_low is None or ltp_dec < Decimal(str(trade.post_exit_low)):
+                        trade.post_exit_low = ltp_dec
+                        trade.post_exit_low_time = now
+                        updated_trade = True
+
+                    if updated_trade:
+                        updated_any = True
+
+                if updated_any:
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Error in _process_post_exit_tick: {e}")
+        finally:
+            self._processing_option_symbols.discard(symbol)
+
+    async def _record_320_prices(self, nifty_ltp: Optional[Decimal] = None):
+        """Fetch and update price_at_320 for all trades executed today."""
+        try:
+            from app.core.time_rules import today_ist
+            target_date = today_ist()
+            with SessionLocal() as db:
+                from app.models.models import Trade
+                trades = db.query(Trade).filter(
+                    Trade.user_id == self.user_id,
+                    Trade.trade_date == target_date,
+                    Trade.price_at_320.is_(None)
+                ).all()
+
+                if not trades:
+                    return
+
+                updated = False
+                for t in trades:
+                    price = self.get_option_ltp(t.instrument, nifty_ltp)
+                    if price is not None:
+                        t.price_at_320 = Decimal(str(price))
+                        updated = True
+
+                if updated:
+                    db.commit()
+                    logger.info(f"[DestinyEngine] User {self.user_id}: Recorded 3:20 PM prices for today's trades")
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Failed to record 3:20 PM prices: {e}")
 
     def _get_side_status(self, side: str, nifty_ltp: Optional[Decimal] = None) -> Dict[str, Any]:
         trade = self.active_ce_trade if side == "CE" else self.active_pe_trade
@@ -215,6 +368,11 @@ class DestinyStrategyEngine:
         from app.core.time_rules import now_ist
         now = now_ist()
         current_time = now.time()
+        # Check and record price at 3:20 PM IST (15:20) for all today's traded instruments
+        if current_time.hour == 15 and current_time.minute >= 20 and not getattr(self, "_recorded_320_price", False):
+            self._recorded_320_price = True
+            import asyncio
+            asyncio.create_task(self._record_320_prices(nifty_ltp))
 
         # Rule 3: 3:20 PM Square Off
         sq_h, sq_m = map(int, self.squareoff_time_str.split(":"))

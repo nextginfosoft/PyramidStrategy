@@ -25,6 +25,9 @@ def mock_user_and_config():
             db.refresh(user)
 
         user_id = user.id
+        from app.models.models import Trade
+        db.query(Trade).filter(Trade.user_id == user_id).delete()
+        db.commit()
         config = db.query(StrategyConfig).filter(StrategyConfig.user_id == user_id).first()
         if not config:
             config = StrategyConfig(
