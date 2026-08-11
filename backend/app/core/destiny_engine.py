@@ -78,8 +78,13 @@ class DestinyStrategyEngine:
         self.stopped_at = None
         logger.info(f"[DestinyEngine] User {self.user_id}: Started at {self.started_at}. R={self.r_level}, S={self.s_level}")
         
-        # Load any existing open/target trades for today to restore engine state
-        self.load_existing_trades()
+        # Gamification: motivational quote on engine start
+        try:
+            import asyncio
+            from app.gamification.hooks import fire_engine_start_quote
+            asyncio.create_task(fire_engine_start_quote(self.user_id, paper_trade=self.paper_trade))
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Gamification engine start hook failed (non-critical): {e}")
 
     def load_existing_trades(self):
         """Restore active trade state, completed levels, and post-exit tracking after mid-day server restarts."""
@@ -148,6 +153,14 @@ class DestinyStrategyEngine:
         ist = pytz.timezone("Asia/Kolkata")
         self.stopped_at = datetime.now(ist).strftime("%I:%M:%S %p")
         logger.info(f"[DestinyEngine] User {self.user_id}: Stopped at {self.stopped_at}.")
+
+        # Gamification: motivational quote on engine stop
+        try:
+            import asyncio
+            from app.gamification.hooks import fire_engine_stop_quote
+            asyncio.create_task(fire_engine_stop_quote(self.user_id))
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Gamification engine stop hook failed (non-critical): {e}")
 
     def load_config(self, config_dict: Optional[Dict[str, Any]] = None):
         """Dynamic runtime configuration reload."""
@@ -569,6 +582,19 @@ class DestinyStrategyEngine:
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send entry notification: {e}")
 
+        # Gamification: motivational quote on trade entry
+        try:
+            from app.gamification.hooks import fire_entry_quote
+            sl_price = float(sl_price) if sl_price is not None else None
+            asyncio.create_task(fire_entry_quote(
+                self.user_id, side, level_str,
+                instrument=symbol,
+                fill_price=float(fill_price),
+                sl_price=sl_price,
+            ))
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Gamification entry hook failed (non-critical): {e}")
+
         # AI Trade Analysis Task
         import asyncio
         asyncio.create_task(self._notify_ai("ENTRY", side, level_str, nifty_ltp))
@@ -655,6 +681,24 @@ class DestinyStrategyEngine:
             )
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send exit notification: {e}")
+
+        # Gamification: motivational quote on exit
+        try:
+            from app.gamification.hooks import fire_target_quote, fire_sl_quote
+            if reason == "TARGET":
+                asyncio.create_task(fire_target_quote(
+                    self.user_id, side,
+                    instrument=symbol,
+                    pnl_rupees=total_pnl,
+                ))
+            elif reason == "SL":
+                asyncio.create_task(fire_sl_quote(
+                    self.user_id, side,
+                    instrument=symbol,
+                    pnl_rupees=total_pnl,
+                ))
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Gamification exit hook failed (non-critical): {e}")
 
         # AI Trade Analysis Task
         import asyncio
