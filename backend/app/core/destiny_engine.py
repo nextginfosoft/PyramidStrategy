@@ -275,20 +275,64 @@ class DestinyStrategyEngine:
             "strategy_type": "DESTINY",
         }
 
+    # ── Kite Option Subscription ─────────────────────────────────────────────
+
+    def _subscribe_option(self, symbol: Optional[str]):
+        """Subscribe to live option ticks after entry."""
+        if not symbol:
+            return
+        try:
+            from app.services.kite_service import get_user_kite_service
+            kite_service = get_user_kite_service(self.user_id)
+            if kite_service.is_authenticated() and kite_service._ticker_running:
+                kite_service.subscribe_option(symbol)
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Option subscribe failed (non-critical): {e}")
+
+    def _unsubscribe_option(self, symbol: Optional[str]):
+        """Unsubscribe from option ticks after exit."""
+        if not symbol:
+            return
+        try:
+            from app.services.kite_service import get_user_kite_service
+            kite_service = get_user_kite_service(self.user_id)
+            if kite_service.is_authenticated():
+                kite_service.unsubscribe_option(symbol)
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Option unsubscribe failed (non-critical): {e}")
+
+    def get_option_ltp(self, symbol: str, nifty_ltp: Optional[Decimal] = None) -> Decimal:
+        """Return cached option LTP from live ticks, or query Kite, or fallback to estimate_option_price."""
+        if not symbol:
+            return Decimal("100.00")
+        try:
+            from app.services.kite_service import get_user_kite_service
+            ks = get_user_kite_service(self.user_id)
+            if ks.is_authenticated():
+                live_ltp = ks.get_option_ltp(symbol)
+                if live_ltp is not None:
+                    self._option_ltp[symbol] = live_ltp
+                    return live_ltp
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Error fetching live option LTP for {symbol}: {e}")
+
+        if nifty_ltp is not None:
+            price = estimate_option_price(symbol, nifty_ltp)
+            self._option_ltp[symbol] = price
+            return price
+        elif symbol in self._option_ltp:
+            return self._option_ltp[symbol]
+        elif self.last_nifty_price is not None:
+            return estimate_option_price(symbol, self.last_nifty_price)
+        return Decimal("100.00")
+
     async def _enter_trade(self, side: str, nifty_ltp: Decimal, trigger_level: Decimal):
         opt_details = get_option_details(side, nifty_ltp)
         symbol = opt_details["symbol"]
         exp_date = opt_details["expiry"]
-        entry_price = estimate_option_price(symbol, nifty_ltp)
+        mock_ltp = self.get_option_ltp(symbol, nifty_ltp)
 
-        target_price = entry_price + self.target_pts
-        sl_price = entry_price - self.sl_pts
         total_qty = self.lot_size
-
-        logger.info(
-            f"[DestinyEngine] Placed {side} BUY order for {symbol} @ {entry_price:.2f} | "
-            f"Qty={total_qty}, Trigger={trigger_level}, Target={target_price:.2f}, SL={sl_price:.2f}"
-        )
 
         db = SessionLocal()
         try:
@@ -302,9 +346,10 @@ class DestinyStrategyEngine:
                 lots=1,
                 lot_size=self.lot_size,
                 trigger_nifty=nifty_ltp,
-                mock_ltp=entry_price if self.paper_trade else None,
+                mock_ltp=mock_ltp if self.paper_trade else None,
             )
             db_id = order_res["trade_id"]
+            fill_price = Decimal(str(order_res["fill_price"]))
             db.commit()
         except Exception as e:
             logger.error(f"[DestinyEngine] Order placement failed for {side}: {e}")
@@ -312,12 +357,15 @@ class DestinyStrategyEngine:
         finally:
             db.close()
 
+        target_price = fill_price + self.target_pts
+        sl_price = fill_price - self.sl_pts
+
         trade_info = {
             "db_id": db_id,
             "symbol": symbol,
             "side": side,
             "level": "R" if side == "PE" else "S",
-            "entry_price": entry_price,
+            "entry_price": fill_price,
             "target_price": target_price,
             "sl_price": sl_price,
             "qty": total_qty,
@@ -330,8 +378,12 @@ class DestinyStrategyEngine:
         else:
             self.active_ce_trade = trade_info
 
+        # Cache & Subscribe live ticks for option symbol
+        self._option_ltp[symbol] = fill_price
+        self._subscribe_option(symbol)
+
         logger.info(
-            f"[DestinyEngine] ENTRY {side} (Paper={self.paper_trade}): {symbol} @ {entry_price:.2f} | "
+            f"[DestinyEngine] ENTRY {side} (Paper={self.paper_trade}): {symbol} @ {fill_price:.2f} | "
             f"Target={target_price:.2f}, SL={sl_price:.2f} | NIFTY={nifty_ltp}"
         )
 
@@ -343,7 +395,7 @@ class DestinyStrategyEngine:
                 continue
 
             symbol = active_trade["symbol"]
-            current_opt_price = estimate_option_price(symbol, nifty_ltp)
+            current_opt_price = self.get_option_ltp(symbol, nifty_ltp)
 
             # Target Check
             if current_opt_price >= active_trade["target_price"]:
@@ -356,6 +408,8 @@ class DestinyStrategyEngine:
         trade = self.active_pe_trade if side == "PE" else self.active_ce_trade
         if not trade:
             return
+
+        symbol = trade["symbol"]
 
         db = SessionLocal()
         try:
@@ -370,15 +424,18 @@ class DestinyStrategyEngine:
             )
             db.commit()
         except Exception as e:
-            logger.error(f"[DestinyEngine] Exit order failed for {side} {trade['symbol']}: {e}")
+            logger.error(f"[DestinyEngine] Exit order failed for {side} {symbol}: {e}")
         finally:
             db.close()
+
+        # Unsubscribe live ticks for option symbol after exit
+        self._unsubscribe_option(symbol)
 
         pnl_pts = exit_price - trade["entry_price"]
         total_pnl = pnl_pts * Decimal(str(trade["qty"]))
 
         logger.info(
-            f"[DestinyEngine] EXIT {side} ({reason}, Paper={self.paper_trade}): {trade['symbol']} @ {exit_price:.2f} | "
+            f"[DestinyEngine] EXIT {side} ({reason}, Paper={self.paper_trade}): {symbol} @ {exit_price:.2f} | "
             f"PnL = Rs. {total_pnl:.2f}"
         )
 
@@ -395,14 +452,15 @@ class DestinyStrategyEngine:
             "reason": reason,
             "exit_price": float(exit_price),
             "pnl": float(total_pnl),
-            "symbol": trade["symbol"],
+            "symbol": symbol,
         })
 
     async def _squareoff_all(self, reason: str, nifty_ltp: Decimal):
         for side in ["PE", "CE"]:
             trade = self.active_pe_trade if side == "PE" else self.active_ce_trade
             if trade:
-                current_price = estimate_option_price(trade["symbol"], nifty_ltp)
+                symbol = trade["symbol"]
+                current_price = self.get_option_ltp(symbol, nifty_ltp)
                 await self._exit_trade(side, f"SQUAREOFF ({reason})", current_price, nifty_ltp)
 
     async def emergency_exit(self) -> Dict[str, Any]:
@@ -412,7 +470,9 @@ class DestinyStrategyEngine:
         for side in ["PE", "CE"]:
             trade = self.active_pe_trade if side == "PE" else self.active_ce_trade
             if trade:
-                est_price = trade["entry_price"]
-                await self._exit_trade(side, "EMERGENCY_EXIT", est_price, Decimal("24000"))
+                symbol = trade["symbol"]
+                est_price = self.get_option_ltp(symbol)
+                await self._exit_trade(side, "EMERGENCY_EXIT", est_price, self.last_nifty_price or Decimal("24000"))
                 count += 1
         return {"status": "success", "exited_count": count, "pnl_rupees": float(pnl)}
+

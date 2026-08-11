@@ -66,8 +66,8 @@ async def test_destiny_engine_pe_entry_and_target(mock_user_and_config):
     assert engine.active_pe_trade["side"] == "PE"
     assert engine.active_pe_trade["target_price"] == engine.active_pe_trade["entry_price"] + Decimal("30.00")
 
-    # Move NIFTY higher to increase PE option value and hit target
-    target_trigger_nifty = Decimal("24250.00")
+    # Move NIFTY lower to increase PE option value and hit target (23950 -> option price 205 >= 135)
+    target_trigger_nifty = Decimal("23950.00")
     await engine.on_nifty_tick(target_trigger_nifty)
 
     # Trade should exit on target and mark R level completed
