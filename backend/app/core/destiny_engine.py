@@ -359,6 +359,7 @@ class DestinyStrategyEngine:
 
     async def on_nifty_tick(self, nifty_ltp: Decimal):
         """Process incoming NIFTY spot tick."""
+        prev_nifty = self.last_nifty_price
         self.last_nifty_price = nifty_ltp
         await self._broadcast_status(nifty_ltp)
 
@@ -388,14 +389,18 @@ class DestinyStrategyEngine:
         if current_time > time(14, 30) and not is_tues:
             return
 
-        # Entry Case 1: PE Strategy (Resistance R)
+        # Entry Case 1: PE Strategy (Resistance R crossover: prev_nifty < R and nifty_ltp >= R)
         if self.r_level and not self.r_level_completed and not self.active_pe_trade:
-            if nifty_ltp >= self.r_level:
+            if prev_nifty is not None and prev_nifty < self.r_level and nifty_ltp >= self.r_level:
+                await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
+            elif prev_nifty is None and nifty_ltp >= self.r_level:
                 await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
 
-        # Entry Case 2: CE Strategy (Support S)
+        # Entry Case 2: CE Strategy (Support S crossover: prev_nifty > S and nifty_ltp <= S)
         if self.s_level and not self.s_level_completed and not self.active_ce_trade:
-            if nifty_ltp <= self.s_level:
+            if prev_nifty is not None and prev_nifty > self.s_level and nifty_ltp <= self.s_level:
+                await self._enter_trade(side="CE", nifty_ltp=nifty_ltp, trigger_level=self.s_level)
+            elif prev_nifty is None and nifty_ltp <= self.s_level:
                 await self._enter_trade(side="CE", nifty_ltp=nifty_ltp, trigger_level=self.s_level)
 
     def get_full_status(self) -> Dict[str, Any]:
@@ -491,13 +496,14 @@ class DestinyStrategyEngine:
         mock_ltp = self.get_option_ltp(symbol, nifty_ltp)
 
         total_qty = self.lot_size
+        level_str = "R" if side == "PE" else "S"
 
         db = SessionLocal()
         try:
             order_res = self.order_manager.place_buy_order(
                 db=db,
                 side=side,
-                level="R" if side == "PE" else "S",
+                level=level_str,
                 instrument=symbol,
                 strike=opt_details["strike"],
                 expiry=opt_details["expiry"],
@@ -522,7 +528,7 @@ class DestinyStrategyEngine:
             "db_id": db_id,
             "symbol": symbol,
             "side": side,
-            "level": "R" if side == "PE" else "S",
+            "level": level_str,
             "entry_price": fill_price,
             "target_price": target_price,
             "sl_price": sl_price,
@@ -547,6 +553,26 @@ class DestinyStrategyEngine:
 
         await self._broadcast("TRADE_ENTRY", trade_info)
 
+        # Telegram / WhatsApp Notifications
+        try:
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_trade_entry(
+                side=side,
+                level=level_str,
+                instrument=symbol,
+                lots=1,
+                fill_price=fill_price,
+                nifty_ltp=nifty_ltp,
+            )
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Failed to send entry notification: {e}")
+
+        # AI Trade Analysis Task
+        import asyncio
+        asyncio.create_task(self._notify_ai("ENTRY", side, level_str, nifty_ltp))
+
     async def _check_active_trade_exits(self, nifty_ltp: Decimal):
         for side, active_trade in [("PE", self.active_pe_trade), ("CE", self.active_ce_trade)]:
             if not active_trade:
@@ -568,6 +594,7 @@ class DestinyStrategyEngine:
             return
 
         symbol = trade["symbol"]
+        level_str = trade["level"]
 
         db = SessionLocal()
         try:
@@ -575,7 +602,7 @@ class DestinyStrategyEngine:
                 db=db,
                 trade_id=trade["db_id"],
                 side=side,
-                level=trade["level"],
+                level=level_str,
                 reason=reason,
                 trigger_nifty=nifty_ltp,
                 mock_ltp=exit_price if self.paper_trade else None,
@@ -612,6 +639,41 @@ class DestinyStrategyEngine:
             "pnl": float(total_pnl),
             "symbol": symbol,
         })
+
+        # Telegram / WhatsApp Notifications
+        try:
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_trade_exit(
+                side=side,
+                level=level_str,
+                instrument=symbol,
+                exit_price=exit_price,
+                pnl=total_pnl,
+                reason=reason,
+            )
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Failed to send exit notification: {e}")
+
+        # AI Trade Analysis Task
+        import asyncio
+        asyncio.create_task(self._notify_ai("EXIT", side, level_str, nifty_ltp))
+
+    async def _notify_ai(self, event_type: str, side: str, level: str, nifty_ltp: Decimal):
+        """Asynchronously trigger AI trade analysis after entry or exit."""
+        try:
+            from app.api.routes.ai import generate_trade_analysis_task
+            await generate_trade_analysis_task(
+                user_id=self.user_id,
+                event_type=event_type,
+                side=side,
+                level=level,
+                nifty_ltp=float(nifty_ltp),
+                strategy_type="DESTINY",
+            )
+        except Exception as e:
+            logger.debug(f"[DestinyEngine] AI notification task (non-critical): {e}")
 
     async def _squareoff_all(self, reason: str, nifty_ltp: Decimal):
         for side in ["PE", "CE"]:
