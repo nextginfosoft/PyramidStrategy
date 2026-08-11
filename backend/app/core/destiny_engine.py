@@ -20,6 +20,7 @@ General Rules:
 4. No fresh entries after 2:30 PM for same-day expiry trades.
 """
 
+import asyncio
 from decimal import Decimal
 from datetime import datetime, date, time
 from typing import Optional, Dict, Any, Callable
@@ -739,4 +740,3 @@ class DestinyStrategyEngine:
                 await self._exit_trade(side, "EMERGENCY_EXIT", est_price, self.last_nifty_price or Decimal("24000"))
                 count += 1
         return {"status": "success", "exited_count": count, "pnl_rupees": float(pnl)}
-
