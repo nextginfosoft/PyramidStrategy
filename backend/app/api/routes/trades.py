@@ -121,7 +121,7 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
     # Write header
     writer.writerow([
         "Trade ID", "Trigger Level", "Instrument", "Strike", "Expiry", 
-        "Lots", "Quantity", "Entry Timing", "Entry Price", "Entry Nifty", 
+        "Lots", "Quantity", "Entry Timing", "Entry Price", "Target Price", "Stop Loss Price", "Entry Nifty", 
         "Exit Timing", "Exit Price", "Exit Nifty", "Exit Reason", 
         "PnL (Rupees)", "Is Paper Trade",
         "Active High", "Active High Time",
@@ -153,6 +153,11 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             if ext.instrument == entry.instrument and ext.created_at > entry.created_at:
                 matching_exit = ext
                 break
+
+        # Calculate target & stop loss price for export
+        entry_price_val = float(entry.avg_price) if entry.avg_price is not None else None
+        target_price_val = round(entry_price_val + 30.0, 2) if entry_price_val is not None else ""
+        sl_price_val = round(entry_price_val - 30.0, 2) if entry_price_val is not None else ""
 
         # Fetch active range details from the entry record
         active_high = float(entry.active_high) if entry.active_high is not None else ""
@@ -191,7 +196,9 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             entry.lots,
             entry.qty,
             to_ist_str(entry.created_at),
-            float(entry.avg_price) if entry.avg_price is not None else "",
+            entry_price_val if entry_price_val is not None else "",
+            target_price_val,
+            sl_price_val,
             float(entry.trigger_nifty_level) if entry.trigger_nifty_level is not None else "",
             exit_time_str,
             exit_price_val,

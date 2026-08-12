@@ -144,9 +144,13 @@ export function TradeLog() {
         // Target is relative to the calculated Average Entry Price at this level
         rowTargetPrice = state.runningAvgPrice + targetPoints
 
-        // Stop Loss is active and calculated at Level 3 (R3/S3), based on Level 3 entry price
+        const isDestiny = config?.strategy_type === 'DESTINY'
         const isL3 = t.level === 'L3' || t.level === 'R3' || t.level === 'S3'
-        if (isL3) {
+
+        if (isDestiny) {
+          state.level3EntryPrice = actualPrice
+          rowSlPrice = actualPrice - slPoints
+        } else if (isL3) {
           state.level3EntryPrice = actualPrice
           rowSlPrice = actualPrice - slPoints
         }
