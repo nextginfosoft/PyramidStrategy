@@ -213,18 +213,35 @@ class DestinyStrategyEngine:
         """Callback from KiteTicker for option price updates."""
         self._option_ltp[symbol] = ltp
 
-        # Track active high/low during position lifetime
+        # Track active high/low during position lifetime and sync to DB
         for trade in [self.active_pe_trade, self.active_ce_trade]:
             if trade and trade.get("symbol") == symbol:
                 import pytz
                 from datetime import datetime
                 now = datetime.now(pytz.utc)
+                updated = False
                 if trade.get("active_high") is None or ltp > trade["active_high"]:
                     trade["active_high"] = ltp
                     trade["active_high_time"] = now
+                    updated = True
                 if trade.get("active_low") is None or ltp < trade["active_low"]:
                     trade["active_low"] = ltp
                     trade["active_low_time"] = now
+                    updated = True
+
+                if updated and trade.get("db_trade_id"):
+                    try:
+                        with SessionLocal() as db:
+                            from app.models.models import Trade
+                            db_trade = db.query(Trade).filter(Trade.id == trade["db_trade_id"]).first()
+                            if db_trade:
+                                db_trade.active_high = trade["active_high"]
+                                db_trade.active_high_time = trade["active_high_time"]
+                                db_trade.active_low = trade["active_low"]
+                                db_trade.active_low_time = trade["active_low_time"]
+                                db.commit()
+                    except Exception as e:
+                        logger.warning(f"[DestinyEngine] Error syncing active high/low to DB: {e}")
 
         await self._process_post_exit_tick(symbol, ltp)
 
@@ -272,7 +289,7 @@ class DestinyStrategyEngine:
             self._processing_option_symbols.discard(symbol)
 
     async def _record_320_prices(self, nifty_ltp: Optional[Decimal] = None):
-        """Fetch and update price_at_320 for all trades executed today."""
+        """Fetch and update price_at_320 for all trades executed today and clean post-exit tracking memory."""
         try:
             from app.core.time_rules import today_ist
             target_date = today_ist()
@@ -284,19 +301,21 @@ class DestinyStrategyEngine:
                     Trade.price_at_320.is_(None)
                 ).all()
 
-                if not trades:
-                    return
+                if trades:
+                    updated = False
+                    for t in trades:
+                        price = self.get_option_ltp(t.instrument, nifty_ltp)
+                        if price is not None:
+                            t.price_at_320 = Decimal(str(price))
+                            updated = True
 
-                updated = False
-                for t in trades:
-                    price = self.get_option_ltp(t.instrument, nifty_ltp)
-                    if price is not None:
-                        t.price_at_320 = Decimal(str(price))
-                        updated = True
+                    if updated:
+                        db.commit()
+                        logger.info(f"[DestinyEngine] User {self.user_id}: Recorded 3:20 PM prices for today's trades")
 
-                if updated:
-                    db.commit()
-                    logger.info(f"[DestinyEngine] User {self.user_id}: Recorded 3:20 PM prices for today's trades")
+            # Clean post-exit tracking memory after market close
+            if hasattr(self, "post_exit_trades"):
+                self.post_exit_trades.clear()
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to record 3:20 PM prices: {e}")
 
@@ -309,6 +328,8 @@ class DestinyStrategyEngine:
         locked_strike = trade.get("strike") if trade else None
         locked_instrument = trade.get("symbol") if trade else None
         entry_avg_price = float(trade.get("entry_price")) if trade and trade.get("entry_price") is not None else None
+        active_high = float(trade.get("active_high")) if trade and trade.get("active_high") is not None else None
+        active_low = float(trade.get("active_low")) if trade and trade.get("active_low") is not None else None
 
         current_ltp = None
         unrealized_pnl = None
@@ -332,6 +353,8 @@ class DestinyStrategyEngine:
             "current_ltp": current_ltp,
             "unrealized_pnl": unrealized_pnl,
             "realized_pnl": 0.0,
+            "active_high": active_high,
+            "active_low": active_low,
             "blocked_levels": ["L1"] if completed and not trade else [],
             "trade": trade,
         }
