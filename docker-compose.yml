@@ -8,6 +8,11 @@ services:
       POSTGRES_DB: pyramidstrategy
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pyramidstrategy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -26,8 +31,10 @@ services:
       - ENCRYPTION_KEY=prod-encryption-key-32-chars!!
       - SUPER_ADMIN_USERNAME=${SUPER_ADMIN_USERNAME:-santosh}
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   frontend:
     build:
