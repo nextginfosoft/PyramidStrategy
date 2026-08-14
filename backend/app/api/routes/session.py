@@ -238,12 +238,12 @@ def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
     # Verify ID token with Google's tokeninfo endpoint
     try:
         url = f"https://oauth2.googleapis.com/tokeninfo?id_token={token}"
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as response:
             res_data = json.loads(response.read().decode("utf-8"))
     except Exception as e:
-        logger.error(f"Google token validation failed: {e}")
-        raise HTTPException(status_code=400, detail="Invalid Google token or network error")
+        logger.error(f"Google token validation failed for token prefix '{token[:15]}...': {e}")
+        raise HTTPException(status_code=400, detail=f"Google token verification failed: {str(e)}")
 
     if "email" not in res_data:
         raise HTTPException(status_code=400, detail="Google token payload missing email")
