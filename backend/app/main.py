@@ -216,6 +216,9 @@ async def lifespan(app: FastAPI):
     # Init DB tables
     init_db()
 
+    # Ensure master admin user exists and is approved on startup
+    _bootstrap_master_admin()
+
     # Init Redis
     get_redis_client()
 
@@ -298,6 +301,40 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown(wait=False)
     engine_manager.stop_all()
     logger.info("PyramidStrategy Backend stopped")
+
+
+def _bootstrap_master_admin():
+    """Ensure master admin user exists, is approved, and has a default password on DB startup."""
+    from app.db.database import SessionLocal
+    from app.models.models import User
+    from app.api.routes.session import get_password_hash
+    try:
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.username == "santosh").first()
+            if not user:
+                hashed = get_password_hash("santosh123")
+                master_user = User(
+                    username="santosh",
+                    hashed_password=hashed,
+                    is_approved=True,
+                    is_admin=True,
+                )
+                db.add(master_user)
+                db.commit()
+                logger.info("⚡ Default master user 'santosh' created and approved on startup.")
+            else:
+                updated = False
+                if not user.is_approved:
+                    user.is_approved = True
+                    updated = True
+                if not user.is_admin:
+                    user.is_admin = True
+                    updated = True
+                if updated:
+                    db.commit()
+                    logger.info("⚡ Master user 'santosh' permissions updated to approved admin.")
+    except Exception as e:
+        logger.warning(f"Master admin bootstrap check failed (non-critical): {e}")
 
 
 def _load_kite_on_startup():
