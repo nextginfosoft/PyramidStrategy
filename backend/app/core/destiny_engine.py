@@ -650,12 +650,15 @@ class DestinyStrategyEngine:
         try:
             self.order_manager.place_exit_order(
                 db=db,
-                trade_id=trade["db_id"],
                 side=side,
-                level=level_str,
+                instrument=symbol,
+                strike=trade.get("strike", 24150),
+                qty=trade["qty"],
                 reason=reason,
-                trigger_nifty=nifty_ltp,
+                entry_avg_price=trade["entry_price"],
                 mock_ltp=exit_price if self.paper_trade else None,
+                trigger_nifty=nifty_ltp,
+                lot_size=self.lot_size,
             )
             db.commit()
         except Exception as e:
