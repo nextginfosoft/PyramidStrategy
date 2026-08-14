@@ -226,7 +226,7 @@ class GoogleLoginRequest(BaseModel):
 
 
 @router.post("/google", response_model=TokenResponse)
-def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
+async def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
     """Authenticate or register user using Google OAuth ID Token."""
     import urllib.request
     import json
@@ -237,13 +237,19 @@ def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
 
     # Verify ID token with Google's tokeninfo endpoint
     try:
+        import httpx
         url = f"https://oauth2.googleapis.com/tokeninfo?id_token={token}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                logger.error(f"Google token verification HTTP error {resp.status_code}: {resp.text}")
+                raise HTTPException(status_code=400, detail=f"Google token rejected by Google (HTTP {resp.status_code})")
+            res_data = resp.json()
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Google token validation failed for token prefix '{token[:15]}...': {e}")
-        raise HTTPException(status_code=400, detail=f"Google token verification failed: {str(e)}")
+        logger.error(f"Google token validation error: {e}")
+        raise HTTPException(status_code=400, detail=f"Google verification network error: {str(e)}")
 
     if "email" not in res_data:
         raise HTTPException(status_code=400, detail="Google token payload missing email")
