@@ -153,8 +153,6 @@ class DestinyStrategyEngine:
         import pytz
         ist = pytz.timezone("Asia/Kolkata")
         self.stopped_at = datetime.now(ist).strftime("%I:%M:%S %p")
-        logger.info(f"[DestinyEngine] User {self.user_id}: Stopped at {self.stopped_at}.")
-
         # Gamification: motivational quote on engine stop
         try:
             import asyncio
@@ -162,6 +160,22 @@ class DestinyStrategyEngine:
             asyncio.create_task(fire_engine_stop_quote(self.user_id))
         except Exception as e:
             logger.warning(f"[DestinyEngine] Gamification engine stop hook failed (non-critical): {e}")
+
+    @property
+    def mock_feed(self):
+        """Mock feed placeholder compatibility object for destiny engine."""
+        class _DummyMockFeed:
+            def stop(self):
+                pass
+        return _DummyMockFeed()
+
+    def daily_reset(self):
+        """Reset trade state tracking for the day."""
+        self.active_pe_trade = None
+        self.active_ce_trade = None
+        self.r_level_completed = False
+        self.s_level_completed = False
+        logger.info(f"[DestinyEngine] User {self.user_id}: Daily trade state reset complete.")
 
     def load_config(self, config_dict: Optional[Dict[str, Any]] = None):
         """Dynamic runtime configuration reload."""
@@ -564,6 +578,7 @@ class DestinyStrategyEngine:
         trade_info = {
             "db_id": db_id,
             "symbol": symbol,
+            "strike": opt_details["strike"],
             "side": side,
             "level": level_str,
             "entry_price": fill_price,
@@ -698,14 +713,24 @@ class DestinyStrategyEngine:
             from app.services.notification import get_user_notification_service
             ns = get_user_notification_service(self.user_id)
             ns.load_from_db()
-            ns.notify_trade_exit(
-                side=side,
-                level=level_str,
-                instrument=symbol,
-                exit_price=exit_price,
-                pnl=total_pnl,
-                reason=reason,
-            )
+            if reason == "TARGET":
+                ns.notify_target_hit(
+                    side=side,
+                    instrument=symbol,
+                    lots=trade.get("lots", 1),
+                    exit_price=exit_price,
+                    entry_avg=trade["entry_price"],
+                    pnl_rupees=total_pnl,
+                )
+            elif reason == "SL":
+                ns.notify_sl_hit(
+                    side=side,
+                    instrument=symbol,
+                    lots=trade.get("lots", 1),
+                    exit_price=exit_price,
+                    entry_avg=trade["entry_price"],
+                    pnl_rupees=total_pnl,
+                )
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send exit notification: {e}")
 
