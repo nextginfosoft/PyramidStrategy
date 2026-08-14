@@ -178,7 +178,8 @@ export function Login({ onLogin }: Props) {
                         sessionApi.setToken(res.access_token)
                         onLogin()
                       } catch (gErr: any) {
-                        setError(gErr?.response?.data?.detail ?? 'Google authentication failed')
+                        const msg = gErr?.response?.data?.detail || gErr?.message || 'Google authentication failed'
+                        setError(msg)
                       } finally {
                         setLoading(false)
                       }

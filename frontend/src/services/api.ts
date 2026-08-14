@@ -4,17 +4,8 @@ import type { StrategyConfig, Trade, DailyPnL } from '../types'
 const getApiBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_BASE_URL
   if (envUrl) {
-    return envUrl
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`
   }
-
-  const { protocol, host, port } = window.location
-
-  // If running from Vite development server, point to backend on port 8000
-  if (port !== '8000' && port !== '') {
-    return 'http://localhost:8000'
-  }
-
-  // In production (served from backend port), use relative path with /api prefix
   return '/api'
 }
 
