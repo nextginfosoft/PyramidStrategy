@@ -165,6 +165,7 @@ export function Login({ onLogin }: Props) {
           <button
             type="button"
             onClick={() => {
+              if (window.google?.accounts?.id) {
                 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '1069196179157-g2u1764tkr44mncgqkk33h2gedlif0ek.apps.googleusercontent.com'
                 window.google.accounts.id.initialize({
                   client_id: googleClientId,
