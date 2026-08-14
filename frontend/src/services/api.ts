@@ -133,6 +133,8 @@ export const sessionApi = {
     api.post('/session/register', { username, password }).then(r => r.data),
   login: (username: string, password: string) =>
     api.post('/session/login', { username, password }).then(r => r.data),
+  googleLogin: (token: string) =>
+    api.post('/session/google', { token }).then(r => r.data),
   logout: () => api.post('/session/logout').then(r => r.data),
   me: () => api.get('/session/me').then(r => r.data),
   check: () => api.get('/session/check').then(r => r.data),

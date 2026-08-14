@@ -9,7 +9,9 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(100), nullable=False)
+    hashed_password = Column(String(100), nullable=True)
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    google_id = Column(String(255), unique=True, index=True, nullable=True)
     is_approved = Column(Boolean, default=False, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
