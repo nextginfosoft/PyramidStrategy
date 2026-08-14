@@ -19,6 +19,11 @@ if settings.is_sqlite and ":memory:" not in db_url:
         db_path = os.path.join(app_data_dir, "pyramidstrategy.db")
         db_url = f"sqlite:///{db_path}"
         logger.info(f"Packaged executable detected. SQLite database relocated to: {db_path}")
+    elif db_url.startswith("sqlite:///./"):
+        # Resolve relative SQLite path to root project directory for consistency
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        db_path = os.path.join(root_dir, "pyramidstrategy.db")
+        db_url = f"sqlite:///{db_path}"
 
 if settings.is_sqlite:
     if ":memory:" in db_url:
