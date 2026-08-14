@@ -265,6 +265,7 @@ def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
         username_base = user_email.split("@")[0]
         user = User(
             username=username_base,
+            hashed_password=get_password_hash("GOOGLE_SSO_USER_NO_PASSWORD"),
             email=user_email,
             google_id=google_sub,
             is_approved=True if is_super_admin else True,  # Auto-approve google users
