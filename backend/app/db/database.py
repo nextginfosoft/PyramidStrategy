@@ -141,6 +141,17 @@ def init_db():
     except Exception as e:
         logger.debug(f"Database migration (strategy_type check/add): {e}")
 
+    # Self-healing migration for users email and google_id
+    for col, col_type in [("email", "VARCHAR(255)"), ("google_id", "VARCHAR(255)")]:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                conn.commit()
+                logger.info(f"Database migration: Added {col} to users")
+        except Exception as e:
+            logger.debug(f"Database migration (users.{col} check/add): {e}")
+
     # Self-healing migration for trades columns
     for col, col_type in [
         ("active_high", "NUMERIC(10, 2)"),

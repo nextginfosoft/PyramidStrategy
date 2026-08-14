@@ -438,11 +438,14 @@ class TestSessionRoutes:
                     is_admin=True
                 )
                 db.add(user)
+                db.commit()
             else:
-                user.hashed_password = get_password_hash("pyramid123")
-                user.is_approved = True
-                user.is_admin = True
-            db.commit()
+                db.query(User).filter(User.username == "admin").update({
+                    "hashed_password": get_password_hash("pyramid123"),
+                    "is_approved": True,
+                    "is_admin": True
+                })
+                db.commit()
 
     @pytest.fixture
     def client(self):

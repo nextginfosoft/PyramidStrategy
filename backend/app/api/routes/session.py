@@ -219,3 +219,70 @@ def check_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(sec
                 "is_admin": user.is_admin
             }
     return {"authenticated": False, "username": None, "is_approved": False, "is_admin": False}
+
+
+class GoogleLoginRequest(BaseModel):
+    token: str  # Google ID token or Access token
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
+    """Authenticate or register user using Google OAuth ID Token."""
+    import urllib.request
+    import json
+
+    token = body.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Google token is required")
+
+    # Verify ID token with Google's tokeninfo endpoint
+    try:
+        url = f"https://oauth2.googleapis.com/tokeninfo?id_token={token}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        logger.error(f"Google token validation failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid Google token or network error")
+
+    if "email" not in res_data:
+        raise HTTPException(status_code=400, detail="Google token payload missing email")
+
+    user_email = res_data["email"].strip().lower()
+    google_sub = res_data.get("sub")
+    name = res_data.get("name", user_email.split("@")[0])
+
+    # Check if email belongs to configured Super Admin
+    is_super_admin = (user_email == settings.SUPER_ADMIN_EMAIL.strip().lower())
+
+    # Find existing user by email, google_id, or username
+    user = db.query(User).filter(
+        (User.email == user_email) | (User.google_id == google_sub) | (User.username == user_email.split("@")[0])
+    ).first()
+
+    if not user:
+        # Auto-create user
+        username_base = user_email.split("@")[0]
+        user = User(
+            username=username_base,
+            email=user_email,
+            google_id=google_sub,
+            is_approved=True if is_super_admin else True,  # Auto-approve google users
+            is_admin=is_super_admin,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        logger.info(f"Google SSO: Created new user '{user.username}' (admin={is_super_admin})")
+    else:
+        # Update existing user
+        user.email = user_email
+        user.google_id = google_sub
+        if is_super_admin:
+            user.is_admin = True
+            user.is_approved = True
+        db.commit()
+        logger.info(f"Google SSO: Existing user '{user.username}' logged in (admin={user.is_admin})")
+
+    jwt_token = create_token(str(user.id))
+    return TokenResponse(access_token=jwt_token)

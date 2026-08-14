@@ -49,6 +49,11 @@ class Settings(BaseSettings):
 
     # Administration
     SUPER_ADMIN_USERNAME: str = "santosh"
+    SUPER_ADMIN_EMAIL: str = "nextginfosoft@gmail.com"
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
 
     # CORS
     ALLOWED_ORIGINS: list[str] = [
