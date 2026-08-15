@@ -48,7 +48,14 @@ export function Login({ onLogin }: Props) {
         onLogin()
       }
     } catch (err: any) {
-      setError(err?.response?.data?.detail ?? 'Authentication failed — please try again')
+      let detailMsg = 'Authentication failed — please try again'
+      if (err?.response?.data?.detail) {
+        const detail = err.response.data.detail
+        detailMsg = typeof detail === 'string' ? detail : (detail.message || JSON.stringify(detail))
+      } else if (err?.message) {
+        detailMsg = err.message
+      }
+      setError(detailMsg)
     } finally {
       setLoading(false)
     }
