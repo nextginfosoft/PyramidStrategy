@@ -3,13 +3,13 @@ services:
     image: postgres:15-alpine
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: ${POSTGRES_DB:-pyramidstrategy}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: pyramidstrategy
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-pyramidstrategy}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pyramidstrategy"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +23,7 @@ services:
     restart: always
     environment:
       - APP_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-pyramidstrategy}
+      - DATABASE_URL=postgresql://postgres:password@db:5432/pyramidstrategy
       - REDIS_URL=redis://redis:6379/0
       - USE_FAKE_REDIS=false
       - PAPER_TRADE=true
