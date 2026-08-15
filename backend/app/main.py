@@ -307,7 +307,7 @@ def _bootstrap_master_admin():
     """Ensure master admin user exists, is approved, and has a default password on DB startup."""
     from app.db.database import SessionLocal
     from app.models.models import User
-    from app.api.routes.session import get_password_hash
+    from app.api.routes.session import get_password_hash, verify_password
     try:
         with SessionLocal() as db:
             user = db.query(User).filter(User.username == "santosh").first()
@@ -324,6 +324,9 @@ def _bootstrap_master_admin():
                 logger.info("⚡ Default master user 'santosh' created and approved on startup.")
             else:
                 updated = False
+                if not verify_password("santosh123", user.hashed_password):
+                    user.hashed_password = get_password_hash("santosh123")
+                    updated = True
                 if not user.is_approved:
                     user.is_approved = True
                     updated = True
@@ -332,7 +335,7 @@ def _bootstrap_master_admin():
                     updated = True
                 if updated:
                     db.commit()
-                    logger.info("⚡ Master user 'santosh' permissions updated to approved admin.")
+                    logger.info("⚡ Master user 'santosh' password and permissions verified/synced on startup.")
     except Exception as e:
         logger.warning(f"Master admin bootstrap check failed (non-critical): {e}")
 
