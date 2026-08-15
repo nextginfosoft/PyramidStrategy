@@ -80,8 +80,7 @@ jobs:
           key: ${{ secrets.TEST_VPS_SSH_KEY }}
           script: |
             cd /opt/pyramidstrategy-test
-            git fetch origin dev
-            git reset --hard origin/dev
+            git pull origin dev
             docker compose build --no-cache
             docker compose up -d
             docker system prune -f
