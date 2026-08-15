@@ -213,8 +213,18 @@ async def lifespan(app: FastAPI):
     logger.info(f"  Fake Redis: {settings.USE_FAKE_REDIS}")
     logger.info("=" * 60)
 
-    # Init DB tables
-    init_db()
+    # Init DB tables (with startup retry for cold boot DB readiness)
+    max_db_retries = 10
+    for attempt in range(1, max_db_retries + 1):
+        try:
+            init_db()
+            break
+        except Exception as db_err:
+            if attempt == max_db_retries:
+                logger.error(f"Failed to initialize DB after {max_db_retries} attempts: {db_err}")
+                raise db_err
+            logger.warning(f"Database not ready yet (attempt {attempt}/{max_db_retries}): {db_err}. Retrying in 3 seconds...")
+            await asyncio.sleep(3)
 
     # Ensure master admin user exists and is approved on startup
     _bootstrap_master_admin()
