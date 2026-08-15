@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: pyramidstrategy
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - destiny_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d pyramidstrategy"]
       interval: 5s
@@ -45,4 +45,4 @@ services:
       - backend
 
 volumes:
-  postgres_data:
+  destiny_postgres_data:
