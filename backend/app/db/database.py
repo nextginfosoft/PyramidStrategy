@@ -48,7 +48,12 @@ if settings.is_sqlite:
         except Exception as e:
             logger.debug(f"Failed to set sqlite pragma WAL: {e}")
 else:
-    engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    engine = create_engine(
+        db_url,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        connect_args={"connect_timeout": 10},
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
