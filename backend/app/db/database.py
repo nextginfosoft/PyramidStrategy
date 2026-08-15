@@ -9,7 +9,7 @@ from loguru import logger
 import sys
 import os
 
-db_url = settings.DATABASE_URL
+db_url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
 
 if settings.is_sqlite and ":memory:" not in db_url:
     is_frozen = getattr(sys, "frozen", False)
