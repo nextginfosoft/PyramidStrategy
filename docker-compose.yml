@@ -40,8 +40,8 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_API_BASE_URL=https://destiny.nextginfosoft.com/api
-        - VITE_WS_URL=wss://destiny.nextginfosoft.com/ws
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
+        - VITE_WS_URL=${VITE_WS_URL:-}
     restart: always
     depends_on:
       - backend
