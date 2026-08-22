@@ -17,7 +17,7 @@ setup_logging()
 
 from app.config import settings
 from app.db.database import init_db, get_redis_client
-from app.api.routes import config, trades, strategy, auth, ai, session, notifications, backtest, analytics, admin
+from app.api.routes import config, trades, strategy, auth, ai, session, notifications, backtest, analytics, admin, payments
 from app.api.websocket import websocket_endpoint
 from app.core.engine_manager import engine_manager
 from app.core.time_rules import today_ist
@@ -448,6 +448,7 @@ app.include_router(notifications.router)
 app.include_router(backtest.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
+app.include_router(payments.router)
 
 # With /api prefix (supports direct requests to port 8000 using /api prefix, e.g. callback URLs)
 app.include_router(session.router, prefix="/api")
@@ -460,6 +461,7 @@ app.include_router(notifications.router, prefix="/api")
 app.include_router(backtest.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(payments.router, prefix="/api")
 
 # With /api/v1 prefix
 app.include_router(session.router, prefix="/api/v1")
@@ -472,6 +474,7 @@ app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(backtest.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(payments.router, prefix="/api/v1")
 
 # ── Callback Route Aliases ───────────────────────────────────────────────────
 # Redirect/callback targets configured in the Zerodha Developer Console vary.

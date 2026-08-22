@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
 
+    # Razorpay Payment Gateway (Fallback env vars, can be overridden dynamically from DB)
+    RAZORPAY_KEY_ID: Optional[str] = None
+    RAZORPAY_KEY_SECRET: Optional[str] = None
+    RAZORPAY_WEBHOOK_SECRET: Optional[str] = None
+
     # CORS
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:5173",

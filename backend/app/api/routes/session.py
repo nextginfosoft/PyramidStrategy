@@ -106,6 +106,16 @@ def require_auth(
     return user
 
 
+def require_admin(current_user: User = Depends(require_auth)) -> User:
+    """Dependency: require authenticated user with admin privileges."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required",
+        )
+    return current_user
+
+
 @router.post("/register")
 def register(body: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user account."""

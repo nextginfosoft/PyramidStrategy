@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Dashboard } from './components/Dashboard/Dashboard'
 import { Login } from './components/Login/Login'
+import { LandingPage } from './components/LandingPage/LandingPage'
+import { SubscriptionModal } from './components/SubscriptionModal/SubscriptionModal'
 import { sessionApi } from './services/api'
 import { ToastContainer } from './components/Toast/Toast'
 import { MotivationalToast } from './components/MotivationalToast/MotivationalToast'
@@ -14,6 +16,8 @@ export interface UserSession {
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [user, setUser] = useState<UserSession | null>(null)
+  const [view, setView] = useState<'landing' | 'login' | 'pricing'>('landing')
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
 
   useEffect(() => {
     // Check if we have a stored token
@@ -45,7 +49,6 @@ export default function App() {
   }, [])
 
   const handleLogin = () => {
-    // Check session data immediately after logging in to fetch user profile attributes
     sessionApi.check()
       .then(res => {
         if (res.authenticated) {
@@ -70,6 +73,7 @@ export default function App() {
     sessionApi.clearToken()
     setAuthenticated(false)
     setUser(null)
+    setView('landing')
   }
 
   // Loading state
@@ -82,9 +86,39 @@ export default function App() {
   }
 
   if (!authenticated) {
+    if (view === 'login') {
+      return (
+        <>
+          <div className="min-h-screen bg-slate-950 relative">
+            <button
+              onClick={() => setView('landing')}
+              className="absolute top-4 left-4 z-50 text-xs font-semibold text-slate-400 hover:text-white bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              ← Back to Home
+            </button>
+            <Login onLogin={handleLogin} />
+          </div>
+          <ToastContainer />
+          <MotivationalToast />
+        </>
+      )
+    }
+
     return (
       <>
-        <Login onLogin={handleLogin} />
+        <LandingPage
+          onLoginClick={() => setView('login')}
+          onRegisterClick={() => setView('login')}
+          onViewPricingClick={() => setView('login')}
+        />
+        <SubscriptionModal
+          isOpen={showSubscriptionModal}
+          onClose={() => setShowSubscriptionModal(false)}
+          onLoginRequired={() => {
+            setShowSubscriptionModal(false)
+            setView('login')
+          }}
+        />
         <ToastContainer />
         <MotivationalToast />
       </>

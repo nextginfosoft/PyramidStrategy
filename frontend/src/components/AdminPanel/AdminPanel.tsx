@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { adminApi } from '../../services/api'
+import { adminApi, paymentsApi } from '../../services/api'
 import { useToastStore } from '../../store/toastStore'
 
 interface User {
@@ -38,11 +38,23 @@ interface Props {
 }
 
 export function AdminPanel({ onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<'accounts' | 'monitoring'>('accounts')
+  const [activeTab, setActiveTab] = useState<'accounts' | 'monitoring' | 'gateway'>('accounts')
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
   const [testingId, setTestingId] = useState<number | null>(null)
+
+  // Razorpay Gateway Admin Config state
+  const [rzpConfig, setRzpConfig] = useState({
+    key_id: '',
+    key_secret: '',
+    webhook_secret: '',
+    has_key_secret: false,
+    has_webhook_secret: false,
+    is_active: true
+  })
+  const [loadingRzp, setLoadingRzp] = useState(false)
+  const [savingRzp, setSavingRzp] = useState(false)
   
   // Live monitoring states
   const [liveStatuses, setLiveStatuses] = useState<UserLiveStatus[]>([])
@@ -236,6 +248,46 @@ export function AdminPanel({ onClose }: Props) {
     }
   }
 
+  // Fetch Razorpay Admin Configuration
+  const fetchRzpConfig = async () => {
+    try {
+      setLoadingRzp(true)
+      const data = await paymentsApi.getAdminConfig()
+      setRzpConfig({
+        key_id: data.key_id || '',
+        key_secret: data.has_key_secret ? '******' : '',
+        webhook_secret: data.has_webhook_secret ? '******' : '',
+        has_key_secret: data.has_key_secret,
+        has_webhook_secret: data.has_webhook_secret,
+        is_active: data.is_active ?? true
+      })
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to load Razorpay config', 'error')
+    } finally {
+      setLoadingRzp(false)
+    }
+  }
+
+  // Save Razorpay Admin Configuration
+  const handleSaveRzpConfig = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setSavingRzp(true)
+      await paymentsApi.updateAdminConfig({
+        key_id: rzpConfig.key_id,
+        key_secret: rzpConfig.key_secret,
+        webhook_secret: rzpConfig.webhook_secret,
+        is_active: rzpConfig.is_active
+      })
+      addToast('✅ Razorpay API credentials saved successfully!', 'success')
+      fetchRzpConfig()
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to save Razorpay config', 'error')
+    } finally {
+      setSavingRzp(false)
+    }
+  }
+
   // Reload analytics when date filters change
   useEffect(() => {
     if (inspectUserId) {
@@ -297,6 +349,19 @@ export function AdminPanel({ onClose }: Props) {
               }`}
             >
               📊 Live Status & P&L Monitor
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('gateway')
+                fetchRzpConfig()
+              }}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all border ${
+                activeTab === 'gateway' 
+                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' 
+                  : 'bg-transparent text-navy-300 border-transparent hover:text-white'
+              }`}
+            >
+              💳 Razorpay Gateway Keys
             </button>
           </div>
 
@@ -440,7 +505,7 @@ export function AdminPanel({ onClose }: Props) {
                 </table>
               </div>
             )
-          ) : (
+          ) : activeTab === 'monitoring' ? (
             /* ==================== TAB 2: LIVE MONITOR & P&L ==================== */
             liveStatuses.length === 0 ? (
               <div className="text-center py-20 text-navy-400">
@@ -658,6 +723,70 @@ export function AdminPanel({ onClose }: Props) {
                 </div>
               </div>
             )
+          ) : (
+            /* Tab 3: Razorpay Gateway Keys */
+            <div className="flex-1 overflow-y-auto min-h-0 pr-1 space-y-6">
+              <div className="p-5 bg-navy-900/40 border border-navy-800 rounded-xl space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-indigo-400">💳 Razorpay Payment Gateway Configuration</h3>
+                  <p className="text-xs text-navy-400 mt-1">
+                    Enter your Razorpay Test API Keys (`rzp_test_...`) or Live API Keys (`rzp_live_...`). These credentials will dynamically power subscriber checkouts across the application.
+                  </p>
+                </div>
+
+                {loadingRzp ? (
+                  <div className="py-8 flex justify-center">
+                    <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveRzpConfig} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">Razorpay Key ID</label>
+                      <input
+                        type="text"
+                        value={rzpConfig.key_id}
+                        onChange={e => setRzpConfig(prev => ({ ...prev, key_id: e.target.value }))}
+                        placeholder="rzp_test_xxxxxxxx or rzp_live_xxxxxxxx"
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">Razorpay Key Secret</label>
+                      <input
+                        type="password"
+                        value={rzpConfig.key_secret}
+                        onChange={e => setRzpConfig(prev => ({ ...prev, key_secret: e.target.value }))}
+                        placeholder={rzpConfig.has_key_secret ? '•••••••••••• (Leave blank to keep existing secret)' : 'Enter Razorpay Key Secret'}
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">Razorpay Webhook Secret (Optional)</label>
+                      <input
+                        type="password"
+                        value={rzpConfig.webhook_secret}
+                        onChange={e => setRzpConfig(prev => ({ ...prev, webhook_secret: e.target.value }))}
+                        placeholder={rzpConfig.has_webhook_secret ? '•••••••••••• (Leave blank to keep existing secret)' : 'Enter Webhook Secret'}
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingRzp}
+                        className="py-2.5 px-6 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+                      >
+                        {savingRzp ? 'Saving Gateway Settings...' : 'Save Credentials'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>

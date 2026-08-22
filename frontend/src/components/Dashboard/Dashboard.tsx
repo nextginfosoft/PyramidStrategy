@@ -25,6 +25,7 @@ import { DevotionalHeaderBar } from '../DevotionalHeaderBar/DevotionalHeaderBar'
 import { ChartModal } from '../ChartModal/ChartModal'
 import { LevelHistoryModal } from '../LevelPanel/LevelHistoryModal'
 import { GoalsModal } from '../GoalsModal/GoalsModal'
+import { SubscriptionModal } from '../SubscriptionModal/SubscriptionModal'
 import { AreaChart as SparkAreaChart, Area as SparkArea, ResponsiveContainer as SparkContainer } from 'recharts'
 
 const formatTimeTo12Hour = (timeStr: string): string => {
@@ -73,6 +74,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
   const [showChart, setShowChart] = useState(false)
   const [showLevelHistory, setShowLevelHistory] = useState(false)
   const [showGoals, setShowGoals] = useState(false)
+  const [showSubscription, setShowSubscription] = useState(false)
   const [simPrice, setSimPrice] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true'
@@ -564,7 +566,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
           <div className="flex items-center gap-2">
             <img src="/destiny-shield-icon.png" alt="Destiny Shield Icon" className="w-7 h-7 object-contain filter drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
             <span className="text-base font-black uppercase tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent whitespace-nowrap">
-              DESTINY
+              DESTINY <span className="text-indigo-400">AI</span>
             </span>
             <span className="text-[8px] bg-navy-950/60 border border-navy-850 text-navy-400 px-1 py-0.5 rounded font-mono font-bold select-none ml-0.5">
               2026
@@ -629,6 +631,11 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
           <button onClick={() => setShowGoals(true)}
             className="w-full flex items-center px-3 py-2 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 text-amber-400 font-bold rounded-lg text-xs transition duration-150 border border-amber-500/20 mb-2">
             <span aria-hidden="true" className="mr-2 text-sm">🏆</span> Wealth & Life Goals
+          </button>
+
+          <button onClick={() => setShowSubscription(true)}
+            className="w-full flex items-center px-3 py-2 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 text-indigo-400 font-bold rounded-lg text-xs transition duration-150 border border-indigo-500/20 mb-2">
+            <span aria-hidden="true" className="mr-2 text-sm">⚡</span> Subscription Plan
           </button>
 
           <button onClick={() => setShowLiveLogs(true)}
@@ -1407,6 +1414,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
       {showChart && <ChartModal onClose={() => setShowChart(false)} />}
       {showLevelHistory && <LevelHistoryModal isOpen={showLevelHistory} onClose={() => setShowLevelHistory(false)} />}
       <GoalsModal isOpen={showGoals} onClose={() => setShowGoals(false)} />
+      <SubscriptionModal isOpen={showSubscription} onClose={() => setShowSubscription(false)} />
 
       {confirmAction && (
         <ConfirmModal
