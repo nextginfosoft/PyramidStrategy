@@ -478,6 +478,7 @@ def update_sendfox_admin_config(
 
     if not config:
         config = ApiConfig(
+            user_id=admin.id,
             provider="sendfox",
             api_key_encrypted=encrypt(req.api_key) if req.api_key else None,
             extra_config=extra,
