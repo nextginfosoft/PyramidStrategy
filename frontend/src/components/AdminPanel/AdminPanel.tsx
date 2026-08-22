@@ -66,6 +66,9 @@ export function AdminPanel({ onClose }: Props) {
   })
   const [loadingSendfox, setLoadingSendfox] = useState(false)
   const [savingSendfox, setSavingSendfox] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [testListType, setTestListType] = useState<'welcome' | 'pro'>('welcome')
+  const [testingSendfox, setTestingSendfox] = useState(false)
   
   // Live monitoring states
   const [liveStatuses, setLiveStatuses] = useState<UserLiveStatus[]>([])
@@ -335,6 +338,25 @@ export function AdminPanel({ onClose }: Props) {
       addToast(err.response?.data?.detail || 'Failed to save SendFox config', 'error')
     } finally {
       setSavingSendfox(false)
+    }
+  }
+
+  // Test SendFox Email Sync
+  const handleTestSendfoxEmail = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!testEmail || !testEmail.includes('@')) {
+      addToast('Please enter a valid email address', 'error')
+      return
+    }
+    try {
+      setTestingSendfox(true)
+      const resp = await paymentsApi.testSendFoxEmail(testEmail, testListType)
+      addToast(resp.message || '✅ Test email contact synced to SendFox successfully!', 'success')
+      setTestEmail('')
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'SendFox test sync failed', 'error')
+    } finally {
+      setTestingSendfox(false)
     }
   }
 
@@ -913,6 +935,48 @@ export function AdminPanel({ onClose }: Props) {
                     </div>
                   </form>
                 )}
+
+                {/* Test SendFox Contact Sync Box */}
+                <div className="pt-6 border-t border-navy-800 space-y-3">
+                  <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🧪 SendFox Integration Test</span>
+                  </h4>
+                  <p className="text-[11px] text-navy-400">
+                    Enter a target email address below to fire an instant test contact sync to your SendFox list.
+                  </p>
+                  <form onSubmit={handleTestSendfoxEmail} className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="email"
+                      required
+                      value={testEmail}
+                      onChange={e => setTestEmail(e.target.value)}
+                      placeholder="trader@example.com"
+                      className="flex-1 px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                    />
+                    <select
+                      value={testListType}
+                      onChange={e => setTestListType(e.target.value as 'welcome' | 'pro')}
+                      className="px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white text-xs font-semibold focus:outline-none"
+                    >
+                      <option value="welcome">Welcome List (669850)</option>
+                      <option value="pro">Pro List (669851)</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={testingSendfox}
+                      className="py-2 px-5 bg-navy-800 hover:bg-navy-750 text-orange-400 font-extrabold text-xs rounded-lg transition border border-orange-500/30 flex items-center justify-center gap-1.5 shrink-0"
+                    >
+                      {testingSendfox ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                          <span>Testing...</span>
+                        </>
+                      ) : (
+                        <span>🧪 Send Test Sync</span>
+                      )}
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
           )}

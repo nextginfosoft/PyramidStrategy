@@ -494,3 +494,46 @@ def update_sendfox_admin_config(
     db.commit()
     logger.info("SendFox admin configuration updated dynamically by admin")
     return {"status": "success", "message": "SendFox configuration updated"}
+
+
+class SendFoxTestRequest(BaseModel):
+    email: str
+    list_type: str = "welcome"  # "welcome" or "pro"
+
+
+@router.post("/admin/sendfox/test")
+async def test_sendfox_email(
+    req: SendFoxTestRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Test SendFox contact sync dynamically from Admin Panel."""
+    if not req.email or "@" not in req.email:
+        raise HTTPException(status_code=400, detail="Please enter a valid target email address")
+
+    from app.services.sendfox_service import add_sendfox_contact, get_sendfox_config
+    api_key, welcome_list_id, pro_list_id = get_sendfox_config(db)
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="SendFox API Key is not configured")
+
+    target_list_id = welcome_list_id if req.list_type == "welcome" else pro_list_id
+    target_lists = [target_list_id] if target_list_id else None
+
+    success = await add_sendfox_contact(
+        email=req.email,
+        first_name="TestTrader",
+        list_ids=target_lists,
+        db=db
+    )
+
+    if success:
+        return {
+            "status": "success",
+            "message": f"Successfully synced test contact '{req.email}' to SendFox ({'Welcome' if req.list_type == 'welcome' else 'Pro'} List)!"
+        }
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="SendFox API test failed. Check server logs or verify your API key."
+        )

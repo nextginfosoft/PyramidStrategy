@@ -199,6 +199,8 @@ export const paymentsApi = {
     pro_list_id?: string
     is_active?: boolean
   }) => api.post('/payments/admin/sendfox', payload).then(r => r.data),
+  testSendFoxEmail: (email: string, list_type: string = 'welcome') => 
+    api.post('/payments/admin/sendfox/test', { email, list_type }).then(r => r.data),
 }
 
 // Restore token on module load
