@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Request, Header, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
@@ -168,6 +168,7 @@ def create_payment_order(
 @router.post("/verify")
 def verify_payment(
     req: VerifyPaymentRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
@@ -271,6 +272,16 @@ def verify_payment(
     db.commit()
 
     logger.info(f"🎉 User {user.id} ({user.username}) successfully upgraded to PRO plan ({plan.plan_code}) until {new_end_date}")
+
+    # SendFox Email Marketing Automation Sync (Add user to Pro Customer List)
+    if "@" in user.username:
+        try:
+            from app.services.sendfox_service import add_sendfox_contact, get_sendfox_config
+            _, _, pro_list_id = get_sendfox_config(db)
+            target_lists = [pro_list_id] if pro_list_id else None
+            background_tasks.add_task(add_sendfox_contact, user.username, user.username.split("@")[0], target_lists, db)
+        except Exception as e:
+            logger.warning(f"Failed to queue SendFox Pro contact sync task: {e}")
 
     return {
         "status": "success",

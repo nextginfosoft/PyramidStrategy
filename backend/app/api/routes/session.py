@@ -6,7 +6,7 @@ Provides registration, login, session check, and auth verification.
 
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from jose import JWTError, jwt
@@ -117,7 +117,7 @@ def require_admin(current_user: User = Depends(require_auth)) -> User:
 
 
 @router.post("/register")
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
+def register(body: RegisterRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Register a new user account."""
     if len(body.username.strip()) < 3:
         raise HTTPException(
@@ -157,6 +157,14 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.refresh(new_user)
 
     logger.info(f"New user registered: '{new_user.username}' (id={new_user.id}, approved={is_approved}, admin={is_admin})")
+
+    # SendFox Email Marketing Automation Sync (Non-blocking background task)
+    if "@" in body.username:
+        try:
+            from app.services.sendfox_service import add_sendfox_contact
+            background_tasks.add_task(add_sendfox_contact, body.username, body.username.split("@")[0], None, db)
+        except Exception as e:
+            logger.warning(f"Failed to queue SendFox contact sync task: {e}")
 
     # Send notification alert to the administrator for moderation
     if not is_approved:
