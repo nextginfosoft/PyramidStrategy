@@ -273,13 +273,28 @@ def verify_payment(
 
     logger.info(f"🎉 User {user.id} ({user.username}) successfully upgraded to PRO plan ({plan.plan_code}) until {new_end_date}")
 
-    # SendFox Email Marketing Automation Sync (Add user to Pro Customer List)
+    # SendFox Email Marketing Automation Sync (Add user to Pro Customer List & Send Onboarding Email)
     if "@" in user.username:
         try:
-            from app.services.sendfox_service import add_sendfox_contact, get_sendfox_config
+            from app.services.sendfox_service import add_sendfox_contact, get_sendfox_config, send_sendfox_campaign
             _, _, pro_list_id = get_sendfox_config(db)
             target_lists = [pro_list_id] if pro_list_id else None
             background_tasks.add_task(add_sendfox_contact, user.username, user.username.split("@")[0], target_lists, db)
+
+            pro_html = f"""
+            <h1>🎉 Welcome to DestinyAI Pro!</h1>
+            <p>Hi {user.username.split('@')[0]},</p>
+            <p>Your <strong>DestinyAI Pro Subscription</strong> is officially active! You now have access to direct Zerodha Kite API execution, sub-second market orders, and instant Telegram push alerts.</p>
+            <p><strong>Next Steps for Live Trading:</strong></p>
+            <ol>
+              <li>Go to Settings ➔ Enter your Zerodha API Key & Secret.</li>
+              <li>Click 'Connect Zerodha Terminal' to authorize your session.</li>
+              <li>Set your daily SL/Target points and start live automated execution!</li>
+            </ol>
+            <p>If you need 1-on-1 level setup assistance, reply directly to this email!</p>
+            <p>Best regards,<br>DestinyAI Pro Support Team</p>
+            """
+            background_tasks.add_task(send_sendfox_campaign, user.username, "🎉 Welcome to DestinyAI Pro — Live Broker Setup Guide", pro_html, db)
         except Exception as e:
             logger.warning(f"Failed to queue SendFox Pro contact sync task: {e}")
 

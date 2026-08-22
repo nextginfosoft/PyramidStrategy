@@ -79,3 +79,47 @@ async def add_sendfox_contact(email: str, first_name: str = "", list_ids: list =
     except Exception as e:
         logger.error(f"Exception while syncing contact to SendFox: {e}")
         return False
+
+
+async def send_sendfox_campaign(email: str, subject: str, html_content: str, db: Session = None):
+    """
+    Creates and immediately dispatches a direct SendFox broadcast campaign for full automated delivery.
+    """
+    api_key, _, _ = get_sendfox_config(db)
+    if not api_key:
+        return False
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    # Ensure unsubscribe URL placeholder is included
+    if "{{unsubscribe_url}}" not in html_content:
+        html_content += '<br><br><p><a href="{{unsubscribe_url}}">Unsubscribe</a></p>'
+
+    payload = {
+        "title": f"DestinyAI Automation — {subject}",
+        "subject": subject,
+        "html": html_content,
+        "from_name": "DestinyAI Team",
+        "from_email": "support@programmersacademy.in",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{SENDFOX_BASE_URL}/campaigns", json=payload, headers=headers)
+            if resp.status_code in (200, 201):
+                camp_data = resp.json()
+                camp_id = camp_data.get("id")
+                if camp_id:
+                    # Dispatch immediately
+                    d_resp = await client.post(f"{SENDFOX_BASE_URL}/campaigns/{camp_id}/send", headers=headers)
+                    if d_resp.status_code in (200, 201):
+                        logger.info(f"SendFox automated campaign {camp_id} ('{subject}') dispatched to {email}")
+                        return True
+            return False
+    except Exception as e:
+        logger.error(f"Failed to dispatch SendFox campaign: {e}")
+        return False
+
