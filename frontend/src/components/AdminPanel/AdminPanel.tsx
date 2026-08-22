@@ -38,7 +38,7 @@ interface Props {
 }
 
 export function AdminPanel({ onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<'accounts' | 'monitoring' | 'gateway'>('accounts')
+  const [activeTab, setActiveTab] = useState<'accounts' | 'monitoring' | 'gateway' | 'sendfox'>('accounts')
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
@@ -55,6 +55,17 @@ export function AdminPanel({ onClose }: Props) {
   })
   const [loadingRzp, setLoadingRzp] = useState(false)
   const [savingRzp, setSavingRzp] = useState(false)
+
+  // SendFox Email Marketing Config state
+  const [sendfoxConfig, setSendfoxConfig] = useState({
+    api_key: '',
+    welcome_list_id: '',
+    pro_list_id: '',
+    has_api_key: false,
+    is_active: true
+  })
+  const [loadingSendfox, setLoadingSendfox] = useState(false)
+  const [savingSendfox, setSavingSendfox] = useState(false)
   
   // Live monitoring states
   const [liveStatuses, setLiveStatuses] = useState<UserLiveStatus[]>([])
@@ -288,6 +299,45 @@ export function AdminPanel({ onClose }: Props) {
     }
   }
 
+  // Fetch SendFox Admin Configuration
+  const fetchSendfoxConfig = async () => {
+    try {
+      setLoadingSendfox(true)
+      const data = await paymentsApi.getSendFoxConfig()
+      setSendfoxConfig({
+        api_key: data.has_api_key ? '******' : '',
+        welcome_list_id: data.welcome_list_id || '',
+        pro_list_id: data.pro_list_id || '',
+        has_api_key: data.has_api_key,
+        is_active: data.is_active ?? true
+      })
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to load SendFox config', 'error')
+    } finally {
+      setLoadingSendfox(false)
+    }
+  }
+
+  // Save SendFox Admin Configuration
+  const handleSaveSendfoxConfig = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setSavingSendfox(true)
+      await paymentsApi.updateSendFoxConfig({
+        api_key: sendfoxConfig.api_key.includes('*') ? undefined : sendfoxConfig.api_key,
+        welcome_list_id: sendfoxConfig.welcome_list_id,
+        pro_list_id: sendfoxConfig.pro_list_id,
+        is_active: sendfoxConfig.is_active
+      })
+      addToast('✅ SendFox Email Marketing config saved successfully!', 'success')
+      fetchSendfoxConfig()
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to save SendFox config', 'error')
+    } finally {
+      setSavingSendfox(false)
+    }
+  }
+
   // Reload analytics when date filters change
   useEffect(() => {
     if (inspectUserId) {
@@ -362,6 +412,19 @@ export function AdminPanel({ onClose }: Props) {
               }`}
             >
               💳 Razorpay Gateway Keys
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('sendfox')
+                fetchSendfoxConfig()
+              }}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all border ${
+                activeTab === 'sendfox' 
+                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/30' 
+                  : 'bg-transparent text-navy-300 border-transparent hover:text-white'
+              }`}
+            >
+              🦊 SendFox Email Marketing
             </button>
           </div>
 
@@ -723,7 +786,7 @@ export function AdminPanel({ onClose }: Props) {
                 </div>
               </div>
             )
-          ) : (
+          ) : activeTab === 'gateway' ? (
             /* Tab 3: Razorpay Gateway Keys */
             <div className="flex-1 overflow-y-auto min-h-0 pr-1 space-y-6">
               <div className="p-5 bg-navy-900/40 border border-navy-800 rounded-xl space-y-4">
@@ -781,6 +844,71 @@ export function AdminPanel({ onClose }: Props) {
                         className="py-2.5 px-6 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
                       >
                         {savingRzp ? 'Saving Gateway Settings...' : 'Save Credentials'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Tab 4: SendFox Email Marketing */
+            <div className="flex-1 overflow-y-auto min-h-0 pr-1 space-y-6">
+              <div className="p-5 bg-navy-900/40 border border-orange-500/20 rounded-xl space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-orange-400">🦊 SendFox Email Marketing & Sales Automation</h3>
+                  <p className="text-xs text-navy-400 mt-1">
+                    Manage your SendFox API credentials and automated contact list IDs. Newly registered users will be added to the Welcome/Leads list, and upgraded subscribers will be synced to the Pro List.
+                  </p>
+                </div>
+
+                {loadingSendfox ? (
+                  <div className="py-8 flex justify-center">
+                    <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveSendfoxConfig} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">SendFox Personal Access Token (API Key)</label>
+                      <input
+                        type="password"
+                        value={sendfoxConfig.api_key}
+                        onChange={e => setSendfoxConfig(prev => ({ ...prev, api_key: e.target.value }))}
+                        placeholder={sendfoxConfig.has_api_key ? '•••••••••••• (Leave blank to keep existing key)' : 'Enter SendFox Personal Access Token'}
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-navy-300 mb-1">Welcome / Leads List ID (Optional)</label>
+                        <input
+                          type="text"
+                          value={sendfoxConfig.welcome_list_id}
+                          onChange={e => setSendfoxConfig(prev => ({ ...prev, welcome_list_id: e.target.value }))}
+                          placeholder="e.g. 123456"
+                          className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-navy-300 mb-1">Pro Subscribers List ID (Optional)</label>
+                        <input
+                          type="text"
+                          value={sendfoxConfig.pro_list_id}
+                          onChange={e => setSendfoxConfig(prev => ({ ...prev, pro_list_id: e.target.value }))}
+                          placeholder="e.g. 654321"
+                          className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingSendfox}
+                        className="py-2.5 px-6 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+                      >
+                        {savingSendfox ? 'Saving SendFox Settings...' : 'Save SendFox Settings'}
                       </button>
                     </div>
                   </form>

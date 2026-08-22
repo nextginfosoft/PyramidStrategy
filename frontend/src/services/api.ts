@@ -191,6 +191,14 @@ export const paymentsApi = {
     webhook_secret?: string
     is_active?: boolean
   }) => api.post('/payments/admin/config', payload).then(r => r.data),
+
+  getSendFoxConfig: () => api.get('/payments/admin/sendfox').then(r => r.data),
+  updateSendFoxConfig: (payload: {
+    api_key?: string
+    welcome_list_id?: string
+    pro_list_id?: string
+    is_active?: boolean
+  }) => api.post('/payments/admin/sendfox', payload).then(r => r.data),
 }
 
 // Restore token on module load

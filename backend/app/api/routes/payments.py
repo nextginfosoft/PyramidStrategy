@@ -415,4 +415,81 @@ def update_razorpay_admin_config(
 
     db.commit()
     logger.info(f"Admin {admin.username} updated Razorpay payment gateway credentials.")
-    return {"status": "success", "message": "Razorpay API credentials updated successfully!"}
+    return {"status": "success", "message": "Razorpay configuration updated"}
+
+
+# ── SendFox Admin Config Endpoints ──────────────────────────────────────────────
+class SendFoxConfigUpdate(BaseModel):
+    api_key: Optional[str] = None
+    welcome_list_id: Optional[str] = None
+    pro_list_id: Optional[str] = None
+    is_active: bool = True
+
+
+@router.get("/admin/sendfox")
+def get_sendfox_admin_config(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Fetch SendFox API key configuration for Admin Panel."""
+    config = db.query(ApiConfig).filter(ApiConfig.provider == "sendfox").first()
+    has_api_key = False
+    welcome_list_id = ""
+    pro_list_id = ""
+    is_active = True
+
+    if config:
+        is_active = config.is_active
+        has_api_key = bool(config.api_key_encrypted)
+        if config.extra_config:
+            welcome_list_id = config.extra_config.get("welcome_list_id", "")
+            pro_list_id = config.extra_config.get("pro_list_id", "")
+    else:
+        from app.config import settings
+        has_api_key = bool(settings.SENDFOX_API_KEY)
+        welcome_list_id = settings.SENDFOX_WELCOME_LIST_ID or ""
+        pro_list_id = settings.SENDFOX_PRO_LIST_ID or ""
+
+    return {
+        "has_api_key": has_api_key,
+        "welcome_list_id": welcome_list_id,
+        "pro_list_id": pro_list_id,
+        "is_active": is_active
+    }
+
+
+@router.post("/admin/sendfox")
+def update_sendfox_admin_config(
+    req: SendFoxConfigUpdate,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Save/Update SendFox API Key & List IDs dynamically from Admin Panel."""
+    config = db.query(ApiConfig).filter(ApiConfig.provider == "sendfox").first()
+    
+    extra = {}
+    if config and config.extra_config:
+        extra = dict(config.extra_config)
+
+    if req.welcome_list_id is not None:
+        extra["welcome_list_id"] = req.welcome_list_id
+    if req.pro_list_id is not None:
+        extra["pro_list_id"] = req.pro_list_id
+
+    if not config:
+        config = ApiConfig(
+            provider="sendfox",
+            api_key_encrypted=encrypt(req.api_key) if req.api_key else None,
+            extra_config=extra,
+            is_active=req.is_active
+        )
+        db.add(config)
+    else:
+        if req.api_key:
+            config.api_key_encrypted = encrypt(req.api_key)
+        config.extra_config = extra
+        config.is_active = req.is_active
+
+    db.commit()
+    logger.info("SendFox admin configuration updated dynamically by admin")
+    return {"status": "success", "message": "SendFox configuration updated"}
