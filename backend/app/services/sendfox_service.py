@@ -122,4 +122,3 @@ async def send_sendfox_campaign(email: str, subject: str, html_content: str, db:
     except Exception as e:
         logger.error(f"Failed to dispatch SendFox campaign: {e}")
         return False
-

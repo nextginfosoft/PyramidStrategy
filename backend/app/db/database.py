@@ -236,4 +236,3 @@ def init_db():
                 logger.info("Database seed: Default Subscription Plans initialized")
     except Exception as e:
         logger.warning(f"Database seed (Subscription Plans initialization): {e}")
-

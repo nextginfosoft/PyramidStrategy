@@ -237,4 +237,3 @@ class PaymentTransaction(Base):
     status = Column(String(30), default="PENDING", nullable=False)  # PENDING, CAPTURED, FAILED, REFUNDED
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
