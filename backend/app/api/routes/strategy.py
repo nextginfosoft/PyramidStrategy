@@ -38,6 +38,18 @@ async def start_strategy(
     if not cfg:
         raise HTTPException(status_code=400, detail="No active strategy config found. Set levels first.")
 
+    # ── Subscription Gatekeeper Check ───────────────────────────────────────
+    if not cfg.paper_trade:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        is_pro = user.subscription_tier == "PRO" and user.subscription_status == "ACTIVE"
+        has_time = user.subscription_ends_at and user.subscription_ends_at > now
+        if not (is_pro and has_time):
+            raise HTTPException(
+                status_code=402,
+                detail="Live Trading requires an active Pro Subscription. Please upgrade your plan to enable live execution with Zerodha."
+            )
+
     config_dict = {
         "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
         "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),

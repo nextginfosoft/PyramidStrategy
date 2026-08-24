@@ -6,7 +6,7 @@ Provides registration, login, session check, and auth verification.
 
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from jose import JWTError, jwt
@@ -106,8 +106,18 @@ def require_auth(
     return user
 
 
+def require_admin(current_user: User = Depends(require_auth)) -> User:
+    """Dependency: require authenticated user with admin privileges."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required",
+        )
+    return current_user
+
+
 @router.post("/register")
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
+def register(body: RegisterRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Register a new user account."""
     if len(body.username.strip()) < 3:
         raise HTTPException(
@@ -147,6 +157,30 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.refresh(new_user)
 
     logger.info(f"New user registered: '{new_user.username}' (id={new_user.id}, approved={is_approved}, admin={is_admin})")
+
+    # SendFox Email Marketing Automation Sync (Non-blocking background task)
+    if "@" in body.username:
+        try:
+            from app.services.sendfox_service import add_sendfox_contact, send_sendfox_campaign
+            background_tasks.add_task(add_sendfox_contact, body.username, body.username.split("@")[0], None, db)
+            
+            # Send immediate welcome campaign email
+            welcome_html = f"""
+            <h1>🚀 Welcome to DestinyAI!</h1>
+            <p>Hi {body.username.split('@')[0]},</p>
+            <p>Thank you for registering your free paper trading account with <strong>DestinyAI</strong> automated NIFTY options trading platform.</p>
+            <p><strong>Your 3-Step Setup Checklist:</strong></p>
+            <ol>
+              <li>Log into your DestinyAI Dashboard.</li>
+              <li>Configure your NIFTY Support & Resistance levels.</li>
+              <li>Enable Smart Exit auto square-off and test strategy crossover execution live!</li>
+            </ol>
+            <p>Want live broker execution with Zerodha Kite? Use promo code <strong>PRO15</strong> at checkout for 15% OFF Pro plan!</p>
+            <p>Happy Trading,<br>The DestinyAI Team</p>
+            """
+            background_tasks.add_task(send_sendfox_campaign, body.username, "🚀 Welcome to DestinyAI — Start Free Paper Trading Now!", welcome_html, db)
+        except Exception as e:
+            logger.warning(f"Failed to queue SendFox contact sync task: {e}")
 
     # Send notification alert to the administrator for moderation
     if not is_approved:

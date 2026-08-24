@@ -14,6 +14,9 @@ class User(Base):
     google_id = Column(String(255), unique=True, index=True, nullable=True)
     is_approved = Column(Boolean, default=False, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    subscription_tier = Column(String(20), default="BASIC", nullable=False)  # BASIC or PRO
+    subscription_status = Column(String(20), default="INACTIVE", nullable=False)  # INACTIVE, ACTIVE, EXPIRED, CANCELLED
+    subscription_ends_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -187,3 +190,51 @@ class PreMarketBrief(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "trade_date", name="uq_user_premarket_trade_date"),
     )
+
+
+class SubscriptionPlan(Base):
+    __tablename__ = "subscription_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan_code = Column(String(30), unique=True, index=True, nullable=False)  # PRO_MONTHLY, PRO_QUARTERLY, PRO_ANNUAL
+    name = Column(String(100), nullable=False)                  # Pro Monthly, Pro Quarterly, Pro Annual
+    description = Column(Text, nullable=True)
+    billing_period = Column(String(20), nullable=False)        # monthly, quarterly, yearly
+    interval_count = Column(Integer, default=1, nullable=False) # 1, 3, 12 months
+    price = Column(Numeric(10, 2), nullable=False)              # 4999.00, 13497.00, 50989.00
+    discount_percentage = Column(Integer, default=0)           # 0, 10, 15
+    razorpay_plan_id = Column(String(100), nullable=True)      # plan_xxxx on Razorpay
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+
+class UserSubscription(Base):
+    __tablename__ = "user_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    plan_id = Column(Integer, ForeignKey("subscription_plans.id", ondelete="SET NULL"), nullable=True)
+    razorpay_subscription_id = Column(String(100), unique=True, index=True, nullable=True)
+    status = Column(String(30), default="CREATED", nullable=False)  # CREATED, ACTIVE, HALTED, CANCELLED, EXPIRED
+    current_start = Column(DateTime(timezone=True), nullable=True)
+    current_end = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    subscription_id = Column(Integer, ForeignKey("user_subscriptions.id", ondelete="SET NULL"), nullable=True)
+    razorpay_payment_id = Column(String(100), unique=True, index=True, nullable=True)
+    razorpay_order_id = Column(String(100), index=True, nullable=True)
+    razorpay_signature = Column(String(255), nullable=True)
+    amount = Column(Numeric(10, 2), nullable=False)
+    currency = Column(String(10), default="INR")
+    status = Column(String(30), default="PENDING", nullable=False)  # PENDING, CAPTURED, FAILED, REFUNDED
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+

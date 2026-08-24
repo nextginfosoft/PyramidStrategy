@@ -672,20 +672,22 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                     </div>
 
                     <div className="block space-y-1">
-                      <span className="text-[10px] text-navy-300 font-medium">Squareoff Time</span>
+                      <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                        <span>Dynamic Squareoff</span>
+                      </span>
                       <div className="relative">
                         <input
                           type="text"
                           pattern="^(0[9]|1[0-5]):[0-5][0-9]$"
-                          placeholder="11:30"
+                          placeholder="15:20"
                           required
-                          className="w-full bg-navy-900 border border-navy-700 focus:border-orange-500 rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono"
+                          className="w-full bg-navy-900 border border-amber-500/50 focus:border-amber-400 rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono"
                           value={levels.squareoff_time}
                           onChange={e => setLevels(p => ({ ...p, squareoff_time: e.target.value }))}
                         />
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">⏰</span>
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-amber-400 text-xs">⏰</span>
                       </div>
-                      <span className="text-[9px] text-navy-400 block">Cutoff = 15m prior</span>
+                      <span className="text-[9px] text-amber-400/80 block">Auto cutoff 15m prior (e.g. 15:20)</span>
                     </div>
                   </div>
                 </div>

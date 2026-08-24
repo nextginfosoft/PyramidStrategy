@@ -174,5 +174,34 @@ export const adminApi = {
   testCredentials: (id: number) => api.post(`/admin/users/${id}/test-credentials`).then(r => r.data),
 }
 
+export const paymentsApi = {
+  getPlans: () => api.get('/payments/plans').then(r => r.data),
+  getStatus: () => api.get('/payments/my-status').then(r => r.data),
+  createOrder: (planCode: string) => api.post('/payments/create-order', { plan_code: planCode }).then(r => r.data),
+  verifyPayment: (payload: {
+    razorpay_order_id: string
+    razorpay_payment_id: string
+    razorpay_signature: string
+    plan_code: string
+  }) => api.post('/payments/verify', payload).then(r => r.data),
+  getAdminConfig: () => api.get('/payments/admin/config').then(r => r.data),
+  updateAdminConfig: (payload: {
+    key_id: string
+    key_secret: string
+    webhook_secret?: string
+    is_active?: boolean
+  }) => api.post('/payments/admin/config', payload).then(r => r.data),
+
+  getSendFoxConfig: () => api.get('/payments/admin/sendfox').then(r => r.data),
+  updateSendFoxConfig: (payload: {
+    api_key?: string
+    welcome_list_id?: string
+    pro_list_id?: string
+    is_active?: boolean
+  }) => api.post('/payments/admin/sendfox', payload).then(r => r.data),
+  testSendFoxEmail: (email: string, list_type: string = 'welcome') => 
+    api.post('/payments/admin/sendfox/test', { email, list_type }).then(r => r.data),
+}
+
 // Restore token on module load
 sessionApi.restoreToken()

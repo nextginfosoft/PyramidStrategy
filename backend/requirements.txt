@@ -49,5 +49,9 @@ psycopg2-binary>=2.9.9
 # Timezone support
 pytz>=2024.1
 
+# Payment Gateway
+razorpay>=1.4.2
+
+
 # PDF generation
 fpdf2>=2.8.7

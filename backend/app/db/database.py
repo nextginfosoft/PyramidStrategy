@@ -179,12 +179,61 @@ def init_db():
             # Expected error if column already exists
             logger.debug(f"Database migration (trades.{col} check/add): {e}")
 
-    # Self-healing migration to increase trades.level column length to VARCHAR(10)
+    # Self-healing migration for user subscription columns
+    for col, col_type in [
+        ("subscription_tier", "VARCHAR(20) DEFAULT 'BASIC' NOT NULL"),
+        ("subscription_status", "VARCHAR(20) DEFAULT 'INACTIVE' NOT NULL"),
+        ("subscription_ends_at", "TIMESTAMP WITH TIME ZONE")
+    ]:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                conn.commit()
+                logger.info(f"Database migration: Added {col} to users")
+        except Exception as e:
+            logger.debug(f"Database migration (users.{col} check/add): {e}")
+
+    # Seed default Subscription Plans if table is empty
     try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE trades ALTER COLUMN level TYPE VARCHAR(10)"))
-            conn.commit()
-            logger.info("Database migration: Altered trades.level type to VARCHAR(10)")
+        from app.models.models import SubscriptionPlan
+        with SessionLocal() as db:
+            if db.query(SubscriptionPlan).count() == 0:
+                default_plans = [
+                    SubscriptionPlan(
+                        plan_code="PRO_MONTHLY",
+                        name="Pro Monthly",
+                        description="Full live trading access with 30-day billing",
+                        billing_period="monthly",
+                        interval_count=1,
+                        price=4999.00,
+                        discount_percentage=0,
+                        is_active=True
+                    ),
+                    SubscriptionPlan(
+                        plan_code="PRO_QUARTERLY",
+                        name="Pro Quarterly",
+                        description="Full live trading access with 90-day billing (10% OFF)",
+                        billing_period="monthly",
+                        interval_count=3,
+                        price=13497.00,
+                        discount_percentage=10,
+                        is_active=True
+                    ),
+                    SubscriptionPlan(
+                        plan_code="PRO_ANNUAL",
+                        name="Pro Annual",
+                        description="Full live trading access with 365-day billing (15% OFF)",
+                        billing_period="yearly",
+                        interval_count=1,
+                        price=50989.00,
+                        discount_percentage=15,
+                        is_active=True
+                    ),
+                ]
+                db.add_all(default_plans)
+                db.commit()
+                logger.info("Database seed: Default Subscription Plans initialized")
     except Exception as e:
-        logger.warning(f"Database migration (alter trades.level type): {e}")
+        logger.warning(f"Database seed (Subscription Plans initialization): {e}")
+

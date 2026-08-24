@@ -18,8 +18,7 @@ jobs:
           key: ${{ secrets.PROD_VPS_SSH_KEY }}
           script: |
             cd /opt/pyramidstrategy
-            git fetch origin main
-            git reset --hard origin/main
+            git pull origin main
             docker compose build --no-cache
             docker compose up -d
             docker system prune -f

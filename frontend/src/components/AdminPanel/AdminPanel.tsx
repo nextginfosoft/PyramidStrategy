@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { adminApi } from '../../services/api'
+import { adminApi, paymentsApi } from '../../services/api'
 import { useToastStore } from '../../store/toastStore'
 
 interface User {
@@ -38,11 +38,37 @@ interface Props {
 }
 
 export function AdminPanel({ onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<'accounts' | 'monitoring'>('accounts')
+  const [activeTab, setActiveTab] = useState<'accounts' | 'monitoring' | 'gateway' | 'sendfox'>('accounts')
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
   const [testingId, setTestingId] = useState<number | null>(null)
+
+  // Razorpay Gateway Admin Config state
+  const [rzpConfig, setRzpConfig] = useState({
+    key_id: '',
+    key_secret: '',
+    webhook_secret: '',
+    has_key_secret: false,
+    has_webhook_secret: false,
+    is_active: true
+  })
+  const [loadingRzp, setLoadingRzp] = useState(false)
+  const [savingRzp, setSavingRzp] = useState(false)
+
+  // SendFox Email Marketing Config state
+  const [sendfoxConfig, setSendfoxConfig] = useState({
+    api_key: '',
+    welcome_list_id: '',
+    pro_list_id: '',
+    has_api_key: false,
+    is_active: true
+  })
+  const [loadingSendfox, setLoadingSendfox] = useState(false)
+  const [savingSendfox, setSavingSendfox] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [testListType, setTestListType] = useState<'welcome' | 'pro'>('welcome')
+  const [testingSendfox, setTestingSendfox] = useState(false)
   
   // Live monitoring states
   const [liveStatuses, setLiveStatuses] = useState<UserLiveStatus[]>([])
@@ -236,6 +262,104 @@ export function AdminPanel({ onClose }: Props) {
     }
   }
 
+  // Fetch Razorpay Admin Configuration
+  const fetchRzpConfig = async () => {
+    try {
+      setLoadingRzp(true)
+      const data = await paymentsApi.getAdminConfig()
+      setRzpConfig({
+        key_id: data.key_id || '',
+        key_secret: data.has_key_secret ? '******' : '',
+        webhook_secret: data.has_webhook_secret ? '******' : '',
+        has_key_secret: data.has_key_secret,
+        has_webhook_secret: data.has_webhook_secret,
+        is_active: data.is_active ?? true
+      })
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to load Razorpay config', 'error')
+    } finally {
+      setLoadingRzp(false)
+    }
+  }
+
+  // Save Razorpay Admin Configuration
+  const handleSaveRzpConfig = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setSavingRzp(true)
+      await paymentsApi.updateAdminConfig({
+        key_id: rzpConfig.key_id,
+        key_secret: rzpConfig.key_secret,
+        webhook_secret: rzpConfig.webhook_secret,
+        is_active: rzpConfig.is_active
+      })
+      addToast('✅ Razorpay API credentials saved successfully!', 'success')
+      fetchRzpConfig()
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to save Razorpay config', 'error')
+    } finally {
+      setSavingRzp(false)
+    }
+  }
+
+  // Fetch SendFox Admin Configuration
+  const fetchSendfoxConfig = async () => {
+    try {
+      setLoadingSendfox(true)
+      const data = await paymentsApi.getSendFoxConfig()
+      setSendfoxConfig({
+        api_key: data.has_api_key ? '******' : '',
+        welcome_list_id: data.welcome_list_id || '',
+        pro_list_id: data.pro_list_id || '',
+        has_api_key: data.has_api_key,
+        is_active: data.is_active ?? true
+      })
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to load SendFox config', 'error')
+    } finally {
+      setLoadingSendfox(false)
+    }
+  }
+
+  // Save SendFox Admin Configuration
+  const handleSaveSendfoxConfig = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setSavingSendfox(true)
+      await paymentsApi.updateSendFoxConfig({
+        api_key: sendfoxConfig.api_key.includes('*') ? undefined : sendfoxConfig.api_key,
+        welcome_list_id: sendfoxConfig.welcome_list_id,
+        pro_list_id: sendfoxConfig.pro_list_id,
+        is_active: sendfoxConfig.is_active
+      })
+      addToast('✅ SendFox Email Marketing config saved successfully!', 'success')
+      fetchSendfoxConfig()
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Failed to save SendFox config', 'error')
+    } finally {
+      setSavingSendfox(false)
+    }
+  }
+
+  // Test SendFox Email Sync
+  const handleTestSendfoxEmail = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!testEmail || !testEmail.includes('@')) {
+      addToast('Please enter a valid email address', 'error')
+      return
+    }
+    try {
+      setTestingSendfox(true)
+      const resp = await paymentsApi.testSendFoxEmail(testEmail, testListType)
+      addToast(resp.message || '✅ Test email contact synced to SendFox successfully!', 'success')
+      setTestEmail('')
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'SendFox test sync failed', 'error')
+    } finally {
+      setTestingSendfox(false)
+    }
+  }
+
   // Reload analytics when date filters change
   useEffect(() => {
     if (inspectUserId) {
@@ -297,6 +421,32 @@ export function AdminPanel({ onClose }: Props) {
               }`}
             >
               📊 Live Status & P&L Monitor
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('gateway')
+                fetchRzpConfig()
+              }}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all border ${
+                activeTab === 'gateway' 
+                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' 
+                  : 'bg-transparent text-navy-300 border-transparent hover:text-white'
+              }`}
+            >
+              💳 Razorpay Gateway Keys
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('sendfox')
+                fetchSendfoxConfig()
+              }}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all border ${
+                activeTab === 'sendfox' 
+                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/30' 
+                  : 'bg-transparent text-navy-300 border-transparent hover:text-white'
+              }`}
+            >
+              🦊 SendFox Email Marketing
             </button>
           </div>
 
@@ -440,7 +590,7 @@ export function AdminPanel({ onClose }: Props) {
                 </table>
               </div>
             )
-          ) : (
+          ) : activeTab === 'monitoring' ? (
             /* ==================== TAB 2: LIVE MONITOR & P&L ==================== */
             liveStatuses.length === 0 ? (
               <div className="text-center py-20 text-navy-400">
@@ -658,6 +808,177 @@ export function AdminPanel({ onClose }: Props) {
                 </div>
               </div>
             )
+          ) : activeTab === 'gateway' ? (
+            /* Tab 3: Razorpay Gateway Keys */
+            <div className="flex-1 overflow-y-auto min-h-0 pr-1 space-y-6">
+              <div className="p-5 bg-navy-900/40 border border-navy-800 rounded-xl space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-indigo-400">💳 Razorpay Payment Gateway Configuration</h3>
+                  <p className="text-xs text-navy-400 mt-1">
+                    Enter your Razorpay Test API Keys (`rzp_test_...`) or Live API Keys (`rzp_live_...`). These credentials will dynamically power subscriber checkouts across the application.
+                  </p>
+                </div>
+
+                {loadingRzp ? (
+                  <div className="py-8 flex justify-center">
+                    <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveRzpConfig} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">Razorpay Key ID</label>
+                      <input
+                        type="text"
+                        value={rzpConfig.key_id}
+                        onChange={e => setRzpConfig(prev => ({ ...prev, key_id: e.target.value }))}
+                        placeholder="rzp_test_xxxxxxxx or rzp_live_xxxxxxxx"
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">Razorpay Key Secret</label>
+                      <input
+                        type="password"
+                        value={rzpConfig.key_secret}
+                        onChange={e => setRzpConfig(prev => ({ ...prev, key_secret: e.target.value }))}
+                        placeholder={rzpConfig.has_key_secret ? '•••••••••••• (Leave blank to keep existing secret)' : 'Enter Razorpay Key Secret'}
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">Razorpay Webhook Secret (Optional)</label>
+                      <input
+                        type="password"
+                        value={rzpConfig.webhook_secret}
+                        onChange={e => setRzpConfig(prev => ({ ...prev, webhook_secret: e.target.value }))}
+                        placeholder={rzpConfig.has_webhook_secret ? '•••••••••••• (Leave blank to keep existing secret)' : 'Enter Webhook Secret'}
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingRzp}
+                        className="py-2.5 px-6 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+                      >
+                        {savingRzp ? 'Saving Gateway Settings...' : 'Save Credentials'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Tab 4: SendFox Email Marketing */
+            <div className="flex-1 overflow-y-auto min-h-0 pr-1 space-y-6">
+              <div className="p-5 bg-navy-900/40 border border-orange-500/20 rounded-xl space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-orange-400">🦊 SendFox Email Marketing & Sales Automation</h3>
+                  <p className="text-xs text-navy-400 mt-1">
+                    Manage your SendFox API credentials and automated contact list IDs. Newly registered users will be added to the Welcome/Leads list, and upgraded subscribers will be synced to the Pro List.
+                  </p>
+                </div>
+
+                {loadingSendfox ? (
+                  <div className="py-8 flex justify-center">
+                    <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveSendfoxConfig} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-navy-300 mb-1">SendFox Personal Access Token (API Key)</label>
+                      <input
+                        type="password"
+                        value={sendfoxConfig.api_key}
+                        onChange={e => setSendfoxConfig(prev => ({ ...prev, api_key: e.target.value }))}
+                        placeholder={sendfoxConfig.has_api_key ? '•••••••••••• (Leave blank to keep existing key)' : 'Enter SendFox Personal Access Token'}
+                        className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-navy-300 mb-1">Welcome / Leads List ID (Optional)</label>
+                        <input
+                          type="text"
+                          value={sendfoxConfig.welcome_list_id}
+                          onChange={e => setSendfoxConfig(prev => ({ ...prev, welcome_list_id: e.target.value }))}
+                          placeholder="e.g. 123456"
+                          className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-navy-300 mb-1">Pro Subscribers List ID (Optional)</label>
+                        <input
+                          type="text"
+                          value={sendfoxConfig.pro_list_id}
+                          onChange={e => setSendfoxConfig(prev => ({ ...prev, pro_list_id: e.target.value }))}
+                          placeholder="e.g. 654321"
+                          className="w-full px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingSendfox}
+                        className="py-2.5 px-6 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+                      >
+                        {savingSendfox ? 'Saving SendFox Settings...' : 'Save SendFox Settings'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Test SendFox Contact Sync Box */}
+                <div className="pt-6 border-t border-navy-800 space-y-3">
+                  <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🧪 SendFox Integration Test</span>
+                  </h4>
+                  <p className="text-[11px] text-navy-400">
+                    Enter a target email address below to fire an instant test contact sync to your SendFox list.
+                  </p>
+                  <form onSubmit={handleTestSendfoxEmail} className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="email"
+                      required
+                      value={testEmail}
+                      onChange={e => setTestEmail(e.target.value)}
+                      placeholder="trader@example.com"
+                      className="flex-1 px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                    />
+                    <select
+                      value={testListType}
+                      onChange={e => setTestListType(e.target.value as 'welcome' | 'pro')}
+                      className="px-3 py-2 bg-navy-950 border border-navy-800 rounded-lg text-white text-xs font-semibold focus:outline-none"
+                    >
+                      <option value="welcome">Welcome List (669850)</option>
+                      <option value="pro">Pro List (669851)</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={testingSendfox}
+                      className="py-2 px-5 bg-navy-800 hover:bg-navy-750 text-orange-400 font-extrabold text-xs rounded-lg transition border border-orange-500/30 flex items-center justify-center gap-1.5 shrink-0"
+                    >
+                      {testingSendfox ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                          <span>Testing...</span>
+                        </>
+                      ) : (
+                        <span>🧪 Send Test Sync</span>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
