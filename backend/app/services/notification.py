@@ -106,11 +106,13 @@ class NotificationService:
         lots: int,
         fill_price: Decimal,
         nifty_ltp: Decimal,
+        strategy_type: str = "PYRAMID",
     ):
         """Notify: BUY order placed."""
         if not self._enabled or not self._notify_entry:
             return
         emoji = "🟢" if side == "CE" else "🔴"
+        strat_badge = "🌌 *[DESTINY]*" if strategy_type == "DESTINY" else "🔺 *[PYRAMID]*"
         
         # Convert L1/L2/L3 to S1/S2/S3 for CE, or R1/R2/R3 for PE
         mapped_lvl = level
@@ -119,7 +121,7 @@ class NotificationService:
             mapped_lvl = level.replace("L", prefix)
 
         msg = (
-            f"{emoji} *BUY* `{instrument}`\n"
+            f"{emoji} {strat_badge} *BUY* `{instrument}`\n"
             f"Side: {side} | Level: {mapped_lvl} | Lots: {lots}\n"
             f"Entry: ₹{fill_price:.2f} | NIFTY: {nifty_ltp:.2f}\n"
             f"Time: {self._now_str()}"
@@ -134,12 +136,14 @@ class NotificationService:
         exit_price: Decimal,
         entry_avg: Decimal,
         pnl_rupees: Decimal,
+        strategy_type: str = "PYRAMID",
     ):
         """Notify: Target achieved — full position exited."""
         if not self._enabled or not self._notify_target:
             return
+        strat_badge = "🌌 *[DESTINY]*" if strategy_type == "DESTINY" else "🔺 *[PYRAMID]*"
         msg = (
-            f"🎯 *TARGET HIT* — {side}\n"
+            f"🎯 {strat_badge} *TARGET HIT* — {side}\n"
             f"Instrument: `{instrument}`\n"
             f"Lots: {lots} | Exit: ₹{exit_price:.2f} | Entry Avg: ₹{entry_avg:.2f}\n"
             f"*P&L: +₹{pnl_rupees:.0f}*\n"
@@ -155,14 +159,16 @@ class NotificationService:
         exit_price: Decimal,
         entry_avg: Decimal,
         pnl_rupees: Decimal,
+        strategy_type: str = "PYRAMID",
     ):
-        """Notify: Stop loss triggered at level 3 (S3/R3)."""
+        """Notify: Stop loss triggered."""
         if not self._enabled or not self._notify_sl:
             return
+        strat_badge = "🌌 *[DESTINY]*" if strategy_type == "DESTINY" else "🔺 *[PYRAMID]*"
         prefix = "S" if side == "CE" else "R"
         mapped_lvl = f"{prefix}3"
         msg = (
-            f"🛑 *SL HIT* — {side} {mapped_lvl}\n"
+            f"🛑 {strat_badge} *SL HIT* — {side} {mapped_lvl}\n"
             f"Instrument: `{instrument}`\n"
             f"Lots: {lots} | Exit: ₹{exit_price:.2f} | Entry Avg: ₹{entry_avg:.2f}\n"
             f"*P&L: ₹{pnl_rupees:.0f}*\n"
@@ -170,47 +176,53 @@ class NotificationService:
         )
         asyncio.create_task(self._send(msg))
 
-    def notify_squareoff(self, ce_pnl: Decimal, pe_pnl: Decimal, squareoff_time_str: str = "11:30"):
+    def notify_squareoff(self, ce_pnl: Decimal, pe_pnl: Decimal, squareoff_time_str: str = "11:30", strategy_type: str = "PYRAMID"):
         """Notify: force squareoff at configured time."""
         if not self._enabled or not self._notify_squareoff:
             return
+        strat_badge = "🌌 *[DESTINY]*" if strategy_type == "DESTINY" else "🔺 *[PYRAMID]*"
         total = ce_pnl + pe_pnl
         sign = "+" if total >= 0 else ""
         msg = (
-            f"⏰ *SQUAREOFF — {squareoff_time_str}*\n"
+            f"⏰ {strat_badge} *SQUAREOFF — {squareoff_time_str}*\n"
             f"All positions closed.\n"
             f"CE P&L: ₹{ce_pnl:.0f} | PE P&L: ₹{pe_pnl:.0f}\n"
             f"*Total: {sign}₹{total:.0f}*"
         )
         asyncio.create_task(self._send(msg))
 
-    def notify_error(self, context: str, error_msg: str):
+    def notify_error(self, context: str, error_msg: str, strategy_type: str = "PYRAMID"):
         """Notify: Critical error in strategy engine."""
         if not self._enabled or not self._notify_errors:
             return
+        strat_badge = "🌌 *[DESTINY]*" if strategy_type == "DESTINY" else "🔺 *[PYRAMID]*"
         msg = (
-            f"❌ *ERROR — {context}*\n"
+            f"❌ {strat_badge} *ERROR — {context}*\n"
             f"`{error_msg[:200]}`\n"
             f"Time: {self._now_str()}"
         )
         asyncio.create_task(self._send(msg))
 
-    def notify_engine_started(self, paper_trade: bool):
+    def notify_engine_started(self, paper_trade: bool, strategy_type: str = "PYRAMID"):
         """Notify: Strategy engine started."""
         if not self._enabled:
             return
         mode = "📝 PAPER" if paper_trade else "⚡ LIVE"
+        strat_name = "DestinyStrategy" if strategy_type == "DESTINY" else "PyramidStrategy"
+        strat_badge = "🌌" if strategy_type == "DESTINY" else "🔺"
         asyncio.create_task(self._send(
-            f"▶️ *PyramidStrategy STARTED* — {mode} mode\n"
+            f"▶️ {strat_badge} *{strat_name} STARTED* — {mode} mode\n"
             f"Time: {self._now_str()}"
         ))
 
-    def notify_engine_stopped(self):
+    def notify_engine_stopped(self, strategy_type: str = "PYRAMID"):
         """Notify: Strategy engine stopped."""
         if not self._enabled:
             return
+        strat_name = "DestinyStrategy" if strategy_type == "DESTINY" else "PyramidStrategy"
+        strat_badge = "🌌" if strategy_type == "DESTINY" else "🔺"
         asyncio.create_task(self._send(
-            f"⏹ *PyramidStrategy STOPPED*\nTime: {self._now_str()}"
+            f"⏹ {strat_badge} *{strat_name} STOPPED*\nTime: {self._now_str()}"
         ))
 
     async def test_connection(self) -> tuple[bool, str]:
