@@ -150,6 +150,17 @@ def run_safety_checks(
         logger.info("✅ All safety checks passed — safe to start live trading")
     else:
         logger.error(f"❌ Safety check failed: {errors}")
-
+        try:
+            from app.services.notification import get_user_notification_service
+            # Infer user_id if kite_service has user_id
+            uid = getattr(kite_service, "user_id", 1)
+            ns = get_user_notification_service(uid)
+            ns.load_from_db()
+            ns.notify_safety_breach(
+                rule_name="Pre-Flight Safety Check Failed",
+                breach_details="; ".join(errors)
+            )
+        except Exception as ex:
+            logger.warning(f"Failed to send safety check failure alert: {ex}")
 
     return all_passed, errors, warnings

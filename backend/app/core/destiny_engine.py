@@ -648,6 +648,7 @@ class DestinyStrategyEngine:
                 fill_price=fill_price,
                 nifty_ltp=nifty_ltp,
                 strategy_type="DESTINY",
+                paper_trade=self.paper_trade,
             )
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send entry notification: {e}")
@@ -753,6 +754,7 @@ class DestinyStrategyEngine:
                     entry_avg=trade["entry_price"],
                     pnl_rupees=total_pnl,
                     strategy_type="DESTINY",
+                    paper_trade=self.paper_trade,
                 )
             elif reason == "SL":
                 ns.notify_sl_hit(
@@ -763,6 +765,7 @@ class DestinyStrategyEngine:
                     entry_avg=trade["entry_price"],
                     pnl_rupees=total_pnl,
                     strategy_type="DESTINY",
+                    paper_trade=self.paper_trade,
                 )
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send exit notification: {e}")
@@ -840,7 +843,7 @@ class DestinyStrategyEngine:
             ns = get_user_notification_service(self.user_id)
             ns.load_from_db()
             sq_time = self.squareoff_time_str or "15:20"
-            ns.notify_squareoff(ce_pnl, pe_pnl, sq_time, strategy_type="DESTINY")
+            ns.notify_squareoff(ce_pnl, pe_pnl, sq_time, strategy_type="DESTINY", paper_trade=self.paper_trade)
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send squareoff alert: {e}")
 
