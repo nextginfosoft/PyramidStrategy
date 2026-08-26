@@ -42,6 +42,9 @@ class NotificationService:
         self._chat_id: Optional[str] = None
         self._enabled: bool = False
 
+        self._user_name: Optional[str] = None
+        self._broker_client_id: Optional[str] = None
+
         # Per-event toggles (all on by default)
         self._notify_entry: bool = True
         self._notify_target: bool = True
@@ -51,17 +54,21 @@ class NotificationService:
 
     # ── Config ───────────────────────────────────────────────────────────────
 
-    def configure(self, bot_token: str, chat_id: str):
+    def configure(self, bot_token: str, chat_id: str, user_name: Optional[str] = None, broker_client_id: Optional[str] = None):
         self._bot_token = bot_token
         self._chat_id = chat_id
+        if user_name:
+            self._user_name = user_name
+        if broker_client_id:
+            self._broker_client_id = broker_client_id
         self._enabled = bool(bot_token and chat_id)
-        logger.info(f"NotificationService configured for User {self.user_id}: enabled={self._enabled}")
+        logger.info(f"NotificationService configured for User {self.user_id} ({self._user_name}): enabled={self._enabled}")
 
     def load_from_db(self):
         """Load Telegram and WhatsApp credentials from DB (called on startup and after Settings save)."""
         try:
             from app.db.database import SessionLocal
-            from app.models.models import ApiConfig
+            from app.models.models import ApiConfig, User
             from app.services.encryption import decrypt
             from app.services.whatsapp import get_user_whatsapp_service
 
@@ -70,6 +77,19 @@ class NotificationService:
             self._ws.load_from_db()
 
             with SessionLocal() as db:
+                user_obj = db.query(User).filter(User.id == self.user_id).first()
+                if user_obj:
+                    self._user_name = user_obj.username
+
+                # Load broker client ID (Zerodha username)
+                z_cfg = db.query(ApiConfig).filter(
+                    ApiConfig.user_id == self.user_id,
+                    ApiConfig.provider == "zerodha",
+                    ApiConfig.is_active == True,
+                ).first()
+                if z_cfg and z_cfg.extra_config:
+                    self._broker_client_id = z_cfg.extra_config.get("username")
+
                 row = db.query(ApiConfig).filter(
                     ApiConfig.user_id == self.user_id,
                     ApiConfig.provider == "telegram",
@@ -80,7 +100,7 @@ class NotificationService:
                     extra = row.extra_config or {}
                     chat_id = extra.get("chat_id", "")
                     if token and chat_id:
-                        self.configure(token, chat_id)
+                        self.configure(token, chat_id, self._user_name, self._broker_client_id)
                         self._enabled = True
                         return
 
@@ -96,6 +116,18 @@ class NotificationService:
     def is_enabled(self) -> bool:
         return self._enabled
 
+    def _get_badge(self, strategy_type: str = "PYRAMID", paper_trade: Optional[bool] = None) -> str:
+        """Generate strategy badge, mode badge, and user account badge."""
+        strat_badge = "🌌 *[DESTINY]*" if strategy_type == "DESTINY" else "🔺 *[PYRAMID]*"
+        mode_badge = ""
+        if paper_trade is not None:
+            mode_badge = " 📝 PAPER |" if paper_trade else " ⚡ LIVE |"
+        user_str = escape_markdown(self._user_name) if self._user_name else f"User #{self.user_id}"
+        if self._broker_client_id:
+            broker_str = escape_markdown(self._broker_client_id)
+            user_str = f"{user_str} ({broker_str})"
+        return f"{strat_badge}{mode_badge} 👤 `{user_str}`"
+
     # ── Event Senders ────────────────────────────────────────────────────────
 
     def notify_trade_entry(
@@ -106,11 +138,14 @@ class NotificationService:
         lots: int,
         fill_price: Decimal,
         nifty_ltp: Decimal,
+        strategy_type: str = "PYRAMID",
+        paper_trade: Optional[bool] = None,
     ):
         """Notify: BUY order placed."""
         if not self._enabled or not self._notify_entry:
             return
         emoji = "🟢" if side == "CE" else "🔴"
+        badge = self._get_badge(strategy_type, paper_trade)
         
         # Convert L1/L2/L3 to S1/S2/S3 for CE, or R1/R2/R3 for PE
         mapped_lvl = level
@@ -119,7 +154,7 @@ class NotificationService:
             mapped_lvl = level.replace("L", prefix)
 
         msg = (
-            f"{emoji} *BUY* `{instrument}`\n"
+            f"{emoji} {badge} | *BUY* `{instrument}`\n"
             f"Side: {side} | Level: {mapped_lvl} | Lots: {lots}\n"
             f"Entry: ₹{fill_price:.2f} | NIFTY: {nifty_ltp:.2f}\n"
             f"Time: {self._now_str()}"
@@ -134,12 +169,15 @@ class NotificationService:
         exit_price: Decimal,
         entry_avg: Decimal,
         pnl_rupees: Decimal,
+        strategy_type: str = "PYRAMID",
+        paper_trade: Optional[bool] = None,
     ):
         """Notify: Target achieved — full position exited."""
         if not self._enabled or not self._notify_target:
             return
+        badge = self._get_badge(strategy_type, paper_trade)
         msg = (
-            f"🎯 *TARGET HIT* — {side}\n"
+            f"🎯 {badge} | *TARGET HIT* — {side}\n"
             f"Instrument: `{instrument}`\n"
             f"Lots: {lots} | Exit: ₹{exit_price:.2f} | Entry Avg: ₹{entry_avg:.2f}\n"
             f"*P&L: +₹{pnl_rupees:.0f}*\n"
@@ -155,14 +193,17 @@ class NotificationService:
         exit_price: Decimal,
         entry_avg: Decimal,
         pnl_rupees: Decimal,
+        strategy_type: str = "PYRAMID",
+        paper_trade: Optional[bool] = None,
     ):
-        """Notify: Stop loss triggered at level 3 (S3/R3)."""
+        """Notify: Stop loss triggered."""
         if not self._enabled or not self._notify_sl:
             return
+        badge = self._get_badge(strategy_type, paper_trade)
         prefix = "S" if side == "CE" else "R"
         mapped_lvl = f"{prefix}3"
         msg = (
-            f"🛑 *SL HIT* — {side} {mapped_lvl}\n"
+            f"🛑 {badge} | *SL HIT* — {side} {mapped_lvl}\n"
             f"Instrument: `{instrument}`\n"
             f"Lots: {lots} | Exit: ₹{exit_price:.2f} | Entry Avg: ₹{entry_avg:.2f}\n"
             f"*P&L: ₹{pnl_rupees:.0f}*\n"
@@ -170,47 +211,102 @@ class NotificationService:
         )
         asyncio.create_task(self._send(msg))
 
-    def notify_squareoff(self, ce_pnl: Decimal, pe_pnl: Decimal, squareoff_time_str: str = "11:30"):
+    def notify_squareoff(self, ce_pnl: Decimal, pe_pnl: Decimal, squareoff_time_str: str = "11:30", strategy_type: str = "PYRAMID", paper_trade: Optional[bool] = None):
         """Notify: force squareoff at configured time."""
         if not self._enabled or not self._notify_squareoff:
             return
+        badge = self._get_badge(strategy_type, paper_trade)
         total = ce_pnl + pe_pnl
         sign = "+" if total >= 0 else ""
         msg = (
-            f"⏰ *SQUAREOFF — {squareoff_time_str}*\n"
+            f"⏰ {badge} | *SQUAREOFF — {squareoff_time_str}*\n"
             f"All positions closed.\n"
             f"CE P&L: ₹{ce_pnl:.0f} | PE P&L: ₹{pe_pnl:.0f}\n"
             f"*Total: {sign}₹{total:.0f}*"
         )
         asyncio.create_task(self._send(msg))
 
-    def notify_error(self, context: str, error_msg: str):
+    def notify_daily_summary(
+        self,
+        gross_pnl: Decimal,
+        net_pnl: Decimal,
+        total_trades: int,
+        winning_trades: int,
+        losing_trades: int,
+        pyramid_pnl: Decimal = Decimal("0"),
+        destiny_pnl: Decimal = Decimal("0"),
+    ):
+        """Notify: EOD Performance Summary Card."""
+        if not self._enabled:
+            return
+        user_str = escape_markdown(self._user_name) if self._user_name else f"User #{self.user_id}"
+        if self._broker_client_id:
+            user_str = f"{user_str} ({escape_markdown(self._broker_client_id)})"
+        
+        sign_gross = "+" if gross_pnl >= 0 else ""
+        sign_net = "+" if net_pnl >= 0 else ""
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+
+        msg = (
+            f"📊 *[DAILY TRADING SUMMARY]* | 👤 `{user_str}`\n"
+            f"Date: {datetime.now(IST).strftime('%d %b %Y')}\n\n"
+            f"🔺 *Pyramid P&L:* ₹{pyramid_pnl:+.0f}\n"
+            f"🌌 *Destiny P&L:* ₹{destiny_pnl:+.0f}\n"
+            f"📈 *Gross P&L:* {sign_gross}₹{gross_pnl:,.0f}\n"
+            f"💰 *Net EOD P&L:* *{sign_net}₹{net_pnl:,.0f}*\n\n"
+            f"🔢 *Trades:* {total_trades} ({winning_trades} W / {losing_trades} L)\n"
+            f"🏆 *Win Rate:* {win_rate:.0f}%\n"
+            f"Time: {self._now_str()}"
+        )
+        asyncio.create_task(self._send(msg))
+
+    def notify_safety_breach(self, rule_name: str, breach_details: str):
+        """Notify: Safety check / Max Loss breach alert."""
+        if not self._enabled:
+            return
+        user_str = escape_markdown(self._user_name) if self._user_name else f"User #{self.user_id}"
+        if self._broker_client_id:
+            user_str = f"{user_str} ({escape_markdown(self._broker_client_id)})"
+        msg = (
+            f"⚠️ 🛡️ *[SAFETY SHIELD ACTIVATED]* | 👤 `{user_str}`\n"
+            f"*Reason:* {rule_name}\n"
+            f"`{breach_details}`\n"
+            f"Time: {self._now_str()}"
+        )
+        asyncio.create_task(self._send(msg))
+
+    def notify_error(self, context: str, error_msg: str, strategy_type: str = "PYRAMID"):
         """Notify: Critical error in strategy engine."""
         if not self._enabled or not self._notify_errors:
             return
+        badge = self._get_badge(strategy_type)
         msg = (
-            f"❌ *ERROR — {context}*\n"
+            f"❌ {badge} | *ERROR — {context}*\n"
             f"`{error_msg[:200]}`\n"
             f"Time: {self._now_str()}"
         )
         asyncio.create_task(self._send(msg))
 
-    def notify_engine_started(self, paper_trade: bool):
+    def notify_engine_started(self, paper_trade: bool, strategy_type: str = "PYRAMID"):
         """Notify: Strategy engine started."""
         if not self._enabled:
             return
         mode = "📝 PAPER" if paper_trade else "⚡ LIVE"
+        strat_name = "DestinyStrategy" if strategy_type == "DESTINY" else "PyramidStrategy"
+        badge = self._get_badge(strategy_type)
         asyncio.create_task(self._send(
-            f"▶️ *PyramidStrategy STARTED* — {mode} mode\n"
+            f"▶️ {badge} | *{strat_name} STARTED* — {mode} mode\n"
             f"Time: {self._now_str()}"
         ))
 
-    def notify_engine_stopped(self):
+    def notify_engine_stopped(self, strategy_type: str = "PYRAMID"):
         """Notify: Strategy engine stopped."""
         if not self._enabled:
             return
+        strat_name = "DestinyStrategy" if strategy_type == "DESTINY" else "PyramidStrategy"
+        badge = self._get_badge(strategy_type)
         asyncio.create_task(self._send(
-            f"⏹ *PyramidStrategy STOPPED*\nTime: {self._now_str()}"
+            f"⏹ {badge} | *{strat_name} STOPPED*\nTime: {self._now_str()}"
         ))
 
     async def test_connection(self) -> tuple[bool, str]:
