@@ -518,59 +518,59 @@ def build_weekly_report_pdf(user_id: int, monday_date: date, db: Session, output
     pdf.set_xy(10, 75)
     pdf.set_text_color(30, 41, 59)
     pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 6, "Option Side Performance")
-    pdf.ln(8)
+    pdf.cell(0, 6, "Option Side Performance", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
     
     pdf.set_fill_color(226, 232, 240)
     pdf.set_font("helvetica", "B", 9)
-    pdf.cell(60, 7, "Leg Side", 1, 0, "C", True)
-    pdf.cell(65, 7, "Total Gross P&L", 1, 0, "C", True)
-    pdf.cell(65, 7, "Share of Activity", 1, 1, "C", True)
+    pdf.cell(60, 7, "Leg Side", border=1, align="C", fill=True)
+    pdf.cell(65, 7, "Total Gross P&L", border=1, align="C", fill=True)
+    pdf.cell(65, 7, "Share of Activity", border=1, align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_font("helvetica", "", 9)
     # CE
-    pdf.cell(60, 7, "Call Options (CE)", 1, 0, "C")
-    pdf.cell(65, 7, f"Rs. {ce_total_pnl:,.2f}", 1, 0, "R")
+    pdf.cell(60, 7, "Call Options (CE)", border=1, align="C")
+    pdf.cell(65, 7, f"Rs. {ce_total_pnl:,.2f}", border=1, align="R")
     ce_pct = (ce_total_pnl / (abs(ce_total_pnl) + abs(pe_total_pnl)) * 100) if (abs(ce_total_pnl) + abs(pe_total_pnl)) > 0 else 50.0
-    pdf.cell(65, 7, f"{ce_pct:.1f}% of Leg P&L", 1, 1, "C")
+    pdf.cell(65, 7, f"{ce_pct:.1f}% of Leg P&L", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
     
     # PE
-    pdf.cell(60, 7, "Put Options (PE)", 1, 0, "C")
-    pdf.cell(65, 7, f"Rs. {pe_total_pnl:,.2f}", 1, 0, "R")
+    pdf.cell(60, 7, "Put Options (PE)", border=1, align="C")
+    pdf.cell(65, 7, f"Rs. {pe_total_pnl:,.2f}", border=1, align="R")
     pe_pct = 100.0 - ce_pct
-    pdf.cell(65, 7, f"{pe_pct:.1f}% of Leg P&L", 1, 1, "C")
+    pdf.cell(65, 7, f"{pe_pct:.1f}% of Leg P&L", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
 
     # 3. Daily Breakdown Table
     pdf.ln(6)
     pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 6, "Daily P&L Performance Breakdown")
-    pdf.ln(8)
+    pdf.cell(0, 6, "Daily P&L Performance Breakdown", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
     
     pdf.set_fill_color(226, 232, 240)
     pdf.set_font("helvetica", "B", 9)
-    pdf.cell(30, 7, "Date", 1, 0, "C", True)
-    pdf.cell(30, 7, "Day", 1, 0, "C", True)
-    pdf.cell(30, 7, "Gross P&L", 1, 0, "C", True)
-    pdf.cell(30, 7, "Brokerage", 1, 0, "C", True)
-    pdf.cell(35, 7, "Net P&L", 1, 0, "C", True)
-    pdf.cell(35, 7, "Trades count", 1, 1, "C", True)
+    pdf.cell(30, 7, "Date", border=1, align="C", fill=True)
+    pdf.cell(30, 7, "Day", border=1, align="C", fill=True)
+    pdf.cell(30, 7, "Gross P&L", border=1, align="C", fill=True)
+    pdf.cell(30, 7, "Brokerage", border=1, align="C", fill=True)
+    pdf.cell(35, 7, "Net P&L", border=1, align="C", fill=True)
+    pdf.cell(35, 7, "Trades count", border=1, align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_font("helvetica", "", 9)
     if not daily_pnls:
-        pdf.cell(190, 8, "No trading activity recorded for last week.", 1, 1, "C")
+        pdf.cell(190, 8, "No trading activity recorded for last week.", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
     else:
         for p in daily_pnls:
-            pdf.cell(30, 7, p.trade_date.strftime("%d-%b"), 1, 0, "C")
-            pdf.cell(30, 7, p.trade_date.strftime("%A"), 1, 0, "C")
-            pdf.cell(30, 7, f"Rs. {p.gross_pnl:,.2f}", 1, 0, "R")
-            pdf.cell(30, 7, f"Rs. {p.brokerage:,.2f}", 1, 0, "R")
+            pdf.cell(30, 7, p.trade_date.strftime("%d-%b"), border=1, align="C")
+            pdf.cell(30, 7, p.trade_date.strftime("%A"), border=1, align="C")
+            pdf.cell(30, 7, f"Rs. {p.gross_pnl:,.2f}", border=1, align="R")
+            pdf.cell(30, 7, f"Rs. {p.brokerage:,.2f}", border=1, align="R")
             
             pnl_color = (16, 185, 129) if p.net_pnl >= 0 else (239, 68, 68)
             pdf.set_text_color(*pnl_color)
-            pdf.cell(35, 7, f"{'+' if p.net_pnl >= 0 else ''}Rs. {p.net_pnl:,.2f}", 1, 0, "R")
+            pdf.cell(35, 7, f"{'+' if p.net_pnl >= 0 else ''}Rs. {p.net_pnl:,.2f}", border=1, align="R")
             pdf.set_text_color(30, 41, 59)
             
-            pdf.cell(35, 7, f"{p.total_trades} orders", 1, 1, "C")
+            pdf.cell(35, 7, f"{p.total_trades} orders", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
 
     # Save to file
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

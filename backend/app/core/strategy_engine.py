@@ -558,6 +558,7 @@ class StrategyEngine:
                 lots=1,
                 fill_price=safe_decimal(order.get("fill_price")),
                 nifty_ltp=safe_decimal(nifty_ltp),
+                paper_trade=self.mock_mode,
             )
         except Exception as e:
             logger.warning(f"Failed to send trade entry alert: {e}")
@@ -664,6 +665,7 @@ class StrategyEngine:
                     exit_price=safe_decimal(exit_price),
                     entry_avg=safe_decimal(entry_avg_val),
                     pnl_rupees=safe_decimal(pnl_rupees_val),
+                    paper_trade=self.mock_mode,
                 )
             elif reason == "SL":
                 ns.notify_sl_hit(
@@ -673,6 +675,7 @@ class StrategyEngine:
                     exit_price=safe_decimal(exit_price),
                     entry_avg=safe_decimal(entry_avg_val),
                     pnl_rupees=safe_decimal(pnl_rupees_val),
+                    paper_trade=self.mock_mode,
                 )
         except Exception as e:
             logger.warning(f"Failed to send trade exit alert: {e}")
@@ -743,7 +746,7 @@ class StrategyEngine:
             from app.services.notification import get_user_notification_service
             ns = get_user_notification_service(self.user_id)
             ns.load_from_db()
-            ns.notify_squareoff(ce_pnl, pe_pnl, sq_time_str)
+            ns.notify_squareoff(ce_pnl, pe_pnl, sq_time_str, paper_trade=self.mock_mode)
         except Exception as e:
             logger.warning(f"Failed to send squareoff alert: {e}")
 

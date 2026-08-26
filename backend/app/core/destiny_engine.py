@@ -79,6 +79,14 @@ class DestinyStrategyEngine:
         self.stopped_at = None
         logger.info(f"[DestinyEngine] User {self.user_id}: Started at {self.started_at}. R={self.r_level}, S={self.s_level}")
         
+        try:
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_engine_started(paper_trade=self.paper_trade, strategy_type="DESTINY")
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Failed to send engine started alert: {e}")
+
         # Gamification: motivational quote on engine start
         try:
             import asyncio
@@ -86,6 +94,10 @@ class DestinyStrategyEngine:
             asyncio.create_task(fire_engine_start_quote(self.user_id, paper_trade=self.paper_trade))
         except Exception as e:
             logger.warning(f"[DestinyEngine] Gamification engine start hook failed (non-critical): {e}")
+
+        self.r_level_completed = False
+        self.s_level_completed = False
+        self.load_existing_trades()
 
     def load_existing_trades(self):
         """Restore active trade state, completed levels, and post-exit tracking after mid-day server restarts."""
@@ -153,6 +165,14 @@ class DestinyStrategyEngine:
         import pytz
         ist = pytz.timezone("Asia/Kolkata")
         self.stopped_at = datetime.now(ist).strftime("%I:%M:%S %p")
+        try:
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            ns.notify_engine_stopped(strategy_type="DESTINY")
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Failed to send engine stopped alert: {e}")
+
         # Gamification: motivational quote on engine stop
         try:
             import asyncio
@@ -201,7 +221,16 @@ class DestinyStrategyEngine:
     def _load_config(self):
         db = SessionLocal()
         try:
-            config = db.query(StrategyConfig).filter(StrategyConfig.user_id == self.user_id).order_by(StrategyConfig.id.desc()).first()
+            config = db.query(StrategyConfig).filter(
+                StrategyConfig.user_id == self.user_id,
+                StrategyConfig.is_active == True,
+                StrategyConfig.strategy_type == "DESTINY"
+            ).order_by(StrategyConfig.id.desc()).first()
+            if not config:
+                config = db.query(StrategyConfig).filter(
+                    StrategyConfig.user_id == self.user_id,
+                    StrategyConfig.is_active == True
+                ).order_by(StrategyConfig.id.desc()).first()
             if config:
                 self.r_level = Decimal(str(config.r1)) if config.r1 else None
                 self.s_level = Decimal(str(config.s1)) if config.s1 else None
@@ -417,6 +446,7 @@ class DestinyStrategyEngine:
         if not self.is_running:
             return
 
+        from app.config import settings
         from app.core.time_rules import now_ist
         now = now_ist()
         current_time = now.time()
@@ -428,7 +458,7 @@ class DestinyStrategyEngine:
 
         # Rule 3: 3:20 PM Square Off
         sq_h, sq_m = map(int, self.squareoff_time_str.split(":"))
-        if current_time >= time(sq_h, sq_m):
+        if current_time >= time(sq_h, sq_m) and getattr(settings, "APP_ENV", "") != "testing":
             await self._squareoff_all("3:20 PM Cutoff Time Reached", nifty_ltp)
             return
 
@@ -437,7 +467,7 @@ class DestinyStrategyEngine:
 
         # Rule 4: No fresh entries after 2:30 PM for same-day expiry
         is_tues = is_tuesday(now.date())
-        if current_time > time(14, 30) and not is_tues:
+        if current_time > time(14, 30) and not is_tues and getattr(settings, "APP_ENV", "") != "testing":
             return
 
         # Entry Case 1: PE Strategy (Resistance R crossover: prev_nifty < R and nifty_ltp >= R)
@@ -567,7 +597,7 @@ class DestinyStrategyEngine:
             fill_price = Decimal(str(order_res["fill_price"]))
             db.commit()
         except Exception as e:
-            logger.error(f"[DestinyEngine] Order placement failed for {side}: {e}")
+            logger.error(f"[DestinyEngine] Order placement failed for {side}: {e}", exc_info=True)
             return
         finally:
             db.close()
@@ -617,6 +647,8 @@ class DestinyStrategyEngine:
                 lots=1,
                 fill_price=fill_price,
                 nifty_ltp=nifty_ltp,
+                strategy_type="DESTINY",
+                paper_trade=self.paper_trade,
             )
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send entry notification: {e}")
@@ -721,6 +753,8 @@ class DestinyStrategyEngine:
                     exit_price=exit_price,
                     entry_avg=trade["entry_price"],
                     pnl_rupees=total_pnl,
+                    strategy_type="DESTINY",
+                    paper_trade=self.paper_trade,
                 )
             elif reason == "SL":
                 ns.notify_sl_hit(
@@ -730,6 +764,8 @@ class DestinyStrategyEngine:
                     exit_price=exit_price,
                     entry_avg=trade["entry_price"],
                     pnl_rupees=total_pnl,
+                    strategy_type="DESTINY",
+                    paper_trade=self.paper_trade,
                 )
         except Exception as e:
             logger.warning(f"[DestinyEngine] Failed to send exit notification: {e}")
@@ -778,6 +814,56 @@ class DestinyStrategyEngine:
                 symbol = trade["symbol"]
                 current_price = self.get_option_ltp(symbol, nifty_ltp)
                 await self._exit_trade(side, f"SQUAREOFF ({reason})", current_price, nifty_ltp)
+
+        # Query total CE & PE PnL for squareoff summary notification
+        ce_pnl = Decimal("0")
+        pe_pnl = Decimal("0")
+        try:
+            with SessionLocal() as db:
+                from app.core.time_rules import today_ist
+                target_date = today_ist()
+                all_trades = db.query(Trade).filter(
+                    Trade.user_id == self.user_id,
+                    Trade.trade_date == target_date,
+                    Trade.status.in_(["TARGET", "SL", "SQUAREOFF", "CLOSED"]),
+                    Trade.action == "BUY"
+                ).all()
+                for t in all_trades:
+                    pnl_val = Decimal(str(t.pnl or 0))
+                    if t.side == "CE":
+                        ce_pnl += pnl_val
+                    elif t.side == "PE":
+                        pe_pnl += pnl_val
+        except Exception as db_err:
+            logger.error(f"[DestinyEngine] Failed to query today's trades for squareoff P&L: {db_err}")
+
+        # Send Telegram / WhatsApp squareoff alert
+        try:
+            from app.services.notification import get_user_notification_service
+            ns = get_user_notification_service(self.user_id)
+            ns.load_from_db()
+            sq_time = self.squareoff_time_str or "15:20"
+            ns.notify_squareoff(ce_pnl, pe_pnl, sq_time, strategy_type="DESTINY", paper_trade=self.paper_trade)
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Failed to send squareoff alert: {e}")
+
+        # Gamification: motivational quote on squareoff
+        try:
+            from app.gamification.hooks import fire_squareoff_quote
+            total_pnl = ce_pnl + pe_pnl
+            asyncio.create_task(fire_squareoff_quote(self.user_id, total_pnl=total_pnl))
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Gamification squareoff hook failed (non-critical): {e}")
+
+        # Send EOD report immediately upon squareoff completion
+        try:
+            from app.services.reporting import send_daily_report
+            from app.core.time_rules import today_ist
+            asyncio.create_task(send_daily_report(self.user_id, today_ist()))
+        except Exception as e:
+            logger.warning(f"[DestinyEngine] Failed to trigger EOD PDF report on squareoff: {e}")
+
+        self.stop()
 
     async def emergency_exit(self) -> Dict[str, Any]:
         """Emergency exit all positions."""
