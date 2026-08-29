@@ -27,31 +27,33 @@ def mock_user_and_config():
         user_id = user.id
         from app.models.models import Trade
         db.query(Trade).filter(Trade.user_id == user_id).delete()
+        db.query(StrategyConfig).filter(StrategyConfig.user_id == user_id).delete()
         db.commit()
-        config = db.query(StrategyConfig).filter(StrategyConfig.user_id == user_id).first()
-        if not config:
-            config = StrategyConfig(
-                user_id=user_id,
-                r1=24100.0,
-                s1=23900.0,
-                r2=24200.0,
-                r3=24300.0,
-                s2=23800.0,
-                s3=23700.0,
-                lot_size=75,
-                target_points=30.0,
-                sl_points=30.0,
-                paper_trade=True,
-            )
-            db.add(config)
-            db.commit()
+        config = StrategyConfig(
+            user_id=user_id,
+            r1=24100.0,
+            s1=23900.0,
+            r2=24200.0,
+            r3=24300.0,
+            s2=23800.0,
+            s3=23700.0,
+            lot_size=75,
+            target_points=30.0,
+            sl_points=30.0,
+            paper_trade=True,
+            is_active=True,
+            strategy_type="DESTINY"
+        )
+        db.add(config)
+        db.commit()
         return user_id
     finally:
         db.close()
 
 
 @pytest.mark.asyncio
-async def test_destiny_engine_pe_entry_and_target(mock_user_and_config):
+async def test_destiny_engine_pe_entry_and_target(mock_user_and_config, monkeypatch):
+    monkeypatch.setenv("MOCK_TIME", "10:00")
     user_id = mock_user_and_config
     engine = DestinyStrategyEngine(user_id=user_id)
     engine.start()
