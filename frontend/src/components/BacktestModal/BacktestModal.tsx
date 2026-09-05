@@ -277,62 +277,85 @@ export function BacktestModal({ onClose }: Props) {
                   <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider">Primary Configuration Levels</h3>
                 </div>
                 
-                <div className="grid grid-cols-6 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-navy-300 font-bold uppercase">R3 (PE)</label>
-                    <input
-                      type="number"
-                      className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
-                      value={primaryConfig.r3}
-                      onChange={e => setPrimaryConfig({ ...primaryConfig, r3: +e.target.value })}
-                    />
+                {primaryConfig.strategy_type === 'DESTINY' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-red-400 font-bold uppercase">Resistance R (PE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-red-900/50 focus:border-red-500 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+                        value={primaryConfig.r1}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, r1: +e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-green-400 font-bold uppercase">Support S (CE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-green-900/50 focus:border-green-500 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+                        value={primaryConfig.s1}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, s1: +e.target.value })}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-navy-300 font-bold uppercase">R2 (PE)</label>
-                    <input
-                      type="number"
-                      className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
-                      value={primaryConfig.r2}
-                      onChange={e => setPrimaryConfig({ ...primaryConfig, r2: +e.target.value })}
-                    />
+                ) : (
+                  <div className="grid grid-cols-6 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-navy-300 font-bold uppercase">R3 (PE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
+                        value={primaryConfig.r3}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, r3: +e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-navy-300 font-bold uppercase">R2 (PE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
+                        value={primaryConfig.r2}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, r2: +e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-navy-300 font-bold uppercase">R1 (PE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
+                        value={primaryConfig.r1}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, r1: +e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-navy-300 font-bold uppercase">S1 (CE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
+                        value={primaryConfig.s1}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, s1: +e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-navy-300 font-bold uppercase">S2 (CE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
+                        value={primaryConfig.s2}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, s2: +e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-navy-300 font-bold uppercase">S3 (CE)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
+                        value={primaryConfig.s3}
+                        onChange={e => setPrimaryConfig({ ...primaryConfig, s3: +e.target.value })}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-navy-300 font-bold uppercase">R1 (PE)</label>
-                    <input
-                      type="number"
-                      className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
-                      value={primaryConfig.r1}
-                      onChange={e => setPrimaryConfig({ ...primaryConfig, r1: +e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-navy-300 font-bold uppercase">S1 (CE)</label>
-                    <input
-                      type="number"
-                      className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
-                      value={primaryConfig.s1}
-                      onChange={e => setPrimaryConfig({ ...primaryConfig, s1: +e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-navy-300 font-bold uppercase">S2 (CE)</label>
-                    <input
-                      type="number"
-                      className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
-                      value={primaryConfig.s2}
-                      onChange={e => setPrimaryConfig({ ...primaryConfig, s2: +e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-navy-300 font-bold uppercase">S3 (CE)</label>
-                    <input
-                      type="number"
-                      className="w-full bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-white"
-                      value={primaryConfig.s3}
-                      onChange={e => setPrimaryConfig({ ...primaryConfig, s3: +e.target.value })}
-                    />
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Add Comparison Config action */}
@@ -371,65 +394,90 @@ export function BacktestModal({ onClose }: Props) {
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1">
-                      <div className="space-y-0.5">
-                        <label className="text-[9px] text-navy-300">R3</label>
-                        <input
-                          type="number"
-                          className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
-                          value={c.r3}
-                          onChange={e => handleUpdateComparison(idx, 'r3', +e.target.value)}
-                        />
+                    {primaryConfig.strategy_type === 'DESTINY' ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5">
+                          <label className="text-[9px] text-red-400 font-bold">Resistance R (PE)</label>
+                          <input
+                            type="number"
+                            className="w-full bg-navy-900 border border-red-900/40 rounded px-1.5 py-0.5 text-xs text-white font-mono"
+                            value={c.r1}
+                            onChange={e => handleUpdateComparison(idx, 'r1', +e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <label className="text-[9px] text-green-400 font-bold">Support S (CE)</label>
+                          <input
+                            type="number"
+                            className="w-full bg-navy-900 border border-green-900/40 rounded px-1.5 py-0.5 text-xs text-white font-mono"
+                            value={c.s1}
+                            onChange={e => handleUpdateComparison(idx, 's1', +e.target.value)}
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-0.5">
-                        <label className="text-[9px] text-navy-300">R2</label>
-                        <input
-                          type="number"
-                          className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
-                          value={c.r2}
-                          onChange={e => handleUpdateComparison(idx, 'r2', +e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-0.5">
-                        <label className="text-[9px] text-navy-300">R1</label>
-                        <input
-                          type="number"
-                          className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
-                          value={c.r1}
-                          onChange={e => handleUpdateComparison(idx, 'r1', +e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-1">
-                      <div className="space-y-0.5">
-                        <label className="text-[9px] text-navy-300">S1</label>
-                        <input
-                          type="number"
-                          className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
-                          value={c.s1}
-                          onChange={e => handleUpdateComparison(idx, 's1', +e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-0.5">
-                        <label className="text-[9px] text-navy-300">S2</label>
-                        <input
-                          type="number"
-                          className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
-                          value={c.s2}
-                          onChange={e => handleUpdateComparison(idx, 's2', +e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-0.5">
-                        <label className="text-[9px] text-navy-300">S3</label>
-                        <input
-                          type="number"
-                          className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
-                          value={c.s3}
-                          onChange={e => handleUpdateComparison(idx, 's3', +e.target.value)}
-                        />
-                      </div>
-                    </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-3 gap-1">
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-navy-300">R3</label>
+                            <input
+                              type="number"
+                              className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
+                              value={c.r3}
+                              onChange={e => handleUpdateComparison(idx, 'r3', +e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-navy-300">R2</label>
+                            <input
+                              type="number"
+                              className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
+                              value={c.r2}
+                              onChange={e => handleUpdateComparison(idx, 'r2', +e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-navy-300">R1</label>
+                            <input
+                              type="number"
+                              className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
+                              value={c.r1}
+                              onChange={e => handleUpdateComparison(idx, 'r1', +e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-1">
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-navy-300">S1</label>
+                            <input
+                              type="number"
+                              className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
+                              value={c.s1}
+                              onChange={e => handleUpdateComparison(idx, 's1', +e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-navy-300">S2</label>
+                            <input
+                              type="number"
+                              className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
+                              value={c.s2}
+                              onChange={e => handleUpdateComparison(idx, 's2', +e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-navy-300">S3</label>
+                            <input
+                              type="number"
+                              className="w-full bg-navy-900 border border-navy-800 rounded px-1.5 py-0.5 text-xs text-white"
+                              value={c.s3}
+                              onChange={e => handleUpdateComparison(idx, 's3', +e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
