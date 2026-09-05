@@ -377,7 +377,7 @@ export function TradeLog() {
                       : t.pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
                       {t.pnl != null
                         ? `${t.pnl >= 0 ? '+' : ''}₹${t.pnl.toFixed(0)}`
-                        : (t.status === 'OPEN' ? <span className="text-yellow-400 font-bold uppercase tracking-wider text-[10px] bg-yellow-950/40 px-1 py-0.5 rounded border border-yellow-500/20">OPEN</span> : '—')}
+                        : (t.status === 'OPEN' ? <span className="text-yellow-400 font-bold uppercase tracking-wider text-[10px] bg-yellow-950/40 px-1 py-0.5 rounded border border-yellow-500/20">OPEN</span> : <span className="text-navy-300 font-medium uppercase text-[10px] bg-navy-800 px-1 py-0.5 rounded border border-navy-700">{t.status || '—'}</span>)}
                     </td>
                   </tr>
                 )

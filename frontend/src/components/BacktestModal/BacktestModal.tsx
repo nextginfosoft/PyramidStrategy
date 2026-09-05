@@ -17,6 +17,7 @@ type BacktestConfig = {
   target_points: number
   sl_points: number
   squareoff_time?: string
+  strategy_type?: 'DESTINY' | 'PYRAMID'
 }
 
 type BacktestSummary = {
@@ -77,9 +78,10 @@ export function BacktestModal({ onClose }: Props) {
     r1: 24100, r2: 24200, r3: 24300,
     s1: 23900, s2: 23800, s3: 23700,
     lot_size: 75,
-    target_points: 20,
-    sl_points: 10,
-    squareoff_time: '11:30',
+    target_points: 30,
+    sl_points: 30,
+    squareoff_time: '15:20',
+    strategy_type: 'DESTINY',
   })
 
   // Comparison Configs
@@ -93,14 +95,16 @@ export function BacktestModal({ onClose }: Props) {
   // Populate config fields when API loads config
   useEffect(() => {
     if (cfg) {
+      const isDestiny = cfg.strategy_type === 'DESTINY'
       setPrimaryConfig({
         name: 'Primary Config',
         r1: cfg.r1, r2: cfg.r2, r3: cfg.r3,
         s1: cfg.s1, s2: cfg.s2, s3: cfg.s3,
         lot_size: cfg.lot_size,
-        target_points: cfg.target_points,
-        sl_points: cfg.sl_points,
-        squareoff_time: cfg.squareoff_time ?? '11:30',
+        target_points: cfg.target_points ?? (isDestiny ? 30 : 20),
+        sl_points: cfg.sl_points ?? (isDestiny ? 30 : 10),
+        squareoff_time: cfg.squareoff_time ?? (isDestiny ? '15:20' : '11:30'),
+        strategy_type: cfg.strategy_type === 'DESTINY' ? 'DESTINY' : 'PYRAMID',
       })
     }
   }, [cfg])
@@ -176,6 +180,26 @@ export function BacktestModal({ onClose }: Props) {
             {/* Left: Date Range + Stats parameters */}
             <div className="col-span-12 md:col-span-4 space-y-3">
               <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider">Backtest Scope</h3>
+              <div className="space-y-1">
+                <label className="text-[10px] text-navy-300 font-bold uppercase">Strategy Engine</label>
+                <select
+                  className="w-full bg-navy-900 border border-navy-700 focus:border-orange-500 rounded px-2.5 py-1.5 text-xs text-white font-medium cursor-pointer"
+                  value={primaryConfig.strategy_type || 'DESTINY'}
+                  onChange={e => {
+                    const st = e.target.value as 'DESTINY' | 'PYRAMID'
+                    setPrimaryConfig({
+                      ...primaryConfig,
+                      strategy_type: st,
+                      target_points: st === 'DESTINY' ? 30 : 20,
+                      sl_points: st === 'DESTINY' ? 30 : 10,
+                      squareoff_time: st === 'DESTINY' ? '15:20' : '11:30',
+                    })
+                  }}
+                >
+                  <option value="DESTINY">Destiny Strategy (Single Level R & S | 1 Trade/Day)</option>
+                  <option value="PYRAMID">Pyramid Strategy (3-Level Grid R1-R3 / S1-S3)</option>
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] text-navy-300 font-bold uppercase">Start Date</label>

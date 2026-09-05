@@ -166,16 +166,21 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
         active_low_time = to_ist_str(entry.active_low_time)
         price_at_320 = float(entry.price_at_320) if entry.price_at_320 is not None else (float(matching_exit.price_at_320) if matching_exit and matching_exit.price_at_320 is not None else "")
 
-        if matching_exit:
-            exit_time_str = to_ist_str(matching_exit.created_at)
-            exit_price_val = float(matching_exit.avg_price) if matching_exit.avg_price is not None else ""
-            exit_nifty_val = float(matching_exit.trigger_nifty_level) if matching_exit.trigger_nifty_level is not None else ""
-            exit_reason_str = matching_exit.status
-            pnl_val = float((matching_exit.avg_price - entry.avg_price) * entry.qty) if matching_exit.avg_price is not None and entry.avg_price is not None else ""
-            post_exit_high = float(matching_exit.post_exit_high) if matching_exit.post_exit_high is not None else ""
-            post_exit_high_time = to_ist_str(matching_exit.post_exit_high_time)
-            post_exit_low = float(matching_exit.post_exit_low) if matching_exit.post_exit_low is not None else ""
-            post_exit_low_time = to_ist_str(matching_exit.post_exit_low_time)
+        if matching_exit or entry.status != "OPEN":
+            exit_time_str = to_ist_str(matching_exit.created_at) if matching_exit else to_ist_str(entry.created_at)
+            exit_price_val = float(matching_exit.avg_price) if matching_exit and matching_exit.avg_price is not None else ""
+            exit_nifty_val = float(matching_exit.trigger_nifty_level) if matching_exit and matching_exit.trigger_nifty_level is not None else ""
+            exit_reason_str = matching_exit.status if matching_exit else entry.status
+            if matching_exit and matching_exit.avg_price is not None and entry.avg_price is not None:
+                pnl_val = float((matching_exit.avg_price - entry.avg_price) * entry.qty)
+            elif entry.pnl is not None:
+                pnl_val = float(entry.pnl)
+            else:
+                pnl_val = ""
+            post_exit_high = float(matching_exit.post_exit_high) if matching_exit and matching_exit.post_exit_high is not None else ""
+            post_exit_high_time = to_ist_str(matching_exit.post_exit_high_time) if matching_exit else ""
+            post_exit_low = float(matching_exit.post_exit_low) if matching_exit and matching_exit.post_exit_low is not None else ""
+            post_exit_low_time = to_ist_str(matching_exit.post_exit_low_time) if matching_exit else ""
         else:
             exit_time_str = "OPEN"
             exit_price_val = ""

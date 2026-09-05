@@ -317,6 +317,145 @@ def compute_statistics(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         "max_drawdown": round(max_drawdown, 2)
     }
 
+def run_destiny_single_backtest(
+    date_str: str,
+    nifty_prices: List[float],
+    config: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """
+    Replay a single day's prices specifically for Destiny Strategy.
+    - Resistance R (r1) and Support S (s1)
+    - Option B: Maximum 1 trade total per day
+    - Target 30 pts, SL 30 pts, 3:20 PM Cutoff
+    """
+    if not nifty_prices:
+        return []
+
+    r_level = Decimal(str(config["r1"])) if "r1" in config and config["r1"] else None
+    s_level = Decimal(str(config["s1"])) if "s1" in config and config["s1"] else None
+    target_pts = Decimal(str(config.get("target_points", 30.0)))
+    sl_pts = Decimal(str(config.get("sl_points", 30.0)))
+    lot_size = config.get("lot_size", 75)
+
+    trades = []
+    active_trade = None
+    trade_taken_today = False
+
+    sq_time_str = config.get("squareoff_time", "15:20")
+    try:
+        sq_h, sq_m = map(int, sq_time_str.split(":"))
+    except Exception:
+        sq_h, sq_m = 15, 20
+    sq_minutes = sq_h * 60 + sq_m
+
+    prev_nifty = None
+
+    for minute_idx, price in enumerate(nifty_prices):
+        nifty_ltp = Decimal(str(price))
+        hour = 9 + (minute_idx + 15) // 60
+        minute = (minute_idx + 15) % 60
+        time_str = f"{hour:02d}:{minute:02d}:00"
+        current_minutes = hour * 60 + minute
+
+        def get_opt_price(t_info, current_nifty):
+            entry_n = t_info["entry_nifty"]
+            diff = current_nifty - entry_n
+            if t_info["side"] == "CE":
+                return t_info["entry_price"] + Decimal("0.5") * diff
+            else:
+                return t_info["entry_price"] - Decimal("0.5") * diff
+
+        # 1. 3:20 PM Square Off Cutoff
+        if current_minutes >= sq_minutes:
+            if active_trade:
+                opt_price = get_opt_price(active_trade, nifty_ltp)
+                pnl = (opt_price - active_trade["entry_price"]) * Decimal(str(active_trade["qty"]))
+                trades.append({
+                    "date": date_str,
+                    "side": active_trade["side"],
+                    "level": active_trade["level"],
+                    "lots": 1,
+                    "qty": active_trade["qty"],
+                    "entry_time": active_trade["entry_time"],
+                    "entry_price": float(active_trade["entry_price"]),
+                    "exit_time": time_str,
+                    "exit_price": float(opt_price),
+                    "exit_reason": "SQUAREOFF",
+                    "pnl": float(pnl)
+                })
+                active_trade = None
+            break
+
+        # 2. Check Active Trade Target / SL Exits
+        if active_trade:
+            opt_price = get_opt_price(active_trade, nifty_ltp)
+            target_price = active_trade["entry_price"] + target_pts
+            sl_price = active_trade["entry_price"] - sl_pts
+
+            if opt_price >= target_price:
+                pnl = (target_price - active_trade["entry_price"]) * Decimal(str(active_trade["qty"]))
+                trades.append({
+                    "date": date_str,
+                    "side": active_trade["side"],
+                    "level": active_trade["level"],
+                    "lots": 1,
+                    "qty": active_trade["qty"],
+                    "entry_time": active_trade["entry_time"],
+                    "entry_price": float(active_trade["entry_price"]),
+                    "exit_time": time_str,
+                    "exit_price": float(target_price),
+                    "exit_reason": "TARGET",
+                    "pnl": float(pnl)
+                })
+                active_trade = None
+            elif opt_price <= sl_price:
+                pnl = (sl_price - active_trade["entry_price"]) * Decimal(str(active_trade["qty"]))
+                trades.append({
+                    "date": date_str,
+                    "side": active_trade["side"],
+                    "level": active_trade["level"],
+                    "lots": 1,
+                    "qty": active_trade["qty"],
+                    "entry_time": active_trade["entry_time"],
+                    "entry_price": float(active_trade["entry_price"]),
+                    "exit_time": time_str,
+                    "exit_price": float(sl_price),
+                    "exit_reason": "SL",
+                    "pnl": float(pnl)
+                })
+                active_trade = None
+
+        # 3. Check Fresh Entry if no trade taken today and no active trade
+        if not active_trade and not trade_taken_today:
+            # PE Entry at Resistance R
+            if r_level and prev_nifty is not None and prev_nifty < r_level and nifty_ltp >= r_level:
+                active_trade = {
+                    "side": "PE",
+                    "level": "R1",
+                    "entry_nifty": nifty_ltp,
+                    "entry_price": Decimal("100.00"),
+                    "qty": lot_size,
+                    "entry_time": time_str,
+                }
+                trade_taken_today = True
+
+            # CE Entry at Support S
+            elif s_level and prev_nifty is not None and prev_nifty > s_level and nifty_ltp <= s_level:
+                active_trade = {
+                    "side": "CE",
+                    "level": "S1",
+                    "entry_nifty": nifty_ltp,
+                    "entry_price": Decimal("100.00"),
+                    "qty": lot_size,
+                    "entry_time": time_str,
+                }
+                trade_taken_today = True
+
+        prev_nifty = nifty_ltp
+
+    return trades
+
+
 async def run_backtest_workflow(
     kite_service,
     start_date_str: str,
@@ -331,10 +470,14 @@ async def run_backtest_workflow(
     # 1. Fetch Nifty data once for all configs
     nifty_data = await fetch_historical_nifty(kite_service, start_dt, end_dt)
     
+    # Select backtest function based on strategy type
+    st_type = config.get("strategy_type", "PYRAMID")
+    single_backtest_fn = run_destiny_single_backtest if st_type == "DESTINY" else run_single_backtest
+
     # 2. Run core config
     core_trades = []
     for date_str, prices in nifty_data.items():
-        day_trades = run_single_backtest(date_str, prices, config)
+        day_trades = single_backtest_fn(date_str, prices, config)
         core_trades.extend(day_trades)
         
     core_stats = compute_statistics(core_trades)
@@ -350,9 +493,11 @@ async def run_backtest_workflow(
     # 3. Run comparison configs
     if compare_configs:
         for idx, alt_config in enumerate(compare_configs):
+            alt_st_type = alt_config.get("strategy_type", st_type)
+            alt_backtest_fn = run_destiny_single_backtest if alt_st_type == "DESTINY" else run_single_backtest
             alt_trades = []
             for date_str, prices in nifty_data.items():
-                day_trades = run_single_backtest(date_str, prices, alt_config)
+                day_trades = alt_backtest_fn(date_str, prices, alt_config)
                 alt_trades.extend(day_trades)
             
             alt_stats = compute_statistics(alt_trades)

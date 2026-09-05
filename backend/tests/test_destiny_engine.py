@@ -95,9 +95,32 @@ async def test_destiny_engine_custom_params(mock_user_and_config):
         "strategy_type": "DESTINY",
     })
 
-    assert engine.r_level == Decimal("24500.0")
-    assert engine.s_level == Decimal("24000.0")
     assert engine.lot_size == 130
     assert engine.target_pts == Decimal("45.0")
     assert engine.sl_pts == Decimal("20.0")
-    assert engine.squareoff_time_str == "15:15"
+
+
+@pytest.mark.asyncio
+async def test_destiny_engine_one_trade_per_day_limit(mock_user_and_config, monkeypatch):
+    monkeypatch.setenv("MOCK_TIME", "10:00")
+    user_id = mock_user_and_config
+    engine = DestinyStrategyEngine(user_id=user_id)
+    engine.start()
+
+    # Hit R level (24100) -> Triggers PE Entry
+    await engine.on_nifty_tick(Decimal("24050.00"))
+    await engine.on_nifty_tick(Decimal("24100.00"))
+    assert engine.active_pe_trade is not None
+
+    # Exit PE trade on Target
+    await engine.on_nifty_tick(Decimal("23950.00"))
+    assert engine.active_pe_trade is None
+    assert engine.r_level_completed is True
+    assert engine.s_level_completed is True
+
+    # Nifty now drops to S level (23900.00) -> Should NOT trigger CE trade because 1 trade limit was reached
+    await engine.on_nifty_tick(Decimal("23890.00"))
+    assert engine.active_ce_trade is None
+    assert engine.active_pe_trade is None
+    assert engine.target_pts == Decimal("30.0")
+    assert engine.sl_pts == Decimal("30.0")

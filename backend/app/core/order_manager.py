@@ -84,6 +84,9 @@ class OrderManager:
                 context=f"User {self.user_id} {side} {mapped_level} BUY",
             )
 
+        import pytz
+        now_utc = datetime.now(pytz.utc)
+
         # Persist to DB
         trade = Trade(
             user_id=self.user_id,
@@ -101,6 +104,10 @@ class OrderManager:
             kite_order_id=order_id,
             status="OPEN",
             is_paper_trade=self.paper_trade,
+            active_high=fill_price,
+            active_high_time=now_utc,
+            active_low=fill_price,
+            active_low_time=now_utc,
         )
         db.add(trade)
         db.flush()
@@ -187,15 +194,19 @@ class OrderManager:
         import pytz
         now_utc = datetime.now(pytz.utc)
 
+        clean_reason = "SQUAREOFF" if str(reason).startswith("SQUAREOFF") else reason
+
         if open_trades:
             expiry_date = open_trades[0].expiry or today_ist()
             for ot in open_trades:
-                ot.status = reason
-                ot.active_high = active_high
-                ot.active_high_time = active_high_time
-                ot.active_low = active_low
-                ot.active_low_time = active_low_time
-                if reason == "TARGET":
+                ot.status = clean_reason
+                if active_high is not None:
+                    ot.active_high = active_high
+                    ot.active_high_time = active_high_time
+                if active_low is not None:
+                    ot.active_low = active_low
+                    ot.active_low_time = active_low_time
+                if clean_reason == "TARGET":
                     ot.post_exit_high = exit_price
                     ot.post_exit_high_time = now_utc
                     ot.post_exit_low = exit_price
@@ -218,17 +229,17 @@ class OrderManager:
             avg_price=exit_price,
             trigger_nifty_level=trigger_nifty,
             kite_order_id=order_id,
-            status=reason,
+            status=clean_reason,
             pnl=pnl_rupees,
             is_paper_trade=self.paper_trade,
-            active_high=active_high,
-            active_high_time=active_high_time,
-            active_low=active_low,
-            active_low_time=active_low_time,
-            post_exit_high=exit_price if reason == "TARGET" else None,
-            post_exit_high_time=now_utc if reason == "TARGET" else None,
-            post_exit_low=exit_price if reason == "TARGET" else None,
-            post_exit_low_time=now_utc if reason == "TARGET" else None,
+            active_high=active_high if active_high is not None else (open_trades[0].active_high if open_trades else None),
+            active_high_time=active_high_time if active_high_time is not None else (open_trades[0].active_high_time if open_trades else None),
+            active_low=active_low if active_low is not None else (open_trades[0].active_low if open_trades else None),
+            active_low_time=active_low_time if active_low_time is not None else (open_trades[0].active_low_time if open_trades else None),
+            post_exit_high=exit_price if clean_reason == "TARGET" else None,
+            post_exit_high_time=now_utc if clean_reason == "TARGET" else None,
+            post_exit_low=exit_price if clean_reason == "TARGET" else None,
+            post_exit_low_time=now_utc if clean_reason == "TARGET" else None,
         )
         db.add(exit_trade)
         db.flush()

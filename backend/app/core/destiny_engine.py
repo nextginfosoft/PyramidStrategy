@@ -135,12 +135,10 @@ class DestinyStrategyEngine:
                             self.active_ce_trade = trade_info
                         self._subscribe_option(symbol)
                     
-                    # Restore completed levels for day if exited
-                    elif t.status in ("TARGET", "SL", "SQUAREOFF", "CLOSED"):
-                        if t.side == "PE":
-                            self.r_level_completed = True
-                        elif t.side == "CE":
-                            self.s_level_completed = True
+                    # Option B: Restore completed levels for day if any trade exists
+                    if t.status in ("OPEN", "TARGET", "SL", "SQUAREOFF", "CLOSED"):
+                        self.r_level_completed = True
+                        self.s_level_completed = True
 
                     # Restore post-exit tracking for TARGET trades
                     if t.status == "TARGET":
@@ -471,14 +469,14 @@ class DestinyStrategyEngine:
             return
 
         # Entry Case 1: PE Strategy (Resistance R crossover: prev_nifty < R and nifty_ltp >= R)
-        if self.r_level and not self.r_level_completed and not self.active_pe_trade:
+        if self.r_level and not self.r_level_completed and not self.s_level_completed and not self.active_pe_trade and not self.active_ce_trade:
             if prev_nifty is not None and prev_nifty < self.r_level and nifty_ltp >= self.r_level:
                 await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
             elif prev_nifty is None and nifty_ltp >= self.r_level:
                 await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
 
         # Entry Case 2: CE Strategy (Support S crossover: prev_nifty > S and nifty_ltp <= S)
-        if self.s_level and not self.s_level_completed and not self.active_ce_trade:
+        if self.s_level and not self.s_level_completed and not self.r_level_completed and not self.active_ce_trade and not self.active_pe_trade:
             if prev_nifty is not None and prev_nifty > self.s_level and nifty_ltp <= self.s_level:
                 await self._enter_trade(side="CE", nifty_ltp=nifty_ltp, trigger_level=self.s_level)
             elif prev_nifty is None and nifty_ltp <= self.s_level:
@@ -605,6 +603,9 @@ class DestinyStrategyEngine:
         target_price = fill_price + self.target_pts
         sl_price = fill_price - self.sl_pts
 
+        import pytz
+        now_utc = datetime.now(pytz.utc)
+
         trade_info = {
             "db_id": db_id,
             "symbol": symbol,
@@ -617,7 +618,15 @@ class DestinyStrategyEngine:
             "qty": total_qty,
             "expiry": str(exp_date),
             "entry_time": datetime.now().isoformat(),
+            "active_high": fill_price,
+            "active_high_time": now_utc,
+            "active_low": fill_price,
+            "active_low_time": now_utc,
         }
+
+        # Option B: Mark both levels completed on entry so only 1 trade per day is taken
+        self.r_level_completed = True
+        self.s_level_completed = True
 
         if side == "PE":
             self.active_pe_trade = trade_info
@@ -706,6 +715,10 @@ class DestinyStrategyEngine:
                 mock_ltp=exit_price if self.paper_trade else None,
                 trigger_nifty=nifty_ltp,
                 lot_size=self.lot_size,
+                active_high=trade.get("active_high"),
+                active_low=trade.get("active_low"),
+                active_high_time=trade.get("active_high_time"),
+                active_low_time=trade.get("active_low_time"),
             )
             db.commit()
         except Exception as e:
@@ -724,12 +737,12 @@ class DestinyStrategyEngine:
             f"PnL = Rs. {total_pnl:.2f}"
         )
 
-        # Rule 6: If target or SL hit, level completed for day
+        # Option B: Complete both levels for day upon exit (1 trade total per day limit)
+        self.r_level_completed = True
+        self.s_level_completed = True
         if side == "PE":
-            self.r_level_completed = True
             self.active_pe_trade = None
         else:
-            self.s_level_completed = True
             self.active_ce_trade = None
 
         await self._broadcast("TRADE_EXIT", {
@@ -813,7 +826,7 @@ class DestinyStrategyEngine:
             if trade:
                 symbol = trade["symbol"]
                 current_price = self.get_option_ltp(symbol, nifty_ltp)
-                await self._exit_trade(side, f"SQUAREOFF ({reason})", current_price, nifty_ltp)
+                await self._exit_trade(side, "SQUAREOFF", current_price, nifty_ltp)
 
         # Query total CE & PE PnL for squareoff summary notification
         ce_pnl = Decimal("0")
