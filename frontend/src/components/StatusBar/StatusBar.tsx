@@ -190,7 +190,54 @@ export function StatusBar() {
       });
     }
 
-    // 6. Wealth Ladder & Life Goals Ticker Items
+    // 6. Upcoming NSE Holidays (Current Month Only)
+    const nseHolidays = [
+      { id: 1, dateStr: '2026-01-15', dateDisplay: '15-Jan-2026', day: 'Thursday', holiday: 'Election - Maharashtra' },
+      { id: 2, dateStr: '2026-01-26', dateDisplay: '26-Jan-2026', day: 'Monday', holiday: 'Republic Day' },
+      { id: 3, dateStr: '2026-03-03', dateDisplay: '03-Mar-2026', day: 'Tuesday', holiday: 'Holi' },
+      { id: 4, dateStr: '2026-03-26', dateDisplay: '26-Mar-2026', day: 'Thursday', holiday: 'Shri Ram Navami' },
+      { id: 5, dateStr: '2026-03-31', dateDisplay: '31-Mar-2026', day: 'Tuesday', holiday: 'Shri Mahavir Jayanti' },
+      { id: 6, dateStr: '2026-04-03', dateDisplay: '03-Apr-2026', day: 'Friday', holiday: 'Good Friday' },
+      { id: 7, dateStr: '2026-04-14', dateDisplay: '14-Apr-2026', day: 'Tuesday', holiday: 'Dr. Baba Saheb Ambedkar Jayanti' },
+      { id: 8, dateStr: '2026-05-01', dateDisplay: '01-May-2026', day: 'Friday', holiday: 'Maharashtra Day' },
+      { id: 9, dateStr: '2026-05-28', dateDisplay: '28-May-2026', day: 'Thursday', holiday: 'Bakri Id' },
+      { id: 10, dateStr: '2026-06-26', dateDisplay: '26-Jun-2026', day: 'Friday', holiday: 'Muharram' },
+      { id: 11, dateStr: '2026-09-14', dateDisplay: '14-Sep-2026', day: 'Monday', holiday: 'Ganesh Chaturthi' },
+      { id: 12, dateStr: '2026-10-02', dateDisplay: '02-Oct-2026', day: 'Friday', holiday: 'Mahatma Gandhi Jayanti' },
+      { id: 13, dateStr: '2026-10-20', dateDisplay: '20-Oct-2026', day: 'Tuesday', holiday: 'Dussehra' },
+      { id: 14, dateStr: '2026-11-10', dateDisplay: '10-Nov-2026', day: 'Tuesday', holiday: 'Diwali-Balipratipada' },
+      { id: 15, dateStr: '2026-11-24', dateDisplay: '24-Nov-2026', day: 'Tuesday', holiday: 'Prakash Gurpurab Sri Guru Nanak Dev' },
+      { id: 16, dateStr: '2026-12-25', dateDisplay: '25-Dec-2026', day: 'Friday', holiday: 'Christmas' },
+    ]
+
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() // 0-indexed
+
+    const currentMonthHolidays = nseHolidays.filter(h => {
+      const hDate = new Date(h.dateStr)
+      return hDate.getFullYear() === currentYear && hDate.getMonth() === currentMonth
+    })
+
+    if (currentMonthHolidays.length > 0) {
+      currentMonthHolidays.forEach(h => {
+        parts.push({
+          text: `📅 UPCOMING NSE HOLIDAY: ${h.dateDisplay} (${h.day}) - ${h.holiday}`,
+          colorClass: 'text-purple-300 font-extrabold'
+        })
+      })
+    } else {
+      const upcomingHolidays = nseHolidays.filter(h => new Date(h.dateStr) >= new Date(now.getFullYear(), now.getMonth(), 1))
+      if (upcomingHolidays.length > 0) {
+        const nextHoliday = upcomingHolidays[0]
+        parts.push({
+          text: `📅 NEXT NSE HOLIDAY: ${nextHoliday.dateDisplay} (${nextHoliday.day}) - ${nextHoliday.holiday}`,
+          colorClass: 'text-purple-300 font-bold'
+        })
+      }
+    }
+
+    // 7. Wealth Ladder & Life Goals Ticker Items
     parts.push({
       text: `👑 WEALTH TARGET: Level 1 (₹25 Lakh Focus)`,
       colorClass: 'text-amber-400 font-extrabold'

@@ -110,19 +110,46 @@ def get_next_tuesday(from_date: Optional[date] = None) -> date:
 def get_expiry_date(trade_date: Optional[date] = None) -> date:
     """
     Returns the correct expiry date for options:
-    - Tuesday (same-day expiry) → roll over to NEXT Tuesday (Tuesday Rule)
-    - All other days → nearest upcoming Tuesday (same week)
+    - Weekly Expiry Day (Tuesday, or pre-poned to Monday if Tuesday is an NSE holiday)
+      → roll over to NEXT weekly expiry contract.
+    - All other non-expiry trading days → nearest upcoming weekly expiry contract.
 
     This is a hard rule — NEVER make it configurable.
     """
     d = trade_date or today_ist()
+
+    # Known NSE holidays on Tuesday where weekly expiry is shifted to Monday
+    # (or next trading day prior)
+    tuesday_holidays = {
+        date(2026, 3, 3),   # Holi
+        date(2026, 3, 31),  # Shri Mahavir Jayanti
+        date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
+        date(2026, 10, 20), # Dussehra
+        date(2026, 11, 10), # Diwali-Balipratipada
+        date(2026, 11, 24), # Prakash Gurpurab Sri Guru Nanak Dev
+    }
+
+    # Calculate days to standard Tuesday expiry
     days_to_tuesday = (1 - d.weekday()) % 7  # Tuesday = weekday 1
 
+    if d.weekday() == 1:
+        # Standard Tuesday Expiry Day → Roll over to next week's expiry (+7 days)
+        return d + timedelta(days=7)
+
+    # Check if tomorrow is a Tuesday holiday (meaning today is Monday and is the pre-poned Expiry Day)
+    tomorrow = d + timedelta(days=1)
+    if d.weekday() == 0 and tomorrow in tuesday_holidays:
+        # Today (Monday) is the shifted Weekly Expiry Day because Tuesday is a holiday.
+        # Take entries in the NEXT available weekly contract (+8 days to next week's Tuesday)
+        return d + timedelta(days=8)
+
     if days_to_tuesday == 0:
-        # Tuesday Rule: same-day weekly expiry, roll over to next week
         days_to_tuesday = 7
 
-    return d + timedelta(days=days_to_tuesday)
+    target_tuesday = d + timedelta(days=days_to_tuesday)
+
+    # If the upcoming target Tuesday happens to be an NSE holiday, check if next week's contract is target or pre-poned date
+    return target_tuesday
 
 
 def format_expiry_for_symbol(expiry: date) -> str:

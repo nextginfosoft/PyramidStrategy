@@ -125,6 +125,14 @@ class TestExpiryDate:
         expected = date(2024, 6, 18)
         assert expiry == expected
 
+    def test_preponed_monday_expiry_when_tuesday_holiday(self):
+        """When Tuesday is a holiday (e.g. Holi on 03-Mar-2026), Monday 02-Mar-2026 is the pre-poned Expiry Day.
+        Entries on Monday must take the NEXT available weekly expiry contract instead of same-day contract."""
+        monday_preponed_expiry = date(2026, 3, 2) # Tuesday Mar 3 is Holi holiday
+        expiry = get_expiry_date(monday_preponed_expiry)
+        expected = date(2026, 3, 10) # NEXT weekly Tuesday contract
+        assert expiry == expected, f"Expected {expected}, got {expiry}"
+
     def test_friday_expiry_is_next_tuesday(self):
         friday = date(2024, 6, 14)
         expiry = get_expiry_date(friday)
