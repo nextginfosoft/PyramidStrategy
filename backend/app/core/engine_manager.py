@@ -21,6 +21,10 @@ class EngineManager:
         self._engines: dict[int, Any] = {}
         # Global WebSocket broadcast function
         self.broadcast_fn: Optional[Callable] = None
+        # The app's main asyncio event loop, set once at startup (see main.py lifespan).
+        # Sync routes and scheduled cron jobs use this to (re)start KiteTicker,
+        # which needs a loop reference for thread-safe tick dispatch.
+        self.event_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def get_engine(self, user_id: int) -> Any:
         """Retrieve or instantiate Strategy Engine for a user based on DB strategy_type."""

@@ -111,9 +111,25 @@ def kite_callback(request_token: str = Query(...), user_id: Optional[int] = Quer
                 db.commit()
                 logger.info(f"User {user_id}: Kite access_token stored (encrypted) in DB")
 
+        # A live KiteTicker (if any) is still bound to the OLD token — restart it
+        # so live data resumes immediately instead of requiring a separate
+        # "Start Live Feed" click or a server restart.
+        loop = engine_manager.event_loop
+        if loop:
+            try:
+                user_engine = engine_manager.get_engine(user_id)
+                user_kite.restart_ticker(
+                    on_nifty_tick=user_engine.on_nifty_tick,
+                    on_option_tick=user_engine.on_option_tick,
+                    loop=loop,
+                )
+                logger.info(f"User {user_id}: KiteTicker (re)started after OAuth login")
+            except Exception as e:
+                logger.warning(f"User {user_id}: Failed to restart KiteTicker after OAuth login: {e}")
+
         return {
             "status": "authenticated",
-            "message": "Kite login successful. You can now start live market data.",
+            "message": "Kite login successful. Live market data has been started.",
         }
 
     except Exception as e:
@@ -186,9 +202,25 @@ def kite_auto_login(db: Session = Depends(get_db), user: User = Depends(require_
         db.commit()
 
         logger.info(f"User {user.id}: Programmatic daily login successful!")
+
+        # Restart the ticker with the fresh token — an old (or dead) KiteTicker
+        # stays bound to the token it was created with.
+        loop = engine_manager.event_loop
+        if loop:
+            try:
+                user_engine = engine_manager.get_engine(user.id)
+                user_kite.restart_ticker(
+                    on_nifty_tick=user_engine.on_nifty_tick,
+                    on_option_tick=user_engine.on_option_tick,
+                    loop=loop,
+                )
+                logger.info(f"User {user.id}: KiteTicker (re)started after programmatic login")
+            except Exception as e:
+                logger.warning(f"User {user.id}: Failed to restart KiteTicker after programmatic login: {e}")
+
         return {
             "status": "authenticated",
-            "message": "Programmatic daily login successful! Access token updated.",
+            "message": "Programmatic daily login successful! Access token updated and live feed restarted.",
         }
     except Exception as e:
         logger.error(f"User {user.id}: Programmatic login failed: {e}")

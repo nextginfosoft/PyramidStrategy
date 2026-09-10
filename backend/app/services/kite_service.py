@@ -438,6 +438,25 @@ class KiteService:
         self._ticker_running = True
         logger.info(f"User {self.user_id}: KiteTicker background thread started")
 
+    def restart_ticker(
+        self,
+        on_nifty_tick: Callable,
+        on_option_tick: Callable,
+        loop: asyncio.AbstractEventLoop,
+    ):
+        """
+        Force-recreate KiteTicker with the current access_token.
+
+        A live KiteTicker keeps using whatever access_token it was constructed
+        with — pykiteconnect has no way to swap tokens on an open connection.
+        Zerodha invalidates access_tokens daily, so after any token refresh
+        (scheduled auto-login or manual re-login) the old ticker must be torn
+        down and a fresh one started, or live ticks silently stop flowing.
+        """
+        logger.info(f"User {self.user_id}: Restarting KiteTicker with refreshed access_token")
+        self.stop_ticker()
+        self.start_ticker(on_nifty_tick=on_nifty_tick, on_option_tick=on_option_tick, loop=loop)
+
     def subscribe_option(self, symbol: str):
         """Subscribe to live tick stream for an option symbol."""
         token = self.get_instrument_token(symbol)

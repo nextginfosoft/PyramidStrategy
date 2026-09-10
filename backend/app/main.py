@@ -48,6 +48,16 @@ def schedule_jobs():
                     
                     if is_valid:
                         logger.info(f"✅ User {cfg.user_id}: Kite token valid at 8:00 AM check")
+                        if not kite_serv._ticker_running:
+                            loop = engine_manager.event_loop
+                            if loop:
+                                user_engine = engine_manager.get_engine(cfg.user_id)
+                                kite_serv.start_ticker(
+                                    on_nifty_tick=user_engine.on_nifty_tick,
+                                    on_option_tick=user_engine.on_option_tick,
+                                    loop=loop,
+                                )
+                                logger.info(f"User {cfg.user_id}: Ticker wasn't running — started it at 8:00 AM check")
                     else:
                         logger.info(f"⏳ User {cfg.user_id}: Kite session invalid or expired. Attempting auto-login...")
                         extra = cfg.extra_config or {}
@@ -67,6 +77,23 @@ def schedule_jobs():
                                 cfg.extra_config = extra_updated
                                 db.commit()
                                 logger.info(f"⚡ User {cfg.user_id}: Automated daily session validation & login successful!")
+
+                                # The refreshed access_token is now on kite_serv, but any
+                                # previously running (or previously dead) KiteTicker is still
+                                # bound to the OLD token — restart it so live data actually
+                                # resumes before market open, without needing a manual restart.
+                                loop = engine_manager.event_loop
+                                if loop:
+                                    user_engine = engine_manager.get_engine(cfg.user_id)
+                                    kite_serv.restart_ticker(
+                                        on_nifty_tick=user_engine.on_nifty_tick,
+                                        on_option_tick=user_engine.on_option_tick,
+                                        loop=loop,
+                                    )
+                                    loop.run_in_executor(None, kite_serv.load_instruments)
+                                    logger.info(f"⚡ User {cfg.user_id}: KiteTicker restarted with fresh access_token")
+                                else:
+                                    logger.warning(f"User {cfg.user_id}: No event loop available — could not restart KiteTicker after refresh")
                             except Exception as autologin_ex:
                                 logger.error(f"❌ User {cfg.user_id}: Automated login failed: {autologin_ex}")
                         else:
@@ -231,6 +258,10 @@ async def lifespan(app: FastAPI):
 
     # Init Redis
     get_redis_client()
+
+    # Store the running event loop so scheduled jobs and sync routes can safely
+    # (re)start the KiteTicker — it needs a loop reference for thread-safe tick dispatch.
+    engine_manager.event_loop = asyncio.get_event_loop()
 
     # Schedule jobs
     schedule_jobs()
