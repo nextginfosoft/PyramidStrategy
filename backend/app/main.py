@@ -27,6 +27,38 @@ from app.core.time_rules import today_ist
 scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
 
+def _ensure_live_ticker(user_id: int, kite_serv, force_restart: bool = False) -> bool:
+    """
+    Make sure KiteTicker is connected and streaming for this user with whatever
+    access_token is currently loaded in kite_serv. Restarts it if it isn't
+    running (e.g. the old token's socket died and reconnect gave up) or if
+    force_restart is set (e.g. ticks have gone stale).
+
+    Returns True if the ticker is confirmed running after this call.
+    """
+    if not kite_serv.is_authenticated() or not kite_serv.validate_token():
+        return False
+
+    if kite_serv._ticker_running and not force_restart:
+        return True
+
+    try:
+        if kite_serv._ticker_running:
+            kite_serv.stop_ticker()
+        loop = asyncio.get_event_loop()
+        user_engine = engine_manager.get_engine(user_id)
+        kite_serv.start_ticker(
+            on_nifty_tick=user_engine.on_nifty_tick,
+            on_option_tick=user_engine.on_option_tick,
+            loop=loop,
+        )
+        logger.info(f"User {user_id}: KiteTicker (re)started with current access_token")
+        return True
+    except Exception as e:
+        logger.error(f"User {user_id}: Failed to (re)start KiteTicker: {e}")
+        return False
+
+
 def schedule_jobs():
     # 8:00 AM — token expiry validation + auto-login fallback
     async def token_check():
@@ -71,10 +103,57 @@ def schedule_jobs():
                                 logger.error(f"❌ User {cfg.user_id}: Automated login failed: {autologin_ex}")
                         else:
                             logger.warning(f"⚠️ User {cfg.user_id}: Automated login credentials not fully configured in settings.")
+
+                    # Whatever token we ended up with (already valid, or freshly
+                    # refreshed above), make sure the live ticker is actually
+                    # running on it — this is what used to require a manual
+                    # `docker compose restart` every morning.
+                    if _ensure_live_ticker(cfg.user_id, kite_serv):
+                        logger.info(f"User {cfg.user_id}: Live KiteTicker feed confirmed running after 8:00 AM token check")
+                    else:
+                        logger.warning(f"User {cfg.user_id}: Could not start live KiteTicker feed after 8:00 AM token check — ticker watchdog will retry")
         except Exception as e:
             logger.warning(f"Scheduler token check job failed: {e}")
 
     scheduler.add_job(token_check, "cron", hour=8, minute=0, id="token_check")
+
+    # Every 2 minutes, 8:00-11:59 AM (Mon-Fri) — ticker watchdog.
+    # Restarts KiteTicker if it isn't running, or if it's "running" but ticks
+    # have gone stale (e.g. a silent socket drop that reconnect didn't recover
+    # from). Makes the live feed self-healing instead of relying on a manual
+    # restart to re-run the startup ticker-start path.
+    async def ticker_watchdog():
+        from app.db.database import SessionLocal
+        from app.models.models import ApiConfig
+        from app.services.kite_service import get_user_kite_service
+
+        try:
+            with SessionLocal() as db:
+                configs = db.query(ApiConfig).filter(ApiConfig.provider == "zerodha", ApiConfig.is_active == True).all()
+                for cfg in configs:
+                    kite_serv = get_user_kite_service(cfg.user_id)
+                    if not kite_serv.is_authenticated():
+                        continue  # nothing to restart until credentials/token are loaded
+
+                    status = kite_serv.get_status()
+                    stale = (
+                        status["ticker_running"]
+                        and status["last_nifty_tick_seconds_ago"] is not None
+                        and status["last_nifty_tick_seconds_ago"] > 45
+                    )
+
+                    if not status["ticker_running"] or stale:
+                        logger.warning(
+                            f"User {cfg.user_id}: Ticker watchdog — running={status['ticker_running']} "
+                            f"stale={stale} (last_tick={status['last_nifty_tick_seconds_ago']}s ago). Restarting..."
+                        )
+                        _ensure_live_ticker(cfg.user_id, kite_serv, force_restart=True)
+        except Exception as e:
+            logger.error(f"Ticker watchdog job failed: {e}")
+
+    scheduler.add_job(
+        ticker_watchdog, "cron", day_of_week="mon-fri", hour="8-11", minute="*/2", id="ticker_watchdog"
+    )
 
     # 8:45 AM — pre-fetch daily AI gamification quotes
     async def ai_quotes_job():
@@ -357,33 +436,25 @@ def _load_kite_on_startup():
                     continue
 
                 kite_service = get_user_kite_service(user_id)
-                if kite_service.is_authenticated():
-                    valid = kite_service.validate_token()
-                    if valid:
-                        logger.info(f"User {user_id}: Kite token valid on startup — starting live feed")
-                        import asyncio
-                        loop = asyncio.get_event_loop()
-                        user_engine = engine_manager.get_engine(user_id)
-                        kite_service.start_ticker(
-                            on_nifty_tick=user_engine.on_nifty_tick,
-                            on_option_tick=user_engine.on_option_tick,
-                            loop=loop,
-                        )
-                        # Seed last closed NIFTY spot price if WebSocket is silent
-                        try:
-                            spot_price = kite_service.get_nifty_spot_ltp()
-                            if spot_price:
-                                asyncio.ensure_future(user_engine.on_nifty_tick(spot_price))
-                                logger.info(f"User {user_id}: Seeded initial startup NIFTY price: {spot_price}")
-                        except Exception as seed_err:
-                            logger.warning(f"Failed to seed initial NIFTY price on startup: {seed_err}")
-                        
-                        # Load instruments in background (non-blocking)
-                        asyncio.ensure_future(
-                            loop.run_in_executor(None, kite_service.load_instruments)
-                        )
-                    else:
-                        logger.warning(f"User {user_id}: Kite token expired on startup — re-login required")
+                if _ensure_live_ticker(user_id, kite_service):
+                    logger.info(f"User {user_id}: Kite token valid on startup — live feed started")
+                    loop = asyncio.get_event_loop()
+                    user_engine = engine_manager.get_engine(user_id)
+                    # Seed last closed NIFTY spot price if WebSocket is silent
+                    try:
+                        spot_price = kite_service.get_nifty_spot_ltp()
+                        if spot_price:
+                            asyncio.ensure_future(user_engine.on_nifty_tick(spot_price))
+                            logger.info(f"User {user_id}: Seeded initial startup NIFTY price: {spot_price}")
+                    except Exception as seed_err:
+                        logger.warning(f"Failed to seed initial NIFTY price on startup: {seed_err}")
+
+                    # Load instruments in background (non-blocking)
+                    asyncio.ensure_future(
+                        loop.run_in_executor(None, kite_service.load_instruments)
+                    )
+                elif kite_service.is_authenticated():
+                    logger.warning(f"User {user_id}: Kite token expired on startup — re-login required")
     except Exception as e:
         logger.warning(f"Kite startup init failed (non-critical): {e}")
 

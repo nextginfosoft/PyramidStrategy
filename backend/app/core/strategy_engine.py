@@ -938,5 +938,6 @@ class StrategyEngine:
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
             "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
             "health": ks.get_status(),
+            "mock_feed_active": self.mock_feed.is_running,
             "strategy_type": "PYRAMID",
         }

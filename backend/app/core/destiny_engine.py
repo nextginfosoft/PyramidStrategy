@@ -516,6 +516,7 @@ class DestinyStrategyEngine:
             "ce": ce_status,
             "pe": pe_status,
             "health": ks.get_status(),
+            "mock_feed_active": getattr(self.mock_feed, "is_running", False),
             "strategy_type": "DESTINY",
         }
 

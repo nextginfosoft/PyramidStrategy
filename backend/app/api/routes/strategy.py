@@ -101,12 +101,21 @@ async def start_strategy(
     await user_engine._broadcast_status(nifty_price)
 
     # Start mock feed in background (paper trade mode only if live feed is not active)
-    if cfg.paper_trade and not user_kite._ticker_running:
+    mock_feed_active = cfg.paper_trade and not user_kite._ticker_running
+    if mock_feed_active:
         background_tasks.add_task(_run_mock_feed, user.id)
+        logger.warning(
+            f"User {user.id}: Live Kite feed not connected — falling back to SIMULATED "
+            f"(fake) NIFTY prices for paper trading, not real market data."
+        )
+        warnings.append(
+            "⚠️ Live Kite feed not connected — using SIMULATED (fake) NIFTY prices, not real market data."
+        )
 
     return {
         "status": "started",
         "paper_trade": cfg.paper_trade,
+        "mock_feed_active": mock_feed_active,
         "warnings": warnings,
     }
 
