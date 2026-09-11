@@ -27,6 +27,46 @@ from app.core.time_rules import today_ist
 scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
 
+def _ensure_live_ticker(user_id: int, kite_serv, force_restart: bool = False) -> bool:
+    """
+    Make sure KiteTicker is connected and streaming for this user with whatever
+    access_token is currently loaded in kite_serv. Restarts it if it isn't
+    running (e.g. the old token's socket died and reconnect gave up) or if
+    force_restart is set (e.g. ticks have gone stale).
+
+    Returns True if the ticker is confirmed running after this call.
+    """
+    if not kite_serv.is_authenticated() or not kite_serv.validate_token():
+        return False
+
+    if kite_serv._ticker_running and not force_restart:
+        return True
+
+    loop = engine_manager.event_loop
+    if not loop:
+        return False
+
+    try:
+        user_engine = engine_manager.get_engine(user_id)
+        if kite_serv._ticker_running:
+            kite_serv.restart_ticker(
+                on_nifty_tick=user_engine.on_nifty_tick,
+                on_option_tick=user_engine.on_option_tick,
+                loop=loop,
+            )
+        else:
+            kite_serv.start_ticker(
+                on_nifty_tick=user_engine.on_nifty_tick,
+                on_option_tick=user_engine.on_option_tick,
+                loop=loop,
+            )
+        logger.info(f"User {user_id}: KiteTicker (re)started with current access_token")
+        return True
+    except Exception as e:
+        logger.error(f"User {user_id}: Failed to (re)start KiteTicker: {e}")
+        return False
+
+
 def schedule_jobs():
     # 8:00 AM — token expiry validation + auto-login fallback
     async def token_check():
@@ -41,67 +81,90 @@ def schedule_jobs():
                     kite_serv = get_user_kite_service(cfg.user_id)
                     from app.api.routes.auth import _load_kite_credentials_from_db
                     _load_kite_credentials_from_db(cfg.user_id)
-                    
+
                     is_valid = False
                     if kite_serv.is_authenticated():
                         is_valid = kite_serv.validate_token()
-                    
+
                     if is_valid:
                         logger.info(f"✅ User {cfg.user_id}: Kite token valid at 8:00 AM check")
-                        if not kite_serv._ticker_running:
-                            loop = engine_manager.event_loop
-                            if loop:
-                                user_engine = engine_manager.get_engine(cfg.user_id)
-                                kite_serv.start_ticker(
-                                    on_nifty_tick=user_engine.on_nifty_tick,
-                                    on_option_tick=user_engine.on_option_tick,
-                                    loop=loop,
-                                )
-                                logger.info(f"User {cfg.user_id}: Ticker wasn't running — started it at 8:00 AM check")
                     else:
                         logger.info(f"⏳ User {cfg.user_id}: Kite session invalid or expired. Attempting auto-login...")
                         extra = cfg.extra_config or {}
                         username = extra.get("username")
                         password_enc = extra.get("password_encrypted")
                         totp_secret_enc = extra.get("totp_secret_encrypted")
-                        
+
                         if username and password_enc and totp_secret_enc:
                             try:
                                 password = decrypt(password_enc)
                                 totp_secret = decrypt(totp_secret_enc)
                                 access_token = kite_serv.auto_login(username, password, totp_secret)
-                                
+
                                 # Store access token encrypted in DB
                                 extra_updated = dict(cfg.extra_config or {})
                                 extra_updated["access_token_encrypted"] = encrypt(access_token)
                                 cfg.extra_config = extra_updated
                                 db.commit()
                                 logger.info(f"⚡ User {cfg.user_id}: Automated daily session validation & login successful!")
-
-                                # The refreshed access_token is now on kite_serv, but any
-                                # previously running (or previously dead) KiteTicker is still
-                                # bound to the OLD token — restart it so live data actually
-                                # resumes before market open, without needing a manual restart.
-                                loop = engine_manager.event_loop
-                                if loop:
-                                    user_engine = engine_manager.get_engine(cfg.user_id)
-                                    kite_serv.restart_ticker(
-                                        on_nifty_tick=user_engine.on_nifty_tick,
-                                        on_option_tick=user_engine.on_option_tick,
-                                        loop=loop,
-                                    )
-                                    loop.run_in_executor(None, kite_serv.load_instruments)
-                                    logger.info(f"⚡ User {cfg.user_id}: KiteTicker restarted with fresh access_token")
-                                else:
-                                    logger.warning(f"User {cfg.user_id}: No event loop available — could not restart KiteTicker after refresh")
                             except Exception as autologin_ex:
                                 logger.error(f"❌ User {cfg.user_id}: Automated login failed: {autologin_ex}")
                         else:
                             logger.warning(f"⚠️ User {cfg.user_id}: Automated login credentials not fully configured in settings.")
+
+                    # Whatever token we ended up with (already valid, or freshly
+                    # refreshed above), make sure the live ticker is actually
+                    # running on it — this is what used to require a manual
+                    # `docker compose restart` every morning.
+                    if _ensure_live_ticker(cfg.user_id, kite_serv):
+                        logger.info(f"User {cfg.user_id}: Live KiteTicker feed confirmed running after 8:00 AM token check")
+                        loop = engine_manager.event_loop
+                        if loop:
+                            loop.run_in_executor(None, kite_serv.load_instruments)
+                    else:
+                        logger.warning(f"User {cfg.user_id}: Could not start live KiteTicker feed after 8:00 AM token check — ticker watchdog will retry")
         except Exception as e:
             logger.warning(f"Scheduler token check job failed: {e}")
 
     scheduler.add_job(token_check, "cron", hour=8, minute=0, id="token_check")
+
+    # Every 2 minutes, 8:00-11:59 AM (Mon-Fri) — ticker watchdog.
+    # Restarts KiteTicker if it isn't running, or if it's "running" but ticks
+    # have gone stale (e.g. a silent socket drop that reconnect didn't recover
+    # from). Makes the live feed self-healing instead of relying solely on
+    # the once-a-day 8:00 AM token check. Mirrors the main/dev watchdog.
+    async def ticker_watchdog():
+        from app.db.database import SessionLocal
+        from app.models.models import ApiConfig
+        from app.services.kite_service import get_user_kite_service
+
+        try:
+            with SessionLocal() as db:
+                configs = db.query(ApiConfig).filter(ApiConfig.provider == "zerodha", ApiConfig.is_active == True).all()
+                for cfg in configs:
+                    kite_serv = get_user_kite_service(cfg.user_id)
+                    if not kite_serv.is_authenticated():
+                        continue  # nothing to restart until credentials/token are loaded
+
+                    status = kite_serv.get_status()
+                    stale = (
+                        status["ticker_running"]
+                        and status["last_nifty_tick_seconds_ago"] is not None
+                        and status["last_nifty_tick_seconds_ago"] > 45
+                    )
+
+                    if not status["ticker_running"] or stale:
+                        logger.warning(
+                            f"User {cfg.user_id}: Ticker watchdog — running={status['ticker_running']} "
+                            f"stale={stale} (last_tick={status['last_nifty_tick_seconds_ago']}s ago). Restarting..."
+                        )
+                        _ensure_live_ticker(cfg.user_id, kite_serv, force_restart=True)
+        except Exception as e:
+            logger.error(f"Ticker watchdog job failed: {e}")
+
+    scheduler.add_job(
+        ticker_watchdog, "cron", day_of_week="mon-fri", hour="8-11", minute="*/2", id="ticker_watchdog"
+    )
 
     # 8:45 AM — pre-fetch daily AI gamification quotes
     async def ai_quotes_job():
