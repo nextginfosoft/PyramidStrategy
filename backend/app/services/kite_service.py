@@ -463,10 +463,24 @@ class KiteService:
             logger.info(f"User {self.user_id}: Unsubscribed option tick: {symbol}")
 
     def stop_ticker(self):
-        """Stop KiteTicker WebSocket."""
+        """
+        Stop this user's KiteTicker WebSocket connection.
+
+        Uses ticker.close(), NOT ticker.stop(). pykiteconnect runs on a
+        process-wide Twisted reactor singleton; stop() calls reactor.stop(),
+        which permanently kills that reactor for the rest of the process's
+        life (Twisted reactors cannot be restarted — see ReactorNotRestartable).
+        Any later start_ticker() would then spawn a thread that crashes
+        instantly and silently, with the ticker never actually reconnecting —
+        this is exactly what made _ensure_live_ticker()/ticker_watchdog log
+        "restarted" while no on_connect ever fired again for the rest of the
+        day. close() just closes this one connection and stops its retry
+        loop, leaving the shared reactor running so a fresh KiteTicker can
+        attach to it later (e.g. after a daily access_token refresh).
+        """
         if self._ticker:
             try:
-                self._ticker.stop()
+                self._ticker.close()
             except Exception as e:
                 logger.warning(f"User {self.user_id}: Error stopping KiteTicker: {e}")
         self._ticker_running = False
