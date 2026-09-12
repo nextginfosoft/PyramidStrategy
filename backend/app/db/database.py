@@ -179,6 +179,18 @@ def init_db():
             # Expected error if column already exists
             logger.debug(f"Database migration (trades.{col} check/add): {e}")
 
+    # Self-healing migration to increase trades.level column length to VARCHAR(10)
+    # (needed for the Destiny engine's level labels; the model already declares
+    # String(10), this brings older live DBs created before that in line)
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE trades ALTER COLUMN level TYPE VARCHAR(10)"))
+            conn.commit()
+            logger.info("Database migration: Altered trades.level type to VARCHAR(10)")
+    except Exception as e:
+        logger.warning(f"Database migration (alter trades.level type): {e}")
+
     # Self-healing migration for user subscription columns
     for col, col_type in [
         ("subscription_tier", "VARCHAR(20) DEFAULT 'BASIC' NOT NULL"),
