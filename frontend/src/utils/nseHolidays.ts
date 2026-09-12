@@ -37,3 +37,19 @@ export function formatNextHolidayLine(holiday: NseHoliday): string {
   const suffix = holiday.day === 'Tuesday' ? ' — expiry pre-poned to Mon' : ''
   return `${holiday.dateDisplay.slice(0, 6)} (${holiday.day.slice(0, 3)}) · ${holiday.holiday}${suffix}`
 }
+
+/** Whole calendar days between `fromDate` and the holiday's date (0 = today, negative = already past). */
+export function daysUntilHoliday(holiday: NseHoliday, fromDate: Date = new Date()): number {
+  const startOfDay = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate())
+  const target = new Date(holiday.dateStr)
+  return Math.round((target.getTime() - startOfDay.getTime()) / 86400000)
+}
+
+export type HolidayUrgency = 'calm' | 'soon' | 'today'
+
+/** calm = more than 3 days out, soon = 1-3 days out, today = the holiday itself. */
+export function getHolidayUrgency(daysAway: number): HolidayUrgency {
+  if (daysAway <= 0) return 'today'
+  if (daysAway <= 3) return 'soon'
+  return 'calm'
+}
