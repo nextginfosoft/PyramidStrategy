@@ -27,6 +27,7 @@ import { LevelHistoryModal } from '../LevelPanel/LevelHistoryModal'
 import { GoalsModal } from '../GoalsModal/GoalsModal'
 import { SubscriptionModal } from '../SubscriptionModal/SubscriptionModal'
 import { AreaChart as SparkAreaChart, Area as SparkArea, ResponsiveContainer as SparkContainer } from 'recharts'
+import { getNextHoliday, formatNextHolidayLine } from '../../utils/nseHolidays'
 
 const formatTimeTo12Hour = (timeStr: string): string => {
   try {
@@ -76,6 +77,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
   const [showGoals, setShowGoals] = useState(false)
   const [showSubscription, setShowSubscription] = useState(false)
   const [simPrice, setSimPrice] = useState('')
+  const nextHoliday = useMemo(() => getNextHoliday(), [])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true'
   })
@@ -884,6 +886,15 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
                 </span>
               )}
             </div>
+
+            {/* Next NSE holiday — always on, deliberately quiet (same tier as the timestamp above it) */}
+            {nextHoliday && (
+              <div className="flex items-baseline gap-1.5 text-[10.5px] text-navy-300">
+                <span aria-hidden="true" className="w-[5px] h-[5px] rounded-full bg-brand shrink-0 -translate-y-px" />
+                <span className="opacity-75">Next Holiday</span>
+                <span className="text-navy-100 font-semibold">{formatNextHolidayLine(nextHoliday)}</span>
+              </div>
+            )}
 
             {/* Inline time status warnings inside the card */}
             {status && !status.entries_allowed && (
