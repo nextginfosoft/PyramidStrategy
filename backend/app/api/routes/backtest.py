@@ -11,15 +11,16 @@ router = APIRouter(prefix="/backtest", tags=["backtest"])
 
 class BacktestConfigSchema(BaseModel):
     r1: float
-    r2: float
-    r3: float
+    r2: Optional[float] = 0.0
+    r3: Optional[float] = 0.0
     s1: float
-    s2: float
-    s3: float
+    s2: Optional[float] = 0.0
+    s3: Optional[float] = 0.0
     lot_size: int = 75
     target_points: float = 20.0
     sl_points: float = 10.0
     squareoff_time: Optional[str] = "11:30"
+    strategy_type: Optional[str] = "PYRAMID"
     name: Optional[str] = "Primary"
 
 class BacktestRequest(BaseModel):
