@@ -301,6 +301,10 @@ async def lifespan(app: FastAPI):
     # Init Redis
     get_redis_client()
 
+    # Store the running event loop so scheduled jobs and sync routes can safely
+    # (re)start the KiteTicker — it needs a loop reference for thread-safe tick dispatch.
+    engine_manager.event_loop = asyncio.get_event_loop()
+
     # Schedule jobs
     schedule_jobs()
     scheduler.start()
