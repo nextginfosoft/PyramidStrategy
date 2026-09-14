@@ -59,50 +59,68 @@ def _ensure_live_ticker(user_id: int, kite_serv, force_restart: bool = False) ->
         return False
 
 
+async def _ensure_valid_kite_token(cfg, kite_serv, db, context: str) -> bool:
+    """
+    Make sure kite_serv holds a currently-valid access_token for this
+    ApiConfig row: reload credentials from DB, validate the token, and fall
+    back to automated TOTP login (persisting the refreshed token) if it has
+    expired. `db` is the caller's already-open session (cfg is bound to it).
+    `context` is only used for log messages (e.g. "8:00 AM check",
+    "ticker watchdog retry"). Returns True if authenticated with a valid
+    token afterward.
+    """
+    from app.services.encryption import decrypt, encrypt
+    from app.api.routes.auth import _load_kite_credentials_from_db
+
+    _load_kite_credentials_from_db(cfg.user_id)
+
+    is_valid = False
+    if kite_serv.is_authenticated():
+        is_valid = kite_serv.validate_token()
+
+    if is_valid:
+        logger.info(f"✅ User {cfg.user_id}: Kite token valid ({context})")
+        return True
+
+    logger.info(f"⏳ User {cfg.user_id}: Kite session invalid or expired ({context}). Attempting auto-login...")
+    extra = cfg.extra_config or {}
+    username = extra.get("username")
+    password_enc = extra.get("password_encrypted")
+    totp_secret_enc = extra.get("totp_secret_encrypted")
+
+    if not (username and password_enc and totp_secret_enc):
+        logger.warning(f"⚠️ User {cfg.user_id}: Automated login credentials not fully configured in settings.")
+        return False
+
+    try:
+        password = decrypt(password_enc)
+        totp_secret = decrypt(totp_secret_enc)
+        access_token = kite_serv.auto_login(username, password, totp_secret)
+
+        # Store access token encrypted in DB
+        extra_updated = dict(cfg.extra_config or {})
+        extra_updated["access_token_encrypted"] = encrypt(access_token)
+        cfg.extra_config = extra_updated
+        db.commit()
+        logger.info(f"⚡ User {cfg.user_id}: Automated login successful ({context})")
+        return True
+    except Exception as autologin_ex:
+        logger.error(f"❌ User {cfg.user_id}: Automated login failed ({context}): {autologin_ex}")
+        return False
+
+
 def schedule_jobs():
     # 8:00 AM — token expiry validation + auto-login fallback
     async def token_check():
         from app.db.database import SessionLocal
         from app.models.models import ApiConfig
         from app.services.kite_service import get_user_kite_service
-        from app.services.encryption import decrypt, encrypt
         try:
             with SessionLocal() as db:
                 configs = db.query(ApiConfig).filter(ApiConfig.provider == "zerodha", ApiConfig.is_active == True).all()
                 for cfg in configs:
                     kite_serv = get_user_kite_service(cfg.user_id)
-                    from app.api.routes.auth import _load_kite_credentials_from_db
-                    _load_kite_credentials_from_db(cfg.user_id)
-                    
-                    is_valid = False
-                    if kite_serv.is_authenticated():
-                        is_valid = kite_serv.validate_token()
-                    
-                    if is_valid:
-                        logger.info(f"✅ User {cfg.user_id}: Kite token valid at 8:00 AM check")
-                    else:
-                        logger.info(f"⏳ User {cfg.user_id}: Kite session invalid or expired. Attempting auto-login...")
-                        extra = cfg.extra_config or {}
-                        username = extra.get("username")
-                        password_enc = extra.get("password_encrypted")
-                        totp_secret_enc = extra.get("totp_secret_encrypted")
-                        
-                        if username and password_enc and totp_secret_enc:
-                            try:
-                                password = decrypt(password_enc)
-                                totp_secret = decrypt(totp_secret_enc)
-                                access_token = kite_serv.auto_login(username, password, totp_secret)
-                                
-                                # Store access token encrypted in DB
-                                extra_updated = dict(cfg.extra_config or {})
-                                extra_updated["access_token_encrypted"] = encrypt(access_token)
-                                cfg.extra_config = extra_updated
-                                db.commit()
-                                logger.info(f"⚡ User {cfg.user_id}: Automated daily session validation & login successful!")
-                            except Exception as autologin_ex:
-                                logger.error(f"❌ User {cfg.user_id}: Automated login failed: {autologin_ex}")
-                        else:
-                            logger.warning(f"⚠️ User {cfg.user_id}: Automated login credentials not fully configured in settings.")
+                    await _ensure_valid_kite_token(cfg, kite_serv, db, context="8:00 AM check")
 
                     # Whatever token we ended up with (already valid, or freshly
                     # refreshed above), make sure the live ticker is actually
@@ -132,8 +150,14 @@ def schedule_jobs():
                 configs = db.query(ApiConfig).filter(ApiConfig.provider == "zerodha", ApiConfig.is_active == True).all()
                 for cfg in configs:
                     kite_serv = get_user_kite_service(cfg.user_id)
-                    if not kite_serv.is_authenticated():
-                        continue  # nothing to restart until credentials/token are loaded
+
+                    # A user left unauthenticated by an earlier failed auto-login
+                    # (e.g. a transient Zerodha-side error during the 8:00 AM
+                    # check) would otherwise be silently skipped by this watchdog
+                    # for the rest of the day — retry the same validate/refresh
+                    # flow token_check uses instead of just giving up on them.
+                    if not await _ensure_valid_kite_token(cfg, kite_serv, db, context="ticker watchdog retry"):
+                        continue
 
                     status = kite_serv.get_status()
                     stale = (
