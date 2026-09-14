@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useStrategyStore } from '../../store/strategyStore'
 import { NSE_HOLIDAYS } from '../../utils/nseHolidays'
+import { isMarketOpenNow } from '../../utils/marketHours'
 import clsx from 'clsx'
 
 export function StatusBar() {
@@ -20,14 +21,17 @@ export function StatusBar() {
   // 2. Identify if there's a critical live error that should stop the scrolling marquee
   const isCriticalError = useMemo(() => {
     if (paperTrade) return false // Paper trade runs in local simulation mode
-    
-    // Live mode connection failures:
+
+    // Live mode connection failures. Tick-staleness only counts while the
+    // market should actually be ticking — outside trading hours (or on an
+    // NSE holiday) Zerodha legitimately sends nothing, so a growing
+    // last-tick age there is normal, not a dead connection.
     return (
       !authenticated ||
       !tickerConnected ||
       !!apiError ||
       !!tickerError ||
-      (lastNiftyTickSec !== null && lastNiftyTickSec > 15)
+      (lastNiftyTickSec !== null && lastNiftyTickSec > 15 && isMarketOpenNow())
     );
   }, [paperTrade, authenticated, tickerConnected, apiError, tickerError, lastNiftyTickSec])
 
@@ -54,7 +58,7 @@ export function StatusBar() {
         dotClass: 'bg-yellow-400 animate-pulse'
       }
     }
-    if (lastNiftyTickSec !== null && lastNiftyTickSec > 5) {
+    if (lastNiftyTickSec !== null && lastNiftyTickSec > 5 && isMarketOpenNow()) {
       return {
         text: 'FEED STALE',
         bgClass: 'bg-amber-950/60 text-amber-400 border-amber-800/40',
