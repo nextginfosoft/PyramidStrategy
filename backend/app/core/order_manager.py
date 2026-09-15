@@ -120,7 +120,21 @@ class OrderManager:
             "fill_price": str(fill_price),
             "order_id": order_id,
         })
-        db.commit()
+        try:
+            db.commit()
+        except Exception as commit_err:
+            # This order was already placed and filled on the broker (or, for
+            # paper trades, already "filled" in memory) — losing this commit
+            # means our own trade record silently never exists, even though
+            # a real position is open. Never let that happen quietly.
+            logger.error(
+                f"[OrderManager] CRITICAL: DB commit failed after order fill — "
+                f"User {self.user_id} BUY {qty} {instrument} @ {fill_price} "
+                f"(kite_order_id={order_id}, paper={self.paper_trade}) was filled "
+                f"but the trade record was NOT persisted: {commit_err}",
+                exc_info=True,
+            )
+            raise
 
         return {
             "trade_id": trade.id,
@@ -253,7 +267,23 @@ class OrderManager:
             "pnl_pts": str(pnl_pts),
             "pnl_rupees": str(pnl_rupees),
         })
-        db.commit()
+        try:
+            db.commit()
+        except Exception as commit_err:
+            # This exit was already placed and filled on the broker (or,
+            # for paper trades, already "filled" in memory) — losing this
+            # commit means the position closes for real but our own PnL
+            # and trade history silently never record it. Never let that
+            # happen quietly.
+            logger.error(
+                f"[OrderManager] CRITICAL: DB commit failed after exit fill — "
+                f"User {self.user_id} EXIT {qty} {instrument} @ {exit_price} "
+                f"(kite_order_id={order_id}, reason={reason}, pnl_rupees={pnl_rupees}, "
+                f"paper={self.paper_trade}) was filled but the trade record "
+                f"was NOT persisted: {commit_err}",
+                exc_info=True,
+            )
+            raise
 
         # Update ID in list after commit to be safe
         if exit_trade.id and exit_trade.id not in updated_trade_ids:

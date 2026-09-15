@@ -89,7 +89,6 @@ class DestinyStrategyEngine:
 
         # Gamification: motivational quote on engine start
         try:
-            import asyncio
             from app.gamification.hooks import fire_engine_start_quote
             asyncio.create_task(fire_engine_start_quote(self.user_id, paper_trade=self.paper_trade))
         except Exception as e:
@@ -173,7 +172,6 @@ class DestinyStrategyEngine:
 
         # Gamification: motivational quote on engine stop
         try:
-            import asyncio
             from app.gamification.hooks import fire_engine_stop_quote
             asyncio.create_task(fire_engine_stop_quote(self.user_id))
         except Exception as e:
@@ -451,7 +449,6 @@ class DestinyStrategyEngine:
         # Check and record price at 3:20 PM IST (15:20) for all today's traded instruments
         if current_time.hour == 15 and current_time.minute >= 20 and not getattr(self, "_recorded_320_price", False):
             self._recorded_320_price = True
-            import asyncio
             asyncio.create_task(self._record_320_prices(nifty_ltp))
 
         # Rule 3: 3:20 PM Square Off
@@ -676,7 +673,6 @@ class DestinyStrategyEngine:
             logger.warning(f"[DestinyEngine] Gamification entry hook failed (non-critical): {e}")
 
         # AI Trade Analysis Task
-        import asyncio
         asyncio.create_task(self._notify_ai("ENTRY", side, level_str, nifty_ltp))
 
     async def _check_active_trade_exits(self, nifty_ltp: Decimal):
@@ -802,7 +798,6 @@ class DestinyStrategyEngine:
             logger.warning(f"[DestinyEngine] Gamification exit hook failed (non-critical): {e}")
 
         # AI Trade Analysis Task
-        import asyncio
         asyncio.create_task(self._notify_ai("EXIT", side, level_str, nifty_ltp))
 
     async def _notify_ai(self, event_type: str, side: str, level: str, nifty_ltp: Decimal):
