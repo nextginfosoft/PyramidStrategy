@@ -434,9 +434,23 @@ class KiteService:
         self._ticker.on_reconnect = on_reconnect
         self._ticker.on_noreconnect = on_noreconnect
 
-        self._ticker.connect(threaded=True)
+        from twisted.internet import reactor
+
+        if reactor.running:
+            # pykiteconnect runs on a process-wide Twisted reactor singleton.
+            # Once the first-ever ticker has spun it up in its own background
+            # thread, calling ticker.connect() directly from THIS thread races
+            # with that already-running loop — Twisted reactor calls made from
+            # outside the reactor's own thread must be marshaled onto it via
+            # callFromThread(), or connectWS() silently never completes: no
+            # on_connect, no on_error, no on_reconnect, just permanent silence.
+            reactor.callFromThread(self._ticker.connect, threaded=True)
+            logger.info(f"User {self.user_id}: KiteTicker connect scheduled on existing reactor thread")
+        else:
+            self._ticker.connect(threaded=True)
+            logger.info(f"User {self.user_id}: KiteTicker background thread started")
+
         self._ticker_running = True
-        logger.info(f"User {self.user_id}: KiteTicker background thread started")
 
     def restart_ticker(
         self,
@@ -497,7 +511,15 @@ class KiteService:
         """
         if self._ticker:
             try:
-                self._ticker.close()
+                from twisted.internet import reactor
+                if reactor.running:
+                    # Same cross-thread hazard as start_ticker()'s connect()
+                    # call — marshal the close onto the reactor's own thread
+                    # so the old connection is actually torn down (not just
+                    # abandoned) before a fresh KiteTicker tries to connect.
+                    reactor.callFromThread(self._ticker.close)
+                else:
+                    self._ticker.close()
             except Exception as e:
                 logger.warning(f"User {self.user_id}: Error stopping KiteTicker: {e}")
         self._ticker_running = False
