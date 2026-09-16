@@ -112,8 +112,10 @@ class OrderManager:
         db.add(trade)
         db.flush()
 
+        trade_id = trade.id  # capture now — a fresh, independent int, untouched by later session state
+
         self._log_audit(db, "ORDER_PLACED", side, mapped_level, trigger_nifty, {
-            "trade_id": trade.id,
+            "trade_id": trade_id,
             "action": "BUY",
             "instrument": instrument,
             "qty": qty,
@@ -136,8 +138,21 @@ class OrderManager:
             )
             raise
 
+        # Safety-net: commit() raising nothing is not proof the row is durable —
+        # e.g. Postgres silently turns a COMMIT into a no-op ROLLBACK (no exception
+        # at all) if the transaction was already aborted by an earlier statement.
+        # Re-query independently of the (now possibly stale) `trade` ORM object.
+        if db.query(Trade).filter(Trade.id == trade_id).first() is None:
+            logger.error(
+                f"[OrderManager] CRITICAL: DATA LOSS CONFIRMED — User {self.user_id} "
+                f"BUY {qty} {instrument} @ {fill_price} (kite_order_id={order_id}, "
+                f"trade_id={trade_id}, paper={self.paper_trade}) was filled and "
+                f"db.commit() raised no error, but the row is NOT visible on "
+                f"immediate re-query. Real position is open with no DB record."
+            )
+
         return {
-            "trade_id": trade.id,
+            "trade_id": trade_id,
             "order_id": order_id,
             "fill_price": fill_price,
             "qty": qty,
@@ -257,7 +272,8 @@ class OrderManager:
         )
         db.add(exit_trade)
         db.flush()
-        updated_trade_ids.append(exit_trade.id)
+        exit_trade_id = exit_trade.id  # capture now — untouched by later session state
+        updated_trade_ids.append(exit_trade_id)
 
         self._log_audit(db, f"ORDER_EXIT_{reason}", side, None, trigger_nifty, {
             "instrument": instrument,
@@ -285,9 +301,18 @@ class OrderManager:
             )
             raise
 
-        # Update ID in list after commit to be safe
-        if exit_trade.id and exit_trade.id not in updated_trade_ids:
-            updated_trade_ids.append(exit_trade.id)
+        # Safety-net: commit() raising nothing is not proof the row is durable —
+        # e.g. Postgres silently turns a COMMIT into a no-op ROLLBACK (no exception
+        # at all) if the transaction was already aborted by an earlier statement.
+        # Re-query independently of the (now possibly stale) `exit_trade` ORM object.
+        if db.query(Trade).filter(Trade.id == exit_trade_id).first() is None:
+            logger.error(
+                f"[OrderManager] CRITICAL: DATA LOSS CONFIRMED — User {self.user_id} "
+                f"EXIT {qty} {instrument} @ {exit_price} (kite_order_id={order_id}, "
+                f"reason={reason}, trade_id={exit_trade_id}, paper={self.paper_trade}) "
+                f"was filled and db.commit() raised no error, but the row is NOT "
+                f"visible on immediate re-query. Real position was closed with no DB record."
+            )
 
         return {
             "order_id": order_id,

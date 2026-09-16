@@ -367,6 +367,23 @@ class KiteService:
 
         self._ticker = KiteTicker(self._api_key, self._access_token)
 
+        def _log_tick_task_exception(fut, context: str):
+            # asyncio.run_coroutine_threadsafe() returns a concurrent.futures.Future
+            # that nobody else ever reads. Internally it DOES retrieve the coroutine's
+            # exception (to copy it onto this future), which suppresses asyncio's own
+            # "Task exception was never retrieved" warning — so without this callback,
+            # any exception raised anywhere inside the tick-handling coroutine (entry,
+            # exit, DB commit, anything) vanishes with zero trace, anywhere.
+            if fut.cancelled():
+                logger.error(f"User {self.user_id}: {context} coroutine was CANCELLED mid-flight")
+                return
+            exc = fut.exception()
+            if exc is not None:
+                logger.error(
+                    f"User {self.user_id}: {context} coroutine raised an unhandled exception: {exc}",
+                    exc_info=exc,
+                )
+
         def on_ticks(ws, ticks):
             for tick in ticks:
                 token = tick.get("instrument_token")
@@ -382,8 +399,11 @@ class KiteService:
                         pass
                     self._last_nifty_tick_time = time.time()
                     # Dispatch NIFTY tick to strategy engine
-                    asyncio.run_coroutine_threadsafe(
+                    fut = asyncio.run_coroutine_threadsafe(
                         self._on_nifty_tick(ltp), loop
+                    )
+                    fut.add_done_callback(
+                        lambda f: _log_tick_task_exception(f, "on_nifty_tick")
                     )
                 elif token and token in self._token_to_symbol:
                     symbol = self._token_to_symbol[token]
@@ -392,8 +412,11 @@ class KiteService:
                         get_redis_client().setex(f"option:ltp:{symbol}", 5, str(ltp))
                     except Exception:
                         pass
-                    asyncio.run_coroutine_threadsafe(
+                    fut = asyncio.run_coroutine_threadsafe(
                         self._on_option_tick(symbol, ltp), loop
+                    )
+                    fut.add_done_callback(
+                        lambda f: _log_tick_task_exception(f, "on_option_tick")
                     )
 
         def on_connect(ws, response):
