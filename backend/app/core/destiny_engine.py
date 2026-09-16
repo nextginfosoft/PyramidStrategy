@@ -191,6 +191,11 @@ class DestinyStrategyEngine:
         self.active_ce_trade = None
         self.r_level_completed = False
         self.s_level_completed = False
+        # Clear the cached previous-close so _broadcast_status()/get_status()
+        # fetch a fresh one for today instead of keeping whichever day's
+        # close happened to be fetched the last time this process started —
+        # the refresh condition below only re-fetches when this is unset.
+        self.nifty_prev_close = None
         logger.info(f"[DestinyEngine] User {self.user_id}: Daily trade state reset complete.")
 
     def load_config(self, config_dict: Optional[Dict[str, Any]] = None):
