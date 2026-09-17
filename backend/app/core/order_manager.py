@@ -108,6 +108,10 @@ class OrderManager:
             active_high_time=now_utc,
             active_low=fill_price,
             active_low_time=now_utc,
+            nifty_active_high=trigger_nifty,
+            nifty_active_high_time=now_utc,
+            nifty_active_low=trigger_nifty,
+            nifty_active_low_time=now_utc,
         )
         db.add(trade)
         db.flush()
@@ -146,6 +150,10 @@ class OrderManager:
         active_low: Optional[Decimal] = None,
         active_high_time: Optional[datetime] = None,
         active_low_time: Optional[datetime] = None,
+        nifty_active_high: Optional[Decimal] = None,
+        nifty_active_low: Optional[Decimal] = None,
+        nifty_active_high_time: Optional[datetime] = None,
+        nifty_active_low_time: Optional[datetime] = None,
     ) -> dict:
         """
         Place a MARKET EXIT (sell) order for the FULL position.
@@ -206,6 +214,12 @@ class OrderManager:
                 if active_low is not None:
                     ot.active_low = active_low
                     ot.active_low_time = active_low_time
+                if nifty_active_high is not None:
+                    ot.nifty_active_high = nifty_active_high
+                    ot.nifty_active_high_time = nifty_active_high_time
+                if nifty_active_low is not None:
+                    ot.nifty_active_low = nifty_active_low
+                    ot.nifty_active_low_time = nifty_active_low_time
                 if clean_reason == "TARGET":
                     ot.post_exit_high = exit_price
                     ot.post_exit_high_time = now_utc
@@ -236,6 +250,10 @@ class OrderManager:
             active_high_time=active_high_time if active_high_time is not None else (open_trades[0].active_high_time if open_trades else None),
             active_low=active_low if active_low is not None else (open_trades[0].active_low if open_trades else None),
             active_low_time=active_low_time if active_low_time is not None else (open_trades[0].active_low_time if open_trades else None),
+            nifty_active_high=nifty_active_high if nifty_active_high is not None else (open_trades[0].nifty_active_high if open_trades else None),
+            nifty_active_high_time=nifty_active_high_time if nifty_active_high_time is not None else (open_trades[0].nifty_active_high_time if open_trades else None),
+            nifty_active_low=nifty_active_low if nifty_active_low is not None else (open_trades[0].nifty_active_low if open_trades else None),
+            nifty_active_low_time=nifty_active_low_time if nifty_active_low_time is not None else (open_trades[0].nifty_active_low_time if open_trades else None),
             post_exit_high=exit_price if clean_reason == "TARGET" else None,
             post_exit_high_time=now_utc if clean_reason == "TARGET" else None,
             post_exit_low=exit_price if clean_reason == "TARGET" else None,

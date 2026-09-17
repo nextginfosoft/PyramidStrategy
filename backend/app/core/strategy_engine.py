@@ -379,6 +379,19 @@ class StrategyEngine:
         self.last_nifty_price = nifty_ltp
         await self._broadcast_status(nifty_ltp)
 
+        # Track NIFTY spot active high/low during position lifetime (mirrors option active_high/low)
+        for sm in [self.ce, self.pe]:
+            if sm.state != State.IDLE:
+                import pytz
+                from datetime import datetime
+                now = datetime.now(pytz.utc)
+                if sm.nifty_active_high is None or nifty_ltp > sm.nifty_active_high:
+                    sm.nifty_active_high = nifty_ltp
+                    sm.nifty_active_high_time = now
+                if sm.nifty_active_low is None or nifty_ltp < sm.nifty_active_low:
+                    sm.nifty_active_low = nifty_ltp
+                    sm.nifty_active_low_time = now
+
         if not self.is_running or not self.config:
             return
 
@@ -505,7 +518,7 @@ class StrategyEngine:
                     lots=1, lot_size=sm.lot_size,
                     trigger_nifty=nifty_ltp, mock_ltp=mock_ltp,
                 )
-                sm.enter_level1(instrument, strike, expiry, order["fill_price"])
+                sm.enter_level1(instrument, strike, expiry, order["fill_price"], nifty_ltp=nifty_ltp)
 
             elif level == "L2":
                 instrument = sm.locked_instrument
@@ -516,7 +529,7 @@ class StrategyEngine:
                     lots=1, lot_size=sm.lot_size,
                     trigger_nifty=nifty_ltp, mock_ltp=mock_ltp,
                 )
-                sm.enter_level2(order["fill_price"])
+                sm.enter_level2(order["fill_price"], nifty_ltp=nifty_ltp)
 
             elif level == "L3":
                 instrument = sm.locked_instrument
@@ -527,7 +540,7 @@ class StrategyEngine:
                     lots=1, lot_size=sm.lot_size,
                     trigger_nifty=nifty_ltp, mock_ltp=mock_ltp,
                 )
-                sm.enter_level3(order["fill_price"])
+                sm.enter_level3(order["fill_price"], nifty_ltp=nifty_ltp)
 
         # Subscribe to option tick stream (Phase 2: live prices for target/SL)
         self._subscribe_option(sm.locked_instrument)
@@ -617,6 +630,10 @@ class StrategyEngine:
                 active_low=sm.active_low,
                 active_high_time=sm.active_high_time,
                 active_low_time=sm.active_low_time,
+                nifty_active_high=sm.nifty_active_high,
+                nifty_active_low=sm.nifty_active_low,
+                nifty_active_high_time=sm.nifty_active_high_time,
+                nifty_active_low_time=sm.nifty_active_low_time,
             )
 
         # Unsubscribe from option ticks — position closed
