@@ -89,7 +89,6 @@ class DestinyStrategyEngine:
 
         # Gamification: motivational quote on engine start
         try:
-            import asyncio
             from app.gamification.hooks import fire_engine_start_quote
             asyncio.create_task(fire_engine_start_quote(self.user_id, paper_trade=self.paper_trade))
         except Exception as e:
@@ -173,7 +172,6 @@ class DestinyStrategyEngine:
 
         # Gamification: motivational quote on engine stop
         try:
-            import asyncio
             from app.gamification.hooks import fire_engine_stop_quote
             asyncio.create_task(fire_engine_stop_quote(self.user_id))
         except Exception as e:
@@ -193,6 +191,11 @@ class DestinyStrategyEngine:
         self.active_ce_trade = None
         self.r_level_completed = False
         self.s_level_completed = False
+        # Clear the cached previous-close so _broadcast_status()/get_status()
+        # fetch a fresh one for today instead of keeping whichever day's
+        # close happened to be fetched the last time this process started —
+        # the refresh condition below only re-fetches when this is unset.
+        self.nifty_prev_close = None
         logger.info(f"[DestinyEngine] User {self.user_id}: Daily trade state reset complete.")
 
     def load_config(self, config_dict: Optional[Dict[str, Any]] = None):
@@ -371,6 +374,10 @@ class DestinyStrategyEngine:
         entry_avg_price = float(trade.get("entry_price")) if trade and trade.get("entry_price") is not None else None
         active_high = float(trade.get("active_high")) if trade and trade.get("active_high") is not None else None
         active_low = float(trade.get("active_low")) if trade and trade.get("active_low") is not None else None
+        nifty_active_high = float(trade.get("nifty_active_high")) if trade and trade.get("nifty_active_high") is not None else None
+        nifty_active_high_time = trade.get("nifty_active_high_time").isoformat() if trade and trade.get("nifty_active_high_time") else None
+        nifty_active_low = float(trade.get("nifty_active_low")) if trade and trade.get("nifty_active_low") is not None else None
+        nifty_active_low_time = trade.get("nifty_active_low_time").isoformat() if trade and trade.get("nifty_active_low_time") else None
 
         current_ltp = None
         unrealized_pnl = None
@@ -396,6 +403,10 @@ class DestinyStrategyEngine:
             "realized_pnl": 0.0,
             "active_high": active_high,
             "active_low": active_low,
+            "nifty_active_high": nifty_active_high,
+            "nifty_active_high_time": nifty_active_high_time,
+            "nifty_active_low": nifty_active_low,
+            "nifty_active_low_time": nifty_active_low_time,
             "blocked_levels": ["L1"] if completed and not trade else [],
             "trade": trade,
         }
@@ -441,6 +452,18 @@ class DestinyStrategyEngine:
         self.last_nifty_price = nifty_ltp
         await self._broadcast_status(nifty_ltp)
 
+        # Track NIFTY spot active high/low during position lifetime (mirrors option active_high/low)
+        for trade in [self.active_pe_trade, self.active_ce_trade]:
+            if trade:
+                import pytz
+                now_tick = datetime.now(pytz.utc)
+                if trade.get("nifty_active_high") is None or nifty_ltp > trade["nifty_active_high"]:
+                    trade["nifty_active_high"] = nifty_ltp
+                    trade["nifty_active_high_time"] = now_tick
+                if trade.get("nifty_active_low") is None or nifty_ltp < trade["nifty_active_low"]:
+                    trade["nifty_active_low"] = nifty_ltp
+                    trade["nifty_active_low_time"] = now_tick
+
         if not self.is_running:
             return
 
@@ -451,7 +474,6 @@ class DestinyStrategyEngine:
         # Check and record price at 3:20 PM IST (15:20) for all today's traded instruments
         if current_time.hour == 15 and current_time.minute >= 20 and not getattr(self, "_recorded_320_price", False):
             self._recorded_320_price = True
-            import asyncio
             asyncio.create_task(self._record_320_prices(nifty_ltp))
 
         # Rule 3: 3:20 PM Square Off
@@ -623,6 +645,10 @@ class DestinyStrategyEngine:
             "active_high_time": now_utc,
             "active_low": fill_price,
             "active_low_time": now_utc,
+            "nifty_active_high": nifty_ltp,
+            "nifty_active_high_time": now_utc,
+            "nifty_active_low": nifty_ltp,
+            "nifty_active_low_time": now_utc,
         }
 
         # Option B: Mark both levels completed on entry so only 1 trade per day is taken
@@ -677,7 +703,6 @@ class DestinyStrategyEngine:
             logger.warning(f"[DestinyEngine] Gamification entry hook failed (non-critical): {e}")
 
         # AI Trade Analysis Task
-        import asyncio
         asyncio.create_task(self._notify_ai("ENTRY", side, level_str, nifty_ltp))
 
     async def _check_active_trade_exits(self, nifty_ltp: Decimal):
@@ -704,8 +729,9 @@ class DestinyStrategyEngine:
         level_str = trade["level"]
 
         db = SessionLocal()
+        order_res = {}
         try:
-            self.order_manager.place_exit_order(
+            order_res = self.order_manager.place_exit_order(
                 db=db,
                 side=side,
                 instrument=symbol,
@@ -720,6 +746,10 @@ class DestinyStrategyEngine:
                 active_low=trade.get("active_low"),
                 active_high_time=trade.get("active_high_time"),
                 active_low_time=trade.get("active_low_time"),
+                nifty_active_high=trade.get("nifty_active_high"),
+                nifty_active_low=trade.get("nifty_active_low"),
+                nifty_active_high_time=trade.get("nifty_active_high_time"),
+                nifty_active_low_time=trade.get("nifty_active_low_time"),
             )
             db.commit()
         except Exception as e:
@@ -727,8 +757,20 @@ class DestinyStrategyEngine:
         finally:
             db.close()
 
-        # Unsubscribe live ticks for option symbol after exit
-        self._unsubscribe_option(symbol)
+        # Unsubscribe live ticks for option symbol after exit —
+        # unless it hit TARGET, in which case we keep the subscription alive
+        # and register it for post-exit high/low tracking (see on_option_tick /
+        # _process_post_exit_tick), matching strategy_engine.py's behavior.
+        if reason == "TARGET":
+            updated_trade_ids = order_res.get("updated_trade_ids", [])
+            if symbol:
+                if symbol not in self.post_exit_trades:
+                    self.post_exit_trades[symbol] = []
+                for tid in updated_trade_ids:
+                    if tid not in self.post_exit_trades[symbol]:
+                        self.post_exit_trades[symbol].append(tid)
+        else:
+            self._unsubscribe_option(symbol)
 
         pnl_pts = exit_price - trade["entry_price"]
         total_pnl = pnl_pts * Decimal(str(trade["qty"]))
@@ -803,7 +845,6 @@ class DestinyStrategyEngine:
             logger.warning(f"[DestinyEngine] Gamification exit hook failed (non-critical): {e}")
 
         # AI Trade Analysis Task
-        import asyncio
         asyncio.create_task(self._notify_ai("EXIT", side, level_str, nifty_ltp))
 
     async def _notify_ai(self, event_type: str, side: str, level: str, nifty_ltp: Decimal):
