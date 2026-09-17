@@ -53,6 +53,12 @@ class StateMachine:
     active_low: Optional[Decimal] = None
     active_low_time: Optional[object] = None  # datetime.datetime
 
+    # NIFTY spot active range tracking (underlying's high/low during this position's lifetime)
+    nifty_active_high: Optional[Decimal] = None
+    nifty_active_high_time: Optional[object] = None  # datetime.datetime
+    nifty_active_low: Optional[Decimal] = None
+    nifty_active_low_time: Optional[object] = None  # datetime.datetime
+
     # P&L
     realized_pnl: Decimal = Decimal("0")
 
@@ -82,6 +88,10 @@ class StateMachine:
         self.active_low = None
         self.active_high_time = None
         self.active_low_time = None
+        self.nifty_active_high = None
+        self.nifty_active_low = None
+        self.nifty_active_high_time = None
+        self.nifty_active_low_time = None
 
     def mapped_level(self, lvl: str) -> str:
         if lvl in ("L1", "L2", "L3"):
@@ -118,7 +128,7 @@ class StateMachine:
             return False
         return True
 
-    def enter_level1(self, instrument: str, strike: int, expiry, fill_price: Decimal) -> dict:
+    def enter_level1(self, instrument: str, strike: int, expiry, fill_price: Decimal, nifty_ltp: Optional[Decimal] = None) -> dict:
         """
         Execute Level 1 entry: buy 1 lot, lock the strike.
         Returns action details for order manager.
@@ -133,7 +143,7 @@ class StateMachine:
         self.total_qty = qty
         self.total_invested = fill_price * qty
         self.entry_avg_price = fill_price
-        
+
         # Initialize active range tracking
         from datetime import datetime
         import pytz
@@ -142,7 +152,12 @@ class StateMachine:
         self.active_low = fill_price
         self.active_high_time = now
         self.active_low_time = now
-        
+        if nifty_ltp is not None:
+            self.nifty_active_high = nifty_ltp
+            self.nifty_active_low = nifty_ltp
+            self.nifty_active_high_time = now
+            self.nifty_active_low_time = now
+
         self.state = State.L1_ENTERED
 
         logger.info(
@@ -159,7 +174,7 @@ class StateMachine:
             "price": fill_price,
         }
 
-    def enter_level2(self, fill_price: Decimal) -> dict:
+    def enter_level2(self, fill_price: Decimal, nifty_ltp: Optional[Decimal] = None) -> dict:
         """
         Add 1 lot at Level 2. Same instrument as L1 (strike locked).
         Total = 2 lots.
@@ -172,7 +187,7 @@ class StateMachine:
         self.total_invested = self.total_invested + (fill_price * qty)
         self.entry_avg_price = self.total_invested / new_total_qty
         self.total_qty = new_total_qty
-        
+
         # Update active range tracking with fill price
         from datetime import datetime
         import pytz
@@ -183,6 +198,13 @@ class StateMachine:
         if self.active_low is None or fill_price < self.active_low:
             self.active_low = fill_price
             self.active_low_time = now
+        if nifty_ltp is not None:
+            if self.nifty_active_high is None or nifty_ltp > self.nifty_active_high:
+                self.nifty_active_high = nifty_ltp
+                self.nifty_active_high_time = now
+            if self.nifty_active_low is None or nifty_ltp < self.nifty_active_low:
+                self.nifty_active_low = nifty_ltp
+                self.nifty_active_low_time = now
 
         self.state = State.L2_ENTERED
 
@@ -200,7 +222,7 @@ class StateMachine:
             "price": fill_price,
         }
 
-    def enter_level3(self, fill_price: Decimal) -> dict:
+    def enter_level3(self, fill_price: Decimal, nifty_ltp: Optional[Decimal] = None) -> dict:
         """
         Add 1 lot at Level 3. SL is now active.
         Total = 3 lots (MAX — hard limit per CLAUDE.md).
@@ -214,7 +236,7 @@ class StateMachine:
         self.entry_avg_price = self.total_invested / new_total_qty
         self.level3_entry_price = fill_price
         self.total_qty = new_total_qty
-        
+
         # Update active range tracking with fill price
         from datetime import datetime
         import pytz
@@ -225,6 +247,13 @@ class StateMachine:
         if self.active_low is None or fill_price < self.active_low:
             self.active_low = fill_price
             self.active_low_time = now
+        if nifty_ltp is not None:
+            if self.nifty_active_high is None or nifty_ltp > self.nifty_active_high:
+                self.nifty_active_high = nifty_ltp
+                self.nifty_active_high_time = now
+            if self.nifty_active_low is None or nifty_ltp < self.nifty_active_low:
+                self.nifty_active_low = nifty_ltp
+                self.nifty_active_low_time = now
 
         self.state = State.L3_ENTERED
 
@@ -320,6 +349,10 @@ class StateMachine:
         self.active_low = None
         self.active_high_time = None
         self.active_low_time = None
+        self.nifty_active_high = None
+        self.nifty_active_low = None
+        self.nifty_active_high_time = None
+        self.nifty_active_low_time = None
 
         return result
 
@@ -343,6 +376,10 @@ class StateMachine:
             "active_high_time": self.active_high_time.isoformat() if self.active_high_time and hasattr(self.active_high_time, "isoformat") else None,
             "active_low": float(self.active_low) if self.active_low else None,
             "active_low_time": self.active_low_time.isoformat() if self.active_low_time and hasattr(self.active_low_time, "isoformat") else None,
+            "nifty_active_high": float(self.nifty_active_high) if self.nifty_active_high else None,
+            "nifty_active_high_time": self.nifty_active_high_time.isoformat() if self.nifty_active_high_time and hasattr(self.nifty_active_high_time, "isoformat") else None,
+            "nifty_active_low": float(self.nifty_active_low) if self.nifty_active_low else None,
+            "nifty_active_low_time": self.nifty_active_low_time.isoformat() if self.nifty_active_low_time and hasattr(self.nifty_active_low_time, "isoformat") else None,
             "unrealized_pnl": float(unrealized) if unrealized else None,
             "realized_pnl": float(self.realized_pnl),
             "blocked_levels": list(self.blocked_levels),

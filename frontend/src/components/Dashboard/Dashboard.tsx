@@ -1068,6 +1068,68 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
             <LevelPanel status={status} config={config ?? null} isLoading={isConfigLoading} />
           </div>
 
+          {/* NIFTY Spot Active Range — underlying index high/low while a leg is open */}
+          <div className="glass-card rounded-xl p-3">
+            <div className="text-xs text-navy-300 font-semibold mb-2">NIFTY SPOT ACTIVE RANGE</div>
+            {(() => {
+              const formatSpotTime = (timeStr: string | null | undefined) => {
+                if (!timeStr) return ''
+                try {
+                  const d = new Date(timeStr)
+                  if (isNaN(d.getTime())) return ''
+                  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+                } catch {
+                  return ''
+                }
+              }
+              const legs: { side: 'CE' | 'PE'; leg: SideStatus }[] = []
+              if (status?.ce && status.ce.state !== 'IDLE') legs.push({ side: 'CE', leg: status.ce })
+              if (status?.pe && status.pe.state !== 'IDLE') legs.push({ side: 'PE', leg: status.pe })
+
+              if (legs.length === 0) {
+                return (
+                  <div className="bg-navy-950/20 border border-navy-850 border-dashed rounded-lg p-2 text-center text-xs text-navy-450 font-medium">
+                    No active position
+                  </div>
+                )
+              }
+
+              return (
+                <div className="space-y-2.5">
+                  {legs.map(({ side, leg }) => (
+                    <div key={side}>
+                      <div className="text-[10px] text-navy-400 font-semibold uppercase tracking-wide mb-1">{side} Leg</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-rose-950/10 p-2 rounded-md border border-rose-950/20">
+                          <span className="text-rose-400 block text-[8px] uppercase tracking-wider font-bold mb-0.5">📉 Spot Low</span>
+                          <span className="font-mono font-bold text-rose-450 text-xs">
+                            {leg.nifty_active_low != null ? leg.nifty_active_low.toFixed(2) : '—'}
+                          </span>
+                          {leg.nifty_active_low_time && (
+                            <span className="text-[8px] text-navy-400 font-mono mt-1 block opacity-75">
+                              {formatSpotTime(leg.nifty_active_low_time)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="bg-emerald-950/10 p-2 rounded-md border border-emerald-950/20">
+                          <span className="text-emerald-400 block text-[8px] uppercase tracking-wider font-bold mb-0.5">📈 Spot High</span>
+                          <span className="font-mono font-bold text-emerald-450 text-xs">
+                            {leg.nifty_active_high != null ? leg.nifty_active_high.toFixed(2) : '—'}
+                          </span>
+                          {leg.nifty_active_high_time && (
+                            <span className="text-[8px] text-navy-400 font-mono mt-1 block opacity-75">
+                              {formatSpotTime(leg.nifty_active_high_time)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+
           {/* Paper trade simulator */}
           {paperTrade && (
             <div className="glass-card rounded-xl p-3">
