@@ -84,6 +84,10 @@ class TradeResponse(BaseModel):
     active_high_time: Optional[datetime] = None
     active_low: Optional[float] = None
     active_low_time: Optional[datetime] = None
+    nifty_active_high: Optional[float] = None
+    nifty_active_high_time: Optional[datetime] = None
+    nifty_active_low: Optional[float] = None
+    nifty_active_low_time: Optional[datetime] = None
     post_exit_high: Optional[float] = None
     post_exit_high_time: Optional[datetime] = None
     post_exit_low: Optional[float] = None
@@ -91,7 +95,7 @@ class TradeResponse(BaseModel):
     price_at_320: Optional[float] = None
     created_at: datetime
 
-    @field_validator("created_at", "active_high_time", "active_low_time", "post_exit_high_time", "post_exit_low_time", mode="before")
+    @field_validator("created_at", "active_high_time", "active_low_time", "nifty_active_high_time", "nifty_active_low_time", "post_exit_high_time", "post_exit_low_time", mode="before")
     @classmethod
     def ensure_tz(cls, v):
         if isinstance(v, datetime):
