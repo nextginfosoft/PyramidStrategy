@@ -10,6 +10,10 @@ export interface SideStatus {
   active_high_time?: string | null
   active_low?: number | null
   active_low_time?: string | null
+  nifty_active_high?: number | null
+  nifty_active_high_time?: string | null
+  nifty_active_low?: number | null
+  nifty_active_low_time?: string | null
   unrealized_pnl: number | null
   realized_pnl: number
   blocked_levels: string[]
@@ -59,6 +63,10 @@ export interface Trade {
   active_high_time?: string | null
   active_low?: number | null
   active_low_time?: string | null
+  nifty_active_high?: number | null
+  nifty_active_high_time?: string | null
+  nifty_active_low?: number | null
+  nifty_active_low_time?: string | null
   post_exit_high?: number | null
   post_exit_high_time?: string | null
   post_exit_low?: number | null

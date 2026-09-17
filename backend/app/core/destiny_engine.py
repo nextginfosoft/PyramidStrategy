@@ -374,6 +374,10 @@ class DestinyStrategyEngine:
         entry_avg_price = float(trade.get("entry_price")) if trade and trade.get("entry_price") is not None else None
         active_high = float(trade.get("active_high")) if trade and trade.get("active_high") is not None else None
         active_low = float(trade.get("active_low")) if trade and trade.get("active_low") is not None else None
+        nifty_active_high = float(trade.get("nifty_active_high")) if trade and trade.get("nifty_active_high") is not None else None
+        nifty_active_high_time = trade.get("nifty_active_high_time").isoformat() if trade and trade.get("nifty_active_high_time") else None
+        nifty_active_low = float(trade.get("nifty_active_low")) if trade and trade.get("nifty_active_low") is not None else None
+        nifty_active_low_time = trade.get("nifty_active_low_time").isoformat() if trade and trade.get("nifty_active_low_time") else None
 
         current_ltp = None
         unrealized_pnl = None
@@ -399,6 +403,10 @@ class DestinyStrategyEngine:
             "realized_pnl": 0.0,
             "active_high": active_high,
             "active_low": active_low,
+            "nifty_active_high": nifty_active_high,
+            "nifty_active_high_time": nifty_active_high_time,
+            "nifty_active_low": nifty_active_low,
+            "nifty_active_low_time": nifty_active_low_time,
             "blocked_levels": ["L1"] if completed and not trade else [],
             "trade": trade,
         }
@@ -443,6 +451,18 @@ class DestinyStrategyEngine:
         prev_nifty = self.last_nifty_price
         self.last_nifty_price = nifty_ltp
         await self._broadcast_status(nifty_ltp)
+
+        # Track NIFTY spot active high/low during position lifetime (mirrors option active_high/low)
+        for trade in [self.active_pe_trade, self.active_ce_trade]:
+            if trade:
+                import pytz
+                now_tick = datetime.now(pytz.utc)
+                if trade.get("nifty_active_high") is None or nifty_ltp > trade["nifty_active_high"]:
+                    trade["nifty_active_high"] = nifty_ltp
+                    trade["nifty_active_high_time"] = now_tick
+                if trade.get("nifty_active_low") is None or nifty_ltp < trade["nifty_active_low"]:
+                    trade["nifty_active_low"] = nifty_ltp
+                    trade["nifty_active_low_time"] = now_tick
 
         if not self.is_running:
             return
@@ -624,6 +644,10 @@ class DestinyStrategyEngine:
             "active_high_time": now_utc,
             "active_low": fill_price,
             "active_low_time": now_utc,
+            "nifty_active_high": nifty_ltp,
+            "nifty_active_high_time": now_utc,
+            "nifty_active_low": nifty_ltp,
+            "nifty_active_low_time": now_utc,
         }
 
         # Option B: Mark both levels completed on entry so only 1 trade per day is taken
@@ -720,6 +744,10 @@ class DestinyStrategyEngine:
                 active_low=trade.get("active_low"),
                 active_high_time=trade.get("active_high_time"),
                 active_low_time=trade.get("active_low_time"),
+                nifty_active_high=trade.get("nifty_active_high"),
+                nifty_active_low=trade.get("nifty_active_low"),
+                nifty_active_high_time=trade.get("nifty_active_high_time"),
+                nifty_active_low_time=trade.get("nifty_active_low_time"),
             )
             db.commit()
         except Exception as e:
