@@ -126,6 +126,8 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
         "PnL (Rupees)", "Is Paper Trade",
         "Active High", "Active High Time",
         "Active Low", "Active Low Time",
+        "NIFTY Spot Active High", "NIFTY Spot Active High Time",
+        "NIFTY Spot Active Low", "NIFTY Spot Active Low Time",
         "Post-Exit High", "Post-Exit High Time",
         "Post-Exit Low", "Post-Exit Low Time",
         "Price @ 3:20 PM"
@@ -164,6 +166,10 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
         active_high_time = to_ist_str(entry.active_high_time)
         active_low = float(entry.active_low) if entry.active_low is not None else ""
         active_low_time = to_ist_str(entry.active_low_time)
+        nifty_active_high = float(entry.nifty_active_high) if entry.nifty_active_high is not None else ""
+        nifty_active_high_time = to_ist_str(entry.nifty_active_high_time)
+        nifty_active_low = float(entry.nifty_active_low) if entry.nifty_active_low is not None else ""
+        nifty_active_low_time = to_ist_str(entry.nifty_active_low_time)
         price_at_320 = float(entry.price_at_320) if entry.price_at_320 is not None else (float(matching_exit.price_at_320) if matching_exit and matching_exit.price_at_320 is not None else "")
 
         if matching_exit or entry.status != "OPEN":
@@ -215,6 +221,10 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             active_high_time,
             active_low,
             active_low_time,
+            nifty_active_high,
+            nifty_active_high_time,
+            nifty_active_low,
+            nifty_active_low_time,
             post_exit_high,
             post_exit_high_time,
             post_exit_low,
