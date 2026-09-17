@@ -728,8 +728,9 @@ class DestinyStrategyEngine:
         level_str = trade["level"]
 
         db = SessionLocal()
+        order_res = {}
         try:
-            self.order_manager.place_exit_order(
+            order_res = self.order_manager.place_exit_order(
                 db=db,
                 side=side,
                 instrument=symbol,
@@ -755,8 +756,20 @@ class DestinyStrategyEngine:
         finally:
             db.close()
 
-        # Unsubscribe live ticks for option symbol after exit
-        self._unsubscribe_option(symbol)
+        # Unsubscribe live ticks for option symbol after exit —
+        # unless it hit TARGET, in which case we keep the subscription alive
+        # and register it for post-exit high/low tracking (see on_option_tick /
+        # _process_post_exit_tick), matching strategy_engine.py's behavior.
+        if reason == "TARGET":
+            updated_trade_ids = order_res.get("updated_trade_ids", [])
+            if symbol:
+                if symbol not in self.post_exit_trades:
+                    self.post_exit_trades[symbol] = []
+                for tid in updated_trade_ids:
+                    if tid not in self.post_exit_trades[symbol]:
+                        self.post_exit_trades[symbol].append(tid)
+        else:
+            self._unsubscribe_option(symbol)
 
         pnl_pts = exit_price - trade["entry_price"]
         total_pnl = pnl_pts * Decimal(str(trade["qty"]))
