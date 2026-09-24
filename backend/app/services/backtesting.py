@@ -12,6 +12,18 @@ from app.core.state_machine import StateMachine, State
 # NSE:NIFTY 50 spot index token
 NIFTY_SPOT_TOKEN = 256265
 
+
+def _no_entry_minutes(no_entry_time: Optional[str], sq_minutes: int) -> Optional[int]:
+    """Minutes-since-midnight of a user-configured no-entry time (capped at square-off), or None if unset/invalid."""
+    if not no_entry_time:
+        return None
+    try:
+        h, m = map(int, str(no_entry_time).split(":"))
+    except Exception:
+        return None
+    return min(h * 60 + m, sq_minutes)
+
+
 def get_nifty_data_for_day(date_str: str) -> List[float]:
     """
     Generate realistic, deterministic NIFTY spot prices for a given date.
@@ -153,7 +165,8 @@ def run_single_backtest(
     sq_time_str = config.get("squareoff_time", "11:30")
     sq_h, sq_m = map(int, sq_time_str.split(":"))
     sq_minutes = sq_h * 60 + sq_m
-    cutoff_minutes = sq_minutes - 15
+    explicit_cutoff = _no_entry_minutes(config.get("no_entry_time"), sq_minutes)
+    cutoff_minutes = explicit_cutoff if explicit_cutoff is not None else sq_minutes - 15
 
     for minute_idx, price in enumerate(nifty_prices):
         nifty_ltp = Decimal(str(price))
@@ -347,6 +360,7 @@ def run_destiny_single_backtest(
     except Exception:
         sq_h, sq_m = 15, 20
     sq_minutes = sq_h * 60 + sq_m
+    no_entry_minutes = _no_entry_minutes(config.get("no_entry_time"), sq_minutes)
 
     prev_nifty = None
 
@@ -426,7 +440,10 @@ def run_destiny_single_backtest(
                 active_trade = None
 
         # 3. Check Fresh Entry if no trade taken today and no active trade
-        if not active_trade and not trade_taken_today:
+        # (and, when the user configured a no-entry time, only before that cutoff)
+        if not active_trade and not trade_taken_today and (
+            no_entry_minutes is None or current_minutes < no_entry_minutes
+        ):
             # PE Entry at Resistance R
             if r_level and prev_nifty is not None and prev_nifty < r_level and nifty_ltp >= r_level:
                 active_trade = {

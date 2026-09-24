@@ -17,6 +17,7 @@ type BacktestConfig = {
   target_points: number
   sl_points: number
   squareoff_time?: string
+  no_entry_time?: string | null
   strategy_type?: 'DESTINY' | 'PYRAMID'
 }
 
@@ -104,6 +105,7 @@ export function BacktestModal({ onClose }: Props) {
         target_points: cfg.target_points ?? (isDestiny ? 30 : 20),
         sl_points: cfg.sl_points ?? (isDestiny ? 30 : 10),
         squareoff_time: cfg.squareoff_time ?? (isDestiny ? '15:20' : '11:30'),
+        no_entry_time: cfg.no_entry_time ?? null,
         strategy_type: cfg.strategy_type === 'DESTINY' ? 'DESTINY' : 'PYRAMID',
       })
     }
@@ -143,6 +145,7 @@ export function BacktestModal({ onClose }: Props) {
         target_points: primaryConfig.target_points,
         sl_points: primaryConfig.sl_points,
         squareoff_time: primaryConfig.squareoff_time,
+        no_entry_time: primaryConfig.no_entry_time,
       },
     ])
   }
