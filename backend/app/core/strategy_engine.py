@@ -447,7 +447,10 @@ class StrategyEngine:
 
     async def _check_level_entry(self, sm: StateMachine, side: str, nifty_ltp: Decimal, prev_nifty: Optional[Decimal]):
         """Check if NIFTY has hit a trigger level and entry is warranted."""
-        if not is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30")):
+        if not is_entry_allowed(
+            squareoff_time_str=self.config.get("squareoff_time", "11:30"),
+            no_entry_time_str=self.config.get("no_entry_time"),
+        ):
             return
 
         cfg = self.config
@@ -871,7 +874,7 @@ class StrategyEngine:
                 "paper_trade": self.mock_mode,
                 "started_at": self.started_at,
                 "stopped_at": self.stopped_at,
-                "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
+                "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30", no_entry_time_str=self.config.get("no_entry_time") if self.config else None),
                 "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
                 "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
                 "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),
@@ -950,7 +953,7 @@ class StrategyEngine:
             "stopped_at": self.stopped_at,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
-            "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
+            "entries_allowed": is_entry_allowed(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30", no_entry_time_str=self.config.get("no_entry_time") if self.config else None),
             "squareoff_triggered": should_squareoff(squareoff_time_str=self.config.get("squareoff_time", "11:30") if self.config else "11:30"),
             "ce": self.ce.get_status(self.get_option_ltp(self.ce.locked_instrument or "")),
             "pe": self.pe.get_status(self.get_option_ltp(self.pe.locked_instrument or "")),

@@ -84,6 +84,7 @@ export interface StrategyConfig {
   sl_points: number
   paper_trade: boolean
   squareoff_time?: string
+  no_entry_time?: string | null
   strategy_type?: 'PYRAMID' | 'DESTINY'
   is_active: boolean
   created_at?: string
