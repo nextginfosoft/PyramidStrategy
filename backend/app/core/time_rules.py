@@ -34,8 +34,15 @@ def get_time_from_str(t_str: str) -> time:
     return time(h, m)
 
 
-def get_entry_cutoff_time(squareoff_time_str: str) -> time:
-    """Get entry cutoff time (15 minutes prior to square-off time)."""
+def get_entry_cutoff_time(squareoff_time_str: str, no_entry_time_str: Optional[str] = None) -> time:
+    """
+    Get entry cutoff time.
+
+    If the user configured an explicit no-entry time, that is the cutoff (never later
+    than square-off time itself). Otherwise it is 15 minutes prior to square-off time.
+    """
+    if no_entry_time_str:
+        return min(get_time_from_str(no_entry_time_str), get_time_from_str(squareoff_time_str))
     h, m = map(int, squareoff_time_str.split(":"))
     dt = datetime.combine(date.min, time(h, m)) - timedelta(minutes=15)
     return dt.time()
@@ -61,12 +68,21 @@ def today_ist() -> date:
     return now_ist().date()
 
 
-def is_entry_allowed(current_time: Optional[datetime] = None, squareoff_time_str: str = "11:30") -> bool:
+def is_entry_allowed(
+    current_time: Optional[datetime] = None,
+    squareoff_time_str: str = "11:30",
+    no_entry_time_str: Optional[str] = None,
+) -> bool:
     """
     Returns True if new entries are allowed (before the calculated entry cutoff).
-    Also strictly enforces that no new entries are allowed after 2:30 PM (14:30) IST.
+
+    With a user-configured no-entry time, that time alone decides (clamped to the
+    square-off time). Without one, keeps the legacy rule: 15 minutes before
+    square-off, and never after 2:30 PM (14:30) IST.
     """
     t = current_time or now_ist()
+    if no_entry_time_str:
+        return t.time() < get_entry_cutoff_time(squareoff_time_str, no_entry_time_str)
     if t.time() >= time(14, 30):
         return False
     cutoff = get_entry_cutoff_time(squareoff_time_str)

@@ -46,6 +46,7 @@ class DestinyStrategyEngine:
         self.sl_pts: Decimal = Decimal("30.00")
         self.paper_trade: bool = True
         self.squareoff_time_str: str = "15:20"
+        self.no_entry_time_str: Optional[str] = None  # None = legacy cutoff rule
 
         self.last_nifty_price: Optional[Decimal] = None
         self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
@@ -216,6 +217,8 @@ class DestinyStrategyEngine:
                 self.order_manager.paper_trade = self.paper_trade
             if "squareoff_time" in config_dict:
                 self.squareoff_time_str = str(config_dict["squareoff_time"])
+            if "no_entry_time" in config_dict:
+                self.no_entry_time_str = str(config_dict["no_entry_time"]) if config_dict["no_entry_time"] else None
         else:
             self._load_config()
 
@@ -241,6 +244,7 @@ class DestinyStrategyEngine:
                 self.paper_trade = config.paper_trade
                 self.order_manager.paper_trade = self.paper_trade
                 self.squareoff_time_str = config.squareoff_time or "15:20"
+                self.no_entry_time_str = config.no_entry_time or None
             else:
                 logger.warning(f"[DestinyEngine] User {self.user_id}: No StrategyConfig found in DB.")
         finally:
@@ -436,7 +440,7 @@ class DestinyStrategyEngine:
                 "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
                 "is_running": self.is_running,
                 "paper_trade": self.paper_trade,
-                "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str),
+                "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str, no_entry_time_str=self.no_entry_time_str),
                 "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
                 "ce": ce_status,
                 "pe": pe_status,
@@ -485,10 +489,20 @@ class DestinyStrategyEngine:
         # Check Active Trades SL & Target
         await self._check_active_trade_exits(nifty_ltp)
 
-        # Rule 4: No fresh entries after 2:30 PM for same-day expiry
-        is_tues = is_tuesday(now.date())
-        if current_time > time(14, 30) and not is_tues and getattr(settings, "APP_ENV", "") != "testing":
-            return
+        # Rule 4: No fresh entries after the cutoff. A user-configured no-entry time
+        # wins outright (every weekday); otherwise the legacy rule applies — no fresh
+        # entries after 2:30 PM for same-day expiry, except Tuesdays (next-weekly expiry).
+        if self.no_entry_time_str:
+            if not is_entry_allowed(
+                current_time=now,
+                squareoff_time_str=self.squareoff_time_str,
+                no_entry_time_str=self.no_entry_time_str,
+            ):
+                return
+        else:
+            is_tues = is_tuesday(now.date())
+            if current_time > time(14, 30) and not is_tues and getattr(settings, "APP_ENV", "") != "testing":
+                return
 
         # Entry Case 1: PE Strategy (Resistance R crossover: prev_nifty < R and nifty_ltp >= R)
         if self.r_level and not self.r_level_completed and not self.s_level_completed and not self.active_pe_trade and not self.active_ce_trade:
@@ -531,7 +545,7 @@ class DestinyStrategyEngine:
             "stopped_at": self.stopped_at,
             "nifty_ltp": float(nifty_ltp) if nifty_ltp else None,
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
-            "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str),
+            "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str, no_entry_time_str=self.no_entry_time_str),
             "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
             "ce": ce_status,
             "pe": pe_status,

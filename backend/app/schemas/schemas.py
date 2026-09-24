@@ -17,7 +17,27 @@ class StrategyConfigBase(BaseModel):
     sl_points: float = 10.0
     paper_trade: bool = True
     squareoff_time: str = "15:20"
+    no_entry_time: Optional[str] = None
     strategy_type: str = "PYRAMID"
+
+    @field_validator("no_entry_time", mode="before")
+    @classmethod
+    def validate_no_entry_time(cls, v):
+        # Blank / null means "use the default cutoff rule"
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        try:
+            h, m = map(int, str(v).strip().split(":"))
+            if not (0 <= h < 24 and 0 <= m < 60):
+                raise ValueError("Invalid time format")
+            minutes = h * 60 + m
+            if not (9 * 60 + 15 <= minutes <= 15 * 60 + 30):
+                raise ValueError("No-entry time must be between 09:15 AM and 03:30 PM")
+        except Exception as e:
+            if "must be between" in str(e):
+                raise ValueError(str(e))
+            raise ValueError("No-entry time must be in HH:MM format between 09:15 and 15:30")
+        return f"{h:02d}:{m:02d}"
 
     @field_validator("squareoff_time")
     @classmethod
@@ -36,6 +56,16 @@ class StrategyConfigBase(BaseModel):
                 raise ValueError(str(e))
             raise ValueError("Square-off time must be in HH:MM format between 09:30 and 15:30")
         return v
+
+    @model_validator(mode="after")
+    def validate_no_entry_before_squareoff(self):
+        if self.no_entry_time:
+            def to_minutes(t: str) -> int:
+                h, m = map(int, t.split(":"))
+                return h * 60 + m
+            if to_minutes(self.no_entry_time) > to_minutes(self.squareoff_time):
+                raise ValueError("No-entry time must be at or before the square-off time")
+        return self
 
     @model_validator(mode="after")
     def validate_levels(self):

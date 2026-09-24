@@ -146,6 +146,16 @@ def init_db():
     except Exception as e:
         logger.debug(f"Database migration (strategy_type check/add): {e}")
 
+    # Self-healing migration for no_entry_time (nullable — NULL keeps the legacy entry cutoff)
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE strategy_config ADD COLUMN no_entry_time VARCHAR(5)"))
+            conn.commit()
+            logger.info("Database migration: Added no_entry_time to strategy_config")
+    except Exception as e:
+        logger.debug(f"Database migration (no_entry_time check/add): {e}")
+
     # Self-healing migration for users email and google_id
     for col, col_type in [("email", "VARCHAR(255)"), ("google_id", "VARCHAR(255)")]:
         try:

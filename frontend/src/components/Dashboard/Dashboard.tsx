@@ -901,7 +901,11 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
             {status && !status.entries_allowed && (
               <div className="flex items-center gap-1.5 mt-2 text-[11px] text-yellow-500 font-bold bg-yellow-950/20 px-2 py-1.5 rounded border border-yellow-800/40">
                 <span aria-hidden="true">⚡</span>
-                <span>{getCutoffTimeStr(config?.squareoff_time ?? '15:15')} Passed (No Entries)</span>
+                <span>
+                  {config?.no_entry_time
+                    ? formatTimeTo12Hour(config.no_entry_time)
+                    : getCutoffTimeStr(config?.squareoff_time ?? '15:15')} Passed (No Entries)
+                </span>
               </div>
             )}
             {status?.squareoff_triggered && (

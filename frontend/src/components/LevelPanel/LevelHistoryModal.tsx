@@ -47,6 +47,7 @@ export function LevelHistoryModal({ isOpen, onClose, onSelectConfig }: LevelHist
       'SL Pts',
       'Paper Trade',
       'Squareoff Time',
+      'No Entry Time',
     ]
 
     const rows = history.map((cfg) => [
@@ -63,6 +64,7 @@ export function LevelHistoryModal({ isOpen, onClose, onSelectConfig }: LevelHist
       cfg.sl_points,
       cfg.paper_trade ? 'Yes' : 'No',
       cfg.squareoff_time || '',
+      cfg.no_entry_time || '',
     ])
 
     const csvContent = [
@@ -282,6 +284,7 @@ export function LevelHistoryModal({ isOpen, onClose, onSelectConfig }: LevelHist
                                 </span>
                               </div>
                               <div>Squareoff: {cfg.squareoff_time}</div>
+                              {cfg.no_entry_time && <div>No Entry: {cfg.no_entry_time}</div>}
                             </div>
                           </div>
                         </div>

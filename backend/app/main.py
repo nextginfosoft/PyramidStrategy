@@ -265,8 +265,10 @@ def schedule_jobs():
                         h, m = map(int, sq_time_str.split(":"))
                         sq_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
                         
-                        cutoff_dt = sq_dt - timedelta(minutes=15)
-                        cutoff_time_str = cutoff_dt.strftime("%H:%M")
+                        from app.core.time_rules import get_entry_cutoff_time
+                        cutoff_time_str = get_entry_cutoff_time(
+                            sq_time_str, cfg.no_entry_time if cfg else None
+                        ).strftime("%H:%M")
                         
                         report_dt = sq_dt + timedelta(minutes=15)
                         report_time_str = report_dt.strftime("%H:%M")
@@ -536,6 +538,7 @@ def _load_startup_config():
                     "target_points": float(cfg.target_points),
                     "sl_points": float(cfg.sl_points),
                     "paper_trade": cfg.paper_trade,
+                    "no_entry_time": cfg.no_entry_time,
                 })
                 logger.info(f"User {cfg.user_id}: Strategy config loaded from DB on startup")
     except Exception as e:
