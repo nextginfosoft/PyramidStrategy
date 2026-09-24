@@ -36,7 +36,11 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
     target_points: cfg?.target_points ?? 20,
     sl_points: cfg?.sl_points ?? 10,
     squareoff_time: cfg?.squareoff_time ?? '11:30',
+    no_entry_time: cfg?.no_entry_time ?? '',
   })
+  const isFullTime = (t: string) => /^\d{2}:\d{2}$/.test(t)
+  const noEntryAfterSquareoff =
+    isFullTime(levels.no_entry_time) && isFullTime(levels.squareoff_time) && levels.no_entry_time > levels.squareoff_time
 
   const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '', username: '', password: '', totp_secret: '' })
   const [ai, setAi] = useState({ provider: 'openai', api_key: '' })
@@ -127,6 +131,7 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
         target_points: cfg.target_points,
         sl_points: cfg.sl_points,
         squareoff_time: cfg.squareoff_time ?? '11:30',
+        no_entry_time: cfg.no_entry_time ?? '',
       })
       if (cfg.paper_trade !== undefined) {
         setPaperTrade(cfg.paper_trade)
@@ -465,6 +470,7 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           target_points: existing?.target_points ?? 30,
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
+                          no_entry_time: existing?.no_entry_time ?? '',
                         })
                       } catch {
                         setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
@@ -496,6 +502,7 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           target_points: existing?.target_points ?? 30,
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
+                          no_entry_time: existing?.no_entry_time ?? '',
                         })
                       } catch {
                         setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
@@ -687,7 +694,41 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                         />
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-amber-400 text-xs">⏰</span>
                       </div>
-                      <span className="text-[9px] text-amber-400/80 block">Auto cutoff 15m prior (e.g. 15:20)</span>
+                      <span className="text-[9px] text-amber-400/80 block">
+                        {levels.no_entry_time ? 'All positions closed at this time' : 'Auto cutoff 15m prior (e.g. 15:20)'}
+                      </span>
+                    </div>
+
+                    <div className="block space-y-1 col-start-4">
+                      <span className="text-[10px] text-rose-400 font-medium flex items-center gap-1">
+                        <span>No Entry Time</span>
+                        <span className="text-[9px] text-navy-400 font-normal">(optional)</span>
+                      </span>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          pattern="^(09|1[0-5]):[0-5][0-9]$"
+                          placeholder="14:30"
+                          title="24-hour HH:MM between 09:15 and 15:30. Leave blank for the default."
+                          className={`w-full bg-navy-900 border rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono ${
+                            noEntryAfterSquareoff
+                              ? 'border-red-500 focus:border-red-400'
+                              : 'border-rose-500/50 focus:border-rose-400'
+                          }`}
+                          value={levels.no_entry_time}
+                          onChange={e => setLevels(p => ({ ...p, no_entry_time: e.target.value.trim() }))}
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-rose-400 text-xs">🚫</span>
+                      </div>
+                      <span className={`text-[9px] block ${
+                        noEntryAfterSquareoff ? 'text-red-400' : 'text-rose-400/80'
+                      }`}>
+                        {noEntryAfterSquareoff
+                          ? 'Must be at or before squareoff time'
+                          : levels.no_entry_time
+                            ? 'No new entries from this time'
+                            : 'Blank = default cutoff'}
+                      </span>
                     </div>
                   </div>
                 </div>

@@ -74,6 +74,7 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         sl_points=payload.sl_points,
         paper_trade=payload.paper_trade,
         squareoff_time=payload.squareoff_time,
+        no_entry_time=payload.no_entry_time,
         is_active=True,
     )
     db.add(cfg)
@@ -106,6 +107,7 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
             "sl_points": float(cfg.sl_points),
             "paper_trade": cfg.paper_trade,
             "squareoff_time": cfg.squareoff_time,
+            "no_entry_time": cfg.no_entry_time,
             "strategy_type": cfg.strategy_type,
         })
     elif hasattr(user_engine, '_load_config'):

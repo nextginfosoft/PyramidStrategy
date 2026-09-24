@@ -53,7 +53,8 @@ def run_safety_checks(
     # ── 2. Time check ─────────────────────────────────────────────────────
     current = now_ist().time()
     sq_time_str = strategy_config.get("squareoff_time", "11:30") if strategy_config else "11:30"
-    cutoff = get_entry_cutoff_time(sq_time_str)
+    no_entry_time_str = strategy_config.get("no_entry_time") if strategy_config else None
+    cutoff = get_entry_cutoff_time(sq_time_str, no_entry_time_str)
     
     # Warning cutoff is 15 minutes before entry cutoff (or 30 mins before square-off)
     warning_cutoff_dt = datetime.combine(date.min, cutoff) - timedelta(minutes=15)
