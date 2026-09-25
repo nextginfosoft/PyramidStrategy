@@ -60,6 +60,10 @@ class KiteService:
         self._available_margin: Optional[float] = None
         self._last_margin_fetch_time: float = 0.0
 
+        # Zerodha login ID (e.g. "AB1234") of the account the current access token belongs to
+        self._kite_user_id: Optional[str] = None
+        self._last_profile_fetch_time: float = 0.0
+
         logger.info(f"KiteService initialized for User {user_id} (unauthenticated)")
 
     @property
@@ -96,8 +100,15 @@ class KiteService:
         access_token = data["access_token"]
         self._kite.set_access_token(access_token)
         self._access_token = access_token
+        self._kite_user_id = None  # a new login may be a different account; never keep the old ID
+        self._remember_user_id(data.get("user_id"))
         logger.info(f"User {self.user_id}: Kite access_token obtained successfully")
         return access_token
+
+    def _remember_user_id(self, user_id) -> None:
+        """Store the Zerodha login ID reported by Kite (ignores anything that isn't a non-empty string)."""
+        if isinstance(user_id, str) and user_id.strip():
+            self._kite_user_id = user_id.strip()
 
     def auto_login(self, username: str, password: str, totp_secret: str) -> str:
         """
@@ -264,6 +275,7 @@ class KiteService:
             raise RuntimeError("KiteService not configured — call configure() first")
         self._kite.set_access_token(access_token)
         self._access_token = access_token
+        self._kite_user_id = None  # unknown until the next profile lookup
         logger.info(f"User {self.user_id}: Kite access_token restored from DB")
 
     def is_authenticated(self) -> bool:
@@ -274,11 +286,13 @@ class KiteService:
         try:
             if not self.is_authenticated():
                 return False
-            self._kite.profile()
+            profile = self._kite.profile()
+            self._remember_user_id(profile.get("user_id") if isinstance(profile, dict) else None)
             return True
         except Exception as e:
             logger.warning(f"User {self.user_id}: Kite token validation failed: {e}")
             self._access_token = None
+            self._kite_user_id = None
             return False
 
     # ── NFO Instrument Cache ─────────────────────────────────────────────────
@@ -746,8 +760,14 @@ class KiteService:
         now = time.time()
         if self.is_authenticated() and (self._available_margin is None or now - self._last_margin_fetch_time > 300):
             self._last_margin_fetch_time = now
-            import threading
             threading.Thread(target=self._bg_fetch_margin, daemon=True).start()
+
+        # Learn the logged-in Zerodha ID if we don't have it yet (e.g. right after a restart
+        # restored the token from the DB). Throttled so a failing lookup can't spawn a thread
+        # on every status poll.
+        if self.is_authenticated() and self._kite_user_id is None and now - self._last_profile_fetch_time > 60:
+            self._last_profile_fetch_time = now
+            threading.Thread(target=self._bg_fetch_profile, daemon=True).start()
 
         return {
             "authenticated": self.is_authenticated(),
@@ -760,6 +780,8 @@ class KiteService:
             "last_api_error": self._last_api_error,
             "last_ticker_error": self._last_ticker_error,
             "available_margin": self._available_margin,
+            # Only ever report an ID while a token is live, so a stale one can't outlive a logout
+            "kite_user_id": self._kite_user_id if self.is_authenticated() else None,
         }
 
     def _bg_fetch_margin(self):
@@ -770,9 +792,20 @@ class KiteService:
         except Exception as e:
             logger.warning(f"User {self.user_id}: Failed to fetch margin in background: {e}")
 
+    def _bg_fetch_profile(self):
+        try:
+            if self.is_authenticated() and self._kite:
+                profile = self._kite.profile()
+                # The token may have been cleared while the request was in flight
+                if self.is_authenticated():
+                    self._remember_user_id(profile.get("user_id") if isinstance(profile, dict) else None)
+        except Exception as e:
+            logger.warning(f"User {self.user_id}: Failed to fetch Kite profile in background: {e}")
+
     def clear_credentials(self):
         """Remove access token (called on logout)."""
         self._access_token = None
+        self._kite_user_id = None
         if self._kite:
             try:
                 self._kite.set_access_token(None)
