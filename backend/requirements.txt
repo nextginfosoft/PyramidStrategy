@@ -4,7 +4,10 @@ uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 
 # Database
-sqlalchemy>=2.0.30
+# Capped below 2.1: SQLAlchemy 2.1 makes psycopg (v3) the default driver for plain
+# postgresql:// URLs, but we ship psycopg2-binary, so the app can't even create its
+# engine (ModuleNotFoundError: psycopg). Lift the cap only together with a driver decision.
+sqlalchemy>=2.0.30,<2.1
 alembic>=1.13.1
 
 # Redis (use fakeredis for local dev without Redis server)
