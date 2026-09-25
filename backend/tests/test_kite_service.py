@@ -119,6 +119,144 @@ class TestTokenManagement:
             kite_svc.exchange_token("some_token")
 
 
+# ── Logged-in Zerodha ID ──────────────────────────────────────────────────────
+
+class TestKiteUserId:
+    """The dashboard shows which Zerodha account the live token belongs to."""
+
+    def test_unknown_by_default(self, kite_svc):
+        assert kite_svc._kite_user_id is None
+        assert kite_svc.get_status()["kite_user_id"] is None
+
+    def test_exchange_token_captures_id_from_session(self, configured_svc):
+        configured_svc._kite.generate_session.return_value = {
+            "access_token": "tok", "user_id": "AB1234",
+        }
+        configured_svc.exchange_token("req")
+        assert configured_svc._kite_user_id == "AB1234"
+
+    def test_exchange_token_without_id_leaves_it_unknown(self, configured_svc):
+        configured_svc._kite.generate_session.return_value = {"access_token": "tok"}
+        configured_svc.exchange_token("req")
+        assert configured_svc._kite_user_id is None
+
+    def test_new_login_replaces_the_previous_id(self, configured_svc):
+        configured_svc._kite.generate_session.return_value = {"access_token": "t1", "user_id": "AAA111"}
+        configured_svc.exchange_token("r1")
+        configured_svc._kite.generate_session.return_value = {"access_token": "t2", "user_id": "BBB222"}
+        configured_svc.exchange_token("r2")
+        assert configured_svc._kite_user_id == "BBB222"
+
+    def test_new_login_without_an_id_does_not_keep_the_previous_one(self, configured_svc):
+        configured_svc._kite_user_id = "AAA111"
+        configured_svc._kite.generate_session.return_value = {"access_token": "t2"}
+        configured_svc.exchange_token("r2")
+        assert configured_svc._kite_user_id is None
+
+    def test_validate_token_captures_id_from_profile(self, authenticated_svc):
+        authenticated_svc._kite.profile.return_value = {"user_id": "ZY1234"}
+        assert authenticated_svc.validate_token() is True
+        assert authenticated_svc._kite_user_id == "ZY1234"
+
+    def test_id_is_trimmed(self, authenticated_svc):
+        authenticated_svc._kite.profile.return_value = {"user_id": "  ZY1234 "}
+        authenticated_svc.validate_token()
+        assert authenticated_svc._kite_user_id == "ZY1234"
+
+    @pytest.mark.parametrize("bad", [None, "", "   ", 12345, ["x"]])
+    def test_non_string_or_blank_id_is_ignored(self, authenticated_svc, bad):
+        authenticated_svc._kite.profile.return_value = {"user_id": bad}
+        authenticated_svc.validate_token()
+        assert authenticated_svc._kite_user_id is None
+
+    def test_non_dict_profile_is_ignored(self, authenticated_svc):
+        # An unexpected response shape must not break token validation
+        authenticated_svc._kite.profile.return_value = "unexpected"
+        assert authenticated_svc.validate_token() is True
+        assert authenticated_svc._kite_user_id is None
+
+    def test_failed_validation_forgets_the_id(self, authenticated_svc):
+        authenticated_svc._kite_user_id = "ZY1234"
+        authenticated_svc._kite.profile.side_effect = Exception("Token expired")
+        assert authenticated_svc.validate_token() is False
+        assert authenticated_svc._kite_user_id is None
+
+    def test_restoring_a_token_resets_the_id(self, configured_svc):
+        # A restored token could belong to a different account than the one we last saw
+        configured_svc._kite_user_id = "OLD001"
+        configured_svc.set_access_token("restored")
+        assert configured_svc._kite_user_id is None
+
+    def test_logout_forgets_the_id(self, authenticated_svc):
+        authenticated_svc._kite_user_id = "ZY1234"
+        authenticated_svc.clear_credentials()
+        assert authenticated_svc._kite_user_id is None
+
+    def test_status_reports_id_while_authenticated(self, authenticated_svc):
+        authenticated_svc._kite_user_id = "ZY1234"
+        with patch("app.services.kite_service.threading.Thread"):
+            assert authenticated_svc.get_status()["kite_user_id"] == "ZY1234"
+
+    def test_status_never_reports_a_stale_id_when_unauthenticated(self, configured_svc):
+        configured_svc._kite_user_id = "STALE1"  # e.g. token dropped without going through logout
+        assert configured_svc.is_authenticated() is False
+        assert configured_svc.get_status()["kite_user_id"] is None
+
+    def test_status_with_fresh_margin_cache_still_looks_up_id(self, authenticated_svc):
+        """
+        Guards against a function-local `import threading` inside get_status: Python would
+        then treat `threading` as an unbound local whenever the balance-refresh branch is
+        skipped (token live + balance cache fresh) and the ID lookup below it would crash.
+        """
+        import time as _time
+        authenticated_svc._available_margin = 1000.0
+        authenticated_svc._last_margin_fetch_time = _time.time()  # cache is fresh -> margin branch skipped
+        with patch("app.services.kite_service.threading.Thread") as thread:
+            status = authenticated_svc.get_status()  # must not raise UnboundLocalError
+        assert status["authenticated"] is True
+        assert len(self._profile_lookups(thread, authenticated_svc)) == 1
+
+    def _profile_lookups(self, thread_mock, svc):
+        return [c for c in thread_mock.call_args_list if c.kwargs.get("target") == svc._bg_fetch_profile]
+
+    def test_status_looks_the_id_up_when_unknown(self, authenticated_svc):
+        with patch("app.services.kite_service.threading.Thread") as thread:
+            authenticated_svc.get_status()
+        assert len(self._profile_lookups(thread, authenticated_svc)) == 1
+
+    def test_status_does_not_look_it_up_when_known(self, authenticated_svc):
+        authenticated_svc._kite_user_id = "ZY1234"
+        with patch("app.services.kite_service.threading.Thread") as thread:
+            authenticated_svc.get_status()
+        assert self._profile_lookups(thread, authenticated_svc) == []
+
+    def test_lookup_is_throttled(self, authenticated_svc):
+        """A failing lookup must not spawn a new thread on every status poll."""
+        with patch("app.services.kite_service.threading.Thread") as thread:
+            for _ in range(5):
+                authenticated_svc.get_status()
+        assert len(self._profile_lookups(thread, authenticated_svc)) == 1
+
+    def test_background_lookup_sets_the_id(self, authenticated_svc):
+        authenticated_svc._kite.profile.return_value = {"user_id": "ZY1234"}
+        authenticated_svc._bg_fetch_profile()
+        assert authenticated_svc._kite_user_id == "ZY1234"
+
+    def test_background_lookup_failure_is_swallowed(self, authenticated_svc):
+        authenticated_svc._kite.profile.side_effect = Exception("network down")
+        authenticated_svc._bg_fetch_profile()  # must not raise
+        assert authenticated_svc._kite_user_id is None
+        assert authenticated_svc.is_authenticated() is True  # a lookup failure alone is not a logout
+
+    def test_background_lookup_ignored_if_logged_out_meanwhile(self, authenticated_svc):
+        def profile_then_logout():
+            authenticated_svc.clear_credentials()
+            return {"user_id": "GHOST1"}
+        authenticated_svc._kite.profile.side_effect = profile_then_logout
+        authenticated_svc._bg_fetch_profile()
+        assert authenticated_svc._kite_user_id is None
+
+
 # ── Instrument Cache Tests ────────────────────────────────────────────────────
 
 class TestInstrumentCache:

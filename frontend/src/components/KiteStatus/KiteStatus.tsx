@@ -17,6 +17,7 @@ interface KiteStatusData {
   subscribed_options: number;
   api_key_masked: string | null;
   available_margin?: number | null;
+  kite_user_id?: string | null;
 }
 
 export default function KiteStatus() {
@@ -159,6 +160,15 @@ export default function KiteStatus() {
               <span className="font-bold text-cyan-400 font-mono text-xs">
                 ₹{status.available_margin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </span>
+            </div>
+          )}
+          {status.authenticated && status.kite_user_id && (
+            <div
+              className="col-span-2 flex items-center justify-between text-[11px]"
+              title="The Zerodha account this session is logged in to"
+            >
+              <span className="text-navy-400 font-semibold uppercase tracking-wider">Zerodha ID:</span>
+              <span className="font-bold text-white font-mono text-xs">{status.kite_user_id}</span>
             </div>
           )}
         </div>
