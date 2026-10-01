@@ -18,6 +18,7 @@ type BacktestConfig = {
   sl_points: number
   squareoff_time?: string
   no_entry_time?: string | null
+  ratchet_step_points?: number | null
   strategy_type?: 'DESTINY' | 'PYRAMID'
 }
 
@@ -106,6 +107,7 @@ export function BacktestModal({ onClose }: Props) {
         sl_points: cfg.sl_points ?? (isDestiny ? 30 : 10),
         squareoff_time: cfg.squareoff_time ?? (isDestiny ? '15:20' : '11:30'),
         no_entry_time: cfg.no_entry_time ?? null,
+        ratchet_step_points: cfg.ratchet_step_points ?? null,
         strategy_type: cfg.strategy_type === 'DESTINY' ? 'DESTINY' : 'PYRAMID',
       })
     }
@@ -146,6 +148,7 @@ export function BacktestModal({ onClose }: Props) {
         sl_points: primaryConfig.sl_points,
         squareoff_time: primaryConfig.squareoff_time,
         no_entry_time: primaryConfig.no_entry_time,
+        ratchet_step_points: primaryConfig.ratchet_step_points,
       },
     ])
   }
@@ -196,6 +199,7 @@ export function BacktestModal({ onClose }: Props) {
                       target_points: st === 'DESTINY' ? 30 : 20,
                       sl_points: st === 'DESTINY' ? 30 : 10,
                       squareoff_time: st === 'DESTINY' ? '15:20' : '11:30',
+                      ratchet_step_points: st === 'DESTINY' ? primaryConfig.ratchet_step_points : null,
                     })
                   }}
                 >
@@ -253,6 +257,24 @@ export function BacktestModal({ onClose }: Props) {
                     onChange={e => setPrimaryConfig({ ...primaryConfig, sl_points: +e.target.value })}
                   />
                 </div>
+                {primaryConfig.strategy_type === 'DESTINY' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-emerald-400 font-bold uppercase">Ratchet Step</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Flat exit"
+                      title="Points beyond target to lock-and-extend by. Leave blank to replay the flat target exit."
+                      className="w-full bg-navy-900 border border-emerald-900/50 focus:border-emerald-500 rounded px-2 py-1 text-xs text-white"
+                      value={primaryConfig.ratchet_step_points ?? ''}
+                      onChange={e => setPrimaryConfig({
+                        ...primaryConfig,
+                        ratchet_step_points: e.target.value === '' ? null : +e.target.value,
+                      })}
+                    />
+                  </div>
+                )}
               </div>
               
               <div className="pt-2">

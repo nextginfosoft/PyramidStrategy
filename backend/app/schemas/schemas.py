@@ -18,7 +18,28 @@ class StrategyConfigBase(BaseModel):
     paper_trade: bool = True
     squareoff_time: str = "15:20"
     no_entry_time: Optional[str] = None
+    ratchet_step_points: Optional[float] = None
     strategy_type: str = "PYRAMID"
+
+    @field_validator("ratchet_step_points", mode="before")
+    @classmethod
+    def validate_ratchet_step_points(cls, v):
+        # Blank / zero / null means "off" — today's flat target exit, unchanged
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            raise ValueError("Ratchet step must be a number")
+        if v == 0:
+            return None
+        if v <= 0:
+            raise ValueError("Ratchet step must be greater than 0")
+        return v
 
     @field_validator("no_entry_time", mode="before")
     @classmethod

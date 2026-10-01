@@ -219,6 +219,7 @@ def sync_levels_globally(
     """Sync R1-R3 / S1-S3 levels across all active traders."""
     active_users = db.query(User).filter(User.is_approved == True).all()
     updated_count = 0
+    user_reload_data = {}
 
     for user in active_users:
         current_cfg = db.query(StrategyConfig).filter(
@@ -232,6 +233,7 @@ def sync_levels_globally(
         paper_trade = current_cfg.paper_trade if current_cfg else True
         squareoff_time = current_cfg.squareoff_time if current_cfg else "11:30"
         no_entry_time = current_cfg.no_entry_time if current_cfg else None
+        ratchet_step_points = current_cfg.ratchet_step_points if current_cfg else None
         strategy_type = payload.strategy_type or (current_cfg.strategy_type if current_cfg else "PYRAMID")
 
         db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).update({"is_active": False})
@@ -247,10 +249,31 @@ def sync_levels_globally(
             paper_trade=paper_trade,
             squareoff_time=squareoff_time,
             no_entry_time=no_entry_time,
+            ratchet_step_points=ratchet_step_points,
             is_active=True
         )
         db.add(new_cfg)
-        db.flush()
+
+        user_reload_data[user.id] = {
+            "lot_size": lot_size,
+            "target_points": target_points,
+            "sl_points": sl_points,
+            "paper_trade": paper_trade,
+            "squareoff_time": squareoff_time,
+            "no_entry_time": no_entry_time,
+            "ratchet_step_points": ratchet_step_points,
+            "strategy_type": strategy_type,
+        }
+        updated_count += 1
+
+    # Commit all config writes before touching EngineManager — get_engine() opens its
+    # own SessionLocal(), and under SQLite's StaticPool (single shared connection, used
+    # for in-memory test DBs) that nested session's close() rolls back this still-open
+    # transaction, silently discarding the writes above before this function's own commit.
+    db.commit()
+
+    for user in active_users:
+        reload = user_reload_data[user.id]
 
         # Force re-instantiate / update user engine instance in EngineManager based on strategy_type
         was_running = False
@@ -272,13 +295,14 @@ def sync_levels_globally(
             user_engine.load_config({
                 "r1": float(payload.r1), "r2": float(payload.r2), "r3": float(payload.r3),
                 "s1": float(payload.s1), "s2": float(payload.s2), "s3": float(payload.s3),
-                "lot_size": lot_size,
-                "target_points": float(target_points),
-                "sl_points": float(sl_points),
-                "paper_trade": paper_trade,
-                "squareoff_time": squareoff_time,
-                "no_entry_time": no_entry_time,
-                "strategy_type": strategy_type,
+                "lot_size": reload["lot_size"],
+                "target_points": float(reload["target_points"]),
+                "sl_points": float(reload["sl_points"]),
+                "paper_trade": reload["paper_trade"],
+                "squareoff_time": reload["squareoff_time"],
+                "no_entry_time": reload["no_entry_time"],
+                "ratchet_step_points": reload["ratchet_step_points"],
+                "strategy_type": reload["strategy_type"],
             })
         elif hasattr(user_engine, '_load_config'):
             user_engine._load_config()
@@ -292,9 +316,6 @@ def sync_levels_globally(
         except Exception as e:
             logger.warning(f"Failed to update KiteTicker callbacks for user {user.id}: {e}")
 
-        updated_count += 1
-
-    db.commit()
     return {"status": "success", "synced_users": updated_count}
 
 
