@@ -19,6 +19,7 @@ type BacktestConfig = {
   squareoff_time?: string
   no_entry_time?: string | null
   ratchet_step_points?: number | null
+  model_iv_percent?: number
   strategy_type?: 'DESTINY' | 'PYRAMID'
 }
 
@@ -45,12 +46,20 @@ type BacktestTrade = {
   exit_price: number
   exit_reason: string
   pnl: number
+  symbol?: string
+  strike?: number
+  premium_source?: 'REAL' | 'MODEL'  // recorded Kite price vs Black-Scholes estimate
 }
 
 type BacktestResult = {
   primary: {
     summary: BacktestSummary
     trades: BacktestTrade[]
+    data_quality?: {
+      days: Array<{ date: string; spot_source: 'REAL' | 'MOCK'; option_symbols_recorded: number }>
+      mock_spot_days: number
+      trades_by_premium_source: { REAL: number; MODEL: number }
+    }
   }
   comparisons: Array<{
     name: string
@@ -84,6 +93,7 @@ export function BacktestModal({ onClose }: Props) {
     sl_points: 30,
     squareoff_time: '15:20',
     strategy_type: 'DESTINY',
+    model_iv_percent: 14,
   })
 
   // Comparison Configs
@@ -91,6 +101,7 @@ export function BacktestModal({ onClose }: Props) {
 
   // Running states
   const [loading, setLoading] = useState(false)
+  const [fetchingPrices, setFetchingPrices] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -108,6 +119,7 @@ export function BacktestModal({ onClose }: Props) {
         squareoff_time: cfg.squareoff_time ?? (isDestiny ? '15:20' : '11:30'),
         no_entry_time: cfg.no_entry_time ?? null,
         ratchet_step_points: cfg.ratchet_step_points ?? null,
+        model_iv_percent: 14,
         strategy_type: cfg.strategy_type === 'DESTINY' ? 'DESTINY' : 'PYRAMID',
       })
     }
@@ -132,6 +144,24 @@ export function BacktestModal({ onClose }: Props) {
     }
   }
 
+  const handleFetchOptionPrices = async () => {
+    setFetchingPrices(true)
+    try {
+      const { days } = await backtestApi.backfillOptionPrices({ start_date: startDate, end_date: endDate })
+      const saved = days.reduce((n, d) => n + d.saved, 0)
+      const unavailable = days.filter(d => d.saved + d.skipped === 0).length
+      const parts = [`Saved ${saved} option price series over ${days.length} trading day(s).`]
+      if (unavailable > 0) {
+        parts.push(`${unavailable} day(s) had none on Kite (that week's contract has already expired) and will use the estimate model.`)
+      }
+      addToast(parts.join(' '), saved > 0 ? 'success' : 'warning', 8000)
+    } catch (err: any) {
+      addToast(err.response?.data?.detail || 'Could not fetch option prices from Kite.', 'error')
+    } finally {
+      setFetchingPrices(false)
+    }
+  }
+
   const handleAddComparison = () => {
     if (comparisons.length >= 2) {
       addToast('You can compare a maximum of 2 alternative configurations.', 'warning')
@@ -149,6 +179,7 @@ export function BacktestModal({ onClose }: Props) {
         squareoff_time: primaryConfig.squareoff_time,
         no_entry_time: primaryConfig.no_entry_time,
         ratchet_step_points: primaryConfig.ratchet_step_points,
+        model_iv_percent: primaryConfig.model_iv_percent,
       },
     ])
   }
@@ -275,8 +306,20 @@ export function BacktestModal({ onClose }: Props) {
                     />
                   </div>
                 )}
+                {primaryConfig.strategy_type === 'DESTINY' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-navy-300 font-bold uppercase" title="Implied volatility assumed by the option-price estimate, used on days with no recorded option prices">Model IV %</label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-full bg-navy-900 border border-navy-700 focus:border-orange-500 rounded px-2 py-1 text-xs text-white"
+                      value={primaryConfig.model_iv_percent ?? 14}
+                      onChange={e => setPrimaryConfig({ ...primaryConfig, model_iv_percent: +e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
-              
+
               <div className="pt-2">
                 <button
                   onClick={handleRunBacktest}
@@ -292,6 +335,16 @@ export function BacktestModal({ onClose }: Props) {
                     '🚀 Run Historical Backtest'
                   )}
                 </button>
+                {primaryConfig.strategy_type === 'DESTINY' && (
+                  <button
+                    onClick={handleFetchOptionPrices}
+                    disabled={fetchingPrices}
+                    title="Downloads real 1-minute option prices from Kite for these dates. Kite only has them while that week's contract is still listed, so this works for recent days only."
+                    className="w-full mt-2 py-1.5 bg-navy-800 hover:bg-navy-700 disabled:opacity-40 text-orange-400 border border-navy-700 rounded font-bold text-[11px] transition"
+                  >
+                    {fetchingPrices ? 'Fetching option prices from Kite...' : 'Fetch real option prices for these dates'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -518,6 +571,24 @@ export function BacktestModal({ onClose }: Props) {
           {/* Results Display */}
           {result && (
             <div className="space-y-4 pt-2 border-t border-navy-800">
+              {/* Where the numbers came from */}
+              {result.primary.data_quality && (
+                <div className="space-y-1.5">
+                  {result.primary.data_quality.mock_spot_days > 0 && (
+                    <div className="p-2.5 bg-red-950/40 border border-red-800 text-red-300 rounded-lg text-[11px] font-semibold">
+                      ⚠️ {result.primary.data_quality.mock_spot_days} of {result.primary.data_quality.days.length} day(s) used
+                      simulated NIFTY prices because Kite history was unavailable — those results are not real market data.
+                    </div>
+                  )}
+                  {(result.primary.data_quality.trades_by_premium_source.REAL + result.primary.data_quality.trades_by_premium_source.MODEL) > 0 && (
+                    <div className="text-[11px] text-navy-300">
+                      Option prices: <b className="text-green-400">{result.primary.data_quality.trades_by_premium_source.REAL}</b> trade(s) on real recorded Kite prices,{' '}
+                      <b className="text-white">{result.primary.data_quality.trades_by_premium_source.MODEL}</b> on the Black-Scholes estimate ({primaryConfig.model_iv_percent ?? 14}% IV).
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Stats Cards */}
               <div className="grid grid-cols-4 gap-3">
                 <div className="bg-navy-900 border border-navy-800 p-3 rounded-lg">
@@ -628,7 +699,18 @@ export function BacktestModal({ onClose }: Props) {
                           <td className={clsx("font-bold", t.side === 'CE' ? "text-green-400" : "text-red-400")}>{t.side}</td>
                           <td className="text-navy-300 font-mono">{t.level}</td>
                           <td>{t.lots}</td>
-                          <td>{t.entry_time} @ ₹{t.entry_price.toFixed(1)}</td>
+                          <td>
+                            {t.entry_time} @ ₹{t.entry_price.toFixed(1)}
+                            {t.premium_source && (
+                              <span
+                                title={`${t.symbol ?? ''} — ${t.premium_source === 'REAL' ? 'recorded Kite price' : 'Black-Scholes estimate'}`}
+                                className={clsx('ml-1 px-1 rounded text-[9px] font-bold uppercase',
+                                  t.premium_source === 'REAL' ? 'bg-green-950 text-green-400' : 'bg-navy-800 text-navy-300')}
+                              >
+                                {t.premium_source === 'REAL' ? 'real' : 'model'}
+                              </span>
+                            )}
+                          </td>
                           <td>{t.exit_time} @ ₹{t.exit_price.toFixed(1)}</td>
                           <td className="text-[10px] text-navy-300">{t.exit_reason}</td>
                           <td className={clsx("text-right font-bold font-mono", t.pnl >= 0 ? "text-green-400" : "text-red-400")}>
