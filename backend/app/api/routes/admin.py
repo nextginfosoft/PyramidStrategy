@@ -232,6 +232,7 @@ def sync_levels_globally(
         paper_trade = current_cfg.paper_trade if current_cfg else True
         squareoff_time = current_cfg.squareoff_time if current_cfg else "11:30"
         no_entry_time = current_cfg.no_entry_time if current_cfg else None
+        ratchet_step_points = current_cfg.ratchet_step_points if current_cfg else None
         strategy_type = payload.strategy_type or (current_cfg.strategy_type if current_cfg else "PYRAMID")
 
         db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).update({"is_active": False})
@@ -247,6 +248,7 @@ def sync_levels_globally(
             paper_trade=paper_trade,
             squareoff_time=squareoff_time,
             no_entry_time=no_entry_time,
+            ratchet_step_points=ratchet_step_points,
             is_active=True
         )
         db.add(new_cfg)
@@ -278,6 +280,7 @@ def sync_levels_globally(
                 "paper_trade": paper_trade,
                 "squareoff_time": squareoff_time,
                 "no_entry_time": no_entry_time,
+                "ratchet_step_points": ratchet_step_points,
                 "strategy_type": strategy_type,
             })
         elif hasattr(user_engine, '_load_config'):

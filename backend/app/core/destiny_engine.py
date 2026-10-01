@@ -47,6 +47,7 @@ class DestinyStrategyEngine:
         self.paper_trade: bool = True
         self.squareoff_time_str: str = "15:20"
         self.no_entry_time_str: Optional[str] = None  # None = legacy cutoff rule
+        self.ratchet_step_pts: Optional[Decimal] = None  # None = legacy flat target exit
 
         self.last_nifty_price: Optional[Decimal] = None
         self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
@@ -125,6 +126,10 @@ class DestinyStrategyEngine:
                             "entry_price": Decimal(str(t.avg_price)) if t.avg_price else Decimal("100.00"),
                             "target_price": Decimal(str(t.avg_price or 100)) + self.target_pts,
                             "sl_price": Decimal(str(t.avg_price or 100)) - self.sl_pts,
+                            # Not persisted pre-restart, so a trade already ratcheting when
+                            # the process restarts comes back unarmed (resets to the base
+                            # target) — a narrow mid-day-restart tradeoff; SL is unaffected.
+                            "locked_floor": None,
                             "qty": t.qty or self.lot_size,
                             "expiry": str(t.expiry) if t.expiry else "",
                             "entry_time": t.created_at.isoformat() if t.created_at else datetime.now().isoformat(),
@@ -219,6 +224,9 @@ class DestinyStrategyEngine:
                 self.squareoff_time_str = str(config_dict["squareoff_time"])
             if "no_entry_time" in config_dict:
                 self.no_entry_time_str = str(config_dict["no_entry_time"]) if config_dict["no_entry_time"] else None
+            if "ratchet_step_points" in config_dict:
+                rsp = config_dict["ratchet_step_points"]
+                self.ratchet_step_pts = Decimal(str(rsp)) if rsp else None
         else:
             self._load_config()
 
@@ -245,6 +253,7 @@ class DestinyStrategyEngine:
                 self.order_manager.paper_trade = self.paper_trade
                 self.squareoff_time_str = config.squareoff_time or "15:20"
                 self.no_entry_time_str = config.no_entry_time or None
+                self.ratchet_step_pts = Decimal(str(config.ratchet_step_points)) if config.ratchet_step_points else None
             else:
                 logger.warning(f"[DestinyEngine] User {self.user_id}: No StrategyConfig found in DB.")
         finally:
@@ -652,6 +661,10 @@ class DestinyStrategyEngine:
             "entry_price": fill_price,
             "target_price": target_price,
             "sl_price": sl_price,
+            # Set once premium first reaches target_price — see _check_active_trade_exits
+            # for the repeating-ratchet logic this drives (only while ratchet_step_pts is
+            # configured; otherwise this stays None and the exit is the legacy flat target).
+            "locked_floor": None,
             "qty": total_qty,
             "expiry": str(exp_date),
             "entry_time": datetime.now().isoformat(),
@@ -727,12 +740,50 @@ class DestinyStrategyEngine:
             symbol = active_trade["symbol"]
             current_opt_price = self.get_option_ltp(symbol, nifty_ltp)
 
-            # Target Check
-            if current_opt_price >= active_trade["target_price"]:
-                await self._exit_trade(side, "TARGET", current_opt_price, nifty_ltp)
-            # Stop Loss Check
-            elif current_opt_price <= active_trade["sl_price"]:
+            if self.ratchet_step_pts is None:
+                # Legacy behavior, unchanged: flat exit the instant target is reached.
+                if current_opt_price >= active_trade["target_price"]:
+                    await self._exit_trade(side, "TARGET", current_opt_price, nifty_ltp)
+                elif current_opt_price <= active_trade["sl_price"]:
+                    await self._exit_trade(side, "SL", current_opt_price, nifty_ltp)
+                continue
+
+            # Ratchet opted in. SL is checked first, unconditionally, every tick — it's a
+            # fixed floor set at entry and wins a same-tick race with the ratchet regardless
+            # of how far the floor has climbed.
+            if current_opt_price <= active_trade["sl_price"]:
                 await self._exit_trade(side, "SL", current_opt_price, nifty_ltp)
+                continue
+
+            # TARGET Check — repeating ratchet, not a flat exit:
+            #   1. Premium first reaches target_price -> lock it as a floor instead of
+            #      exiting (arms the ratchet).
+            #   2. From then on, every further move of ratchet_step_pts moves the floor up
+            #      by that much and the trade keeps running.
+            #   3. The trade only closes once premium drops BELOW whatever floor is
+            #      currently locked — so the worst case after arming is always "at least
+            #      the last locked floor," never less.
+            # Reason stays "TARGET" either way (still fundamentally a target hit) — the
+            # locked_floor value in the log line shows how far it actually ran.
+            locked_floor = active_trade.get("locked_floor")
+            if locked_floor is None:
+                if current_opt_price >= active_trade["target_price"]:
+                    active_trade["locked_floor"] = active_trade["target_price"]
+                    logger.info(
+                        f"[DestinyEngine] {side} target reached @ {current_opt_price:.2f} - "
+                        f"locking floor at {active_trade['target_price']:.2f}, "
+                        f"riding for {active_trade['target_price'] + self.ratchet_step_pts:.2f}"
+                    )
+            else:
+                next_milestone = locked_floor + self.ratchet_step_pts
+                if current_opt_price < locked_floor:
+                    await self._exit_trade(side, "TARGET", current_opt_price, nifty_ltp)
+                elif current_opt_price >= next_milestone:
+                    active_trade["locked_floor"] = next_milestone
+                    logger.info(
+                        f"[DestinyEngine] {side} ratcheted floor to {next_milestone:.2f} @ "
+                        f"{current_opt_price:.2f} - riding for {next_milestone + self.ratchet_step_pts:.2f}"
+                    )
 
     async def _exit_trade(self, side: str, reason: str, exit_price: Decimal, nifty_ltp: Decimal):
         trade = self.active_pe_trade if side == "PE" else self.active_ce_trade

@@ -21,6 +21,7 @@ class BacktestConfigSchema(BaseModel):
     sl_points: float = 10.0
     squareoff_time: Optional[str] = "11:30"
     no_entry_time: Optional[str] = None
+    ratchet_step_points: Optional[float] = None
     strategy_type: Optional[str] = "PYRAMID"
     name: Optional[str] = "Primary"
 

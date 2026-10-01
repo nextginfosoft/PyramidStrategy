@@ -349,6 +349,17 @@ def run_destiny_single_backtest(
     target_pts = Decimal(str(config.get("target_points", 30.0)))
     sl_pts = Decimal(str(config.get("sl_points", 30.0)))
     lot_size = config.get("lot_size", 75)
+    # Opt-in, same as the live engine: None/blank/0/garbage all keep today's flat
+    # target exit unchanged. Parse-then-check (not a truthiness check) so a string
+    # "0" is recognized as off too, not just the literal number 0.
+    ratchet_step_pts = None
+    _raw_ratchet = config.get("ratchet_step_points")
+    if _raw_ratchet not in (None, ""):
+        try:
+            _parsed_ratchet = Decimal(str(_raw_ratchet))
+            ratchet_step_pts = _parsed_ratchet if _parsed_ratchet > 0 else None
+        except Exception:
+            ratchet_step_pts = None
 
     trades = []
     active_trade = None
@@ -395,13 +406,15 @@ def run_destiny_single_backtest(
                     "exit_time": time_str,
                     "exit_price": float(opt_price),
                     "exit_reason": "SQUAREOFF",
+                    "locked_floor": float(active_trade["locked_floor"]) if active_trade.get("locked_floor") is not None else None,
                     "pnl": float(pnl)
                 })
                 active_trade = None
             break
 
         # 2. Check Active Trade Target / SL Exits
-        if active_trade:
+        if active_trade and ratchet_step_pts is None:
+            # Legacy behavior, unchanged: flat exit the instant target is reached.
             opt_price = get_opt_price(active_trade, nifty_ltp)
             target_price = active_trade["entry_price"] + target_pts
             sl_price = active_trade["entry_price"] - sl_pts
@@ -419,6 +432,7 @@ def run_destiny_single_backtest(
                     "exit_time": time_str,
                     "exit_price": float(target_price),
                     "exit_reason": "TARGET",
+                    "locked_floor": None,
                     "pnl": float(pnl)
                 })
                 active_trade = None
@@ -435,9 +449,59 @@ def run_destiny_single_backtest(
                     "exit_time": time_str,
                     "exit_price": float(sl_price),
                     "exit_reason": "SL",
+                    "locked_floor": None,
                     "pnl": float(pnl)
                 })
                 active_trade = None
+        elif active_trade:
+            # Ratchet opted in — replays _check_active_trade_exits exactly: SL is a fixed
+            # floor checked first (unconditionally) on the observed premium; target locks a
+            # floor instead of exiting and climbs it by ratchet_step_pts on every further
+            # milestone, closing only once the observed premium drops below the current
+            # floor. All fills use the observed premium, like the live engine - not the
+            # exact threshold crossed, which the legacy branch above still does.
+            opt_price = get_opt_price(active_trade, nifty_ltp)
+            sl_price = active_trade["entry_price"] - sl_pts
+
+            def close_ratchet_trade(exit_price, exit_reason):
+                pnl = (exit_price - active_trade["entry_price"]) * Decimal(str(active_trade["qty"]))
+                trades.append({
+                    "date": date_str,
+                    "side": active_trade["side"],
+                    "level": active_trade["level"],
+                    "lots": 1,
+                    "qty": active_trade["qty"],
+                    "entry_time": active_trade["entry_time"],
+                    "entry_price": float(active_trade["entry_price"]),
+                    "exit_time": time_str,
+                    "exit_price": float(exit_price),
+                    "exit_reason": exit_reason,
+                    "locked_floor": float(active_trade["locked_floor"]) if active_trade.get("locked_floor") is not None else None,
+                    "pnl": float(pnl)
+                })
+
+            if opt_price <= sl_price:
+                close_ratchet_trade(opt_price, "SL")
+                active_trade = None
+            else:
+                target_price = active_trade["entry_price"] + target_pts
+                floor = active_trade.get("locked_floor")
+                if floor is None and opt_price >= target_price:
+                    floor = target_price
+                    active_trade["locked_floor"] = floor
+                elif floor is not None and opt_price < floor:
+                    close_ratchet_trade(opt_price, "TARGET")
+                    active_trade = None
+                    floor = None
+                # Climb regardless of whether the floor was just armed above or was
+                # already set from an earlier bar — a 1-minute bar can span several
+                # ratchet steps at once (the live engine checks on every tick, far
+                # finer-grained), so climb all of them in this same bar rather than
+                # waiting for the next one to catch up.
+                if active_trade and floor is not None:
+                    while opt_price >= floor + ratchet_step_pts:
+                        floor += ratchet_step_pts
+                    active_trade["locked_floor"] = floor
 
         # 3. Check Fresh Entry if no trade taken today and no active trade
         # (and, when the user configured a no-entry time, only before that cutoff)
