@@ -149,6 +149,27 @@ class AuditLog(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
+class OptionMinutePrices(Base):
+    """One day of 1-minute closes for one NIFTY option contract, recorded from
+    Kite so the backtest can replay real premiums. `closes` is a 375-slot list
+    (slot 0 = the 9:15 bar); a slot is null where the contract had not traded
+    yet. Global, not per-user - option prices are the same for everyone."""
+    __tablename__ = "option_minute_prices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trade_date = Column(Date, nullable=False, index=True)
+    symbol = Column(String(40), nullable=False)
+    side = Column(String(2), nullable=False)
+    strike = Column(Integer, nullable=False)
+    expiry = Column(Date, nullable=False)
+    closes = Column(JSON, nullable=False)
+    captured_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("trade_date", "symbol", name="uq_option_prices_date_symbol"),
+    )
+
+
 class MarketNewsAnalysis(Base):
     __tablename__ = "market_news_analysis"
 
