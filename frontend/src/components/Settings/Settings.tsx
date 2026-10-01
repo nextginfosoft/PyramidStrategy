@@ -37,10 +37,12 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
     sl_points: cfg?.sl_points ?? 10,
     squareoff_time: cfg?.squareoff_time ?? '11:30',
     no_entry_time: cfg?.no_entry_time ?? '',
+    ratchet_step_points: cfg?.ratchet_step_points != null ? String(cfg.ratchet_step_points) : '',
   })
   const isFullTime = (t: string) => /^\d{2}:\d{2}$/.test(t)
   const noEntryAfterSquareoff =
     isFullTime(levels.no_entry_time) && isFullTime(levels.squareoff_time) && levels.no_entry_time > levels.squareoff_time
+  const ratchetStepInvalid = levels.ratchet_step_points.trim() !== '' && !(Number(levels.ratchet_step_points) > 0)
 
   const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '', username: '', password: '', totp_secret: '' })
   const [ai, setAi] = useState({ provider: 'openai', api_key: '' })
@@ -132,6 +134,7 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
         sl_points: cfg.sl_points,
         squareoff_time: cfg.squareoff_time ?? '11:30',
         no_entry_time: cfg.no_entry_time ?? '',
+        ratchet_step_points: cfg.ratchet_step_points != null ? String(cfg.ratchet_step_points) : '',
       })
       if (cfg.paper_trade !== undefined) {
         setPaperTrade(cfg.paper_trade)
@@ -231,6 +234,11 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
         showStatus('✗ Resistance levels must be ascending (R1 < R2 < R3)', false)
         return
       }
+    }
+
+    if (strategy_type === 'DESTINY' && ratchetStepInvalid) {
+      showStatus('✗ Ratchet step must be greater than 0 (or left blank)', false)
+      return
     }
 
     saveLevels.mutate({
@@ -471,9 +479,10 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
                           no_entry_time: existing?.no_entry_time ?? '',
+                          ratchet_step_points: existing?.ratchet_step_points != null ? String(existing.ratchet_step_points) : '',
                         })
                       } catch {
-                        setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                        setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20', ratchet_step_points: '' }))
                       }
                     }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
@@ -503,9 +512,10 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
                           no_entry_time: existing?.no_entry_time ?? '',
+                          ratchet_step_points: existing?.ratchet_step_points != null ? String(existing.ratchet_step_points) : '',
                         })
                       } catch {
-                        setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                        setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20', ratchet_step_points: '' }))
                       }
                     }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
@@ -698,6 +708,39 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                         {levels.no_entry_time ? 'All positions closed at this time' : 'Auto cutoff 15m prior (e.g. 15:20)'}
                       </span>
                     </div>
+
+                    {levels.strategy_type === 'DESTINY' && (
+                      <div className="block space-y-1">
+                        <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                          <span>Ratchet Step</span>
+                          <span className="text-[9px] text-navy-400 font-normal">(optional)</span>
+                        </span>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="10"
+                            title="Points beyond target to lock-and-extend by. Leave blank to keep the flat target exit."
+                            className={`w-full bg-navy-900 border rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono ${
+                              ratchetStepInvalid
+                                ? 'border-red-500 focus:border-red-400'
+                                : 'border-emerald-500/50 focus:border-emerald-400'
+                            }`}
+                            value={levels.ratchet_step_points}
+                            onChange={e => setLevels(p => ({ ...p, ratchet_step_points: e.target.value }))}
+                          />
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-400 text-xs">🪜</span>
+                        </div>
+                        <span className={`text-[9px] block ${ratchetStepInvalid ? 'text-red-400' : 'text-emerald-400/80'}`}>
+                          {ratchetStepInvalid
+                            ? 'Must be greater than 0'
+                            : levels.ratchet_step_points
+                              ? 'Lock & extend after target'
+                              : 'Blank = flat exit at target'}
+                        </span>
+                      </div>
+                    )}
 
                     <div className="block space-y-1 col-start-4">
                       <span className="text-[10px] text-rose-400 font-medium flex items-center gap-1">

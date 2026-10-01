@@ -59,6 +59,7 @@ async def start_strategy(
         "paper_trade": cfg.paper_trade,
         "squareoff_time": cfg.squareoff_time or "11:30",
         "no_entry_time": cfg.no_entry_time,
+        "ratchet_step_points": cfg.ratchet_step_points,
     }
 
     # Run safety checks before starting (especially important for live mode)
@@ -220,6 +221,7 @@ def safety_check(db: Session = Depends(get_db), user: User = Depends(require_aut
             "paper_trade": cfg.paper_trade,
             "squareoff_time": cfg.squareoff_time or "11:30",
             "no_entry_time": cfg.no_entry_time,
+            "ratchet_step_points": cfg.ratchet_step_points,
         }
     elif user_engine.config:
         cfg_dict = user_engine.config
