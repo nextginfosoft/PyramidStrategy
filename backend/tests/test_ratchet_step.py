@@ -8,11 +8,14 @@ back below the current floor. SL remains a fixed, unconditional floor throughout
 """
 
 import pytest
+from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock
 
 from pydantic import ValidationError
 
+from app.core.option_selector import build_option_symbol, get_option_strike
+from app.core.time_rules import get_expiry_date
 from app.schemas.schemas import StrategyConfigCreate
 from app.services.backtesting import run_destiny_single_backtest
 
@@ -328,17 +331,36 @@ class TestDestinyEngineRatchet:
 # ── backtest replay ────────────────────────────────────────────────────────────
 
 class TestDestinyBacktestRatchet:
+    """
+    PE entries cross r1=24100 exactly, so the contract the backtest selects is
+    fixed (get_option_strike("PE", 24100) on the 2026-01-05 expiry). Premium
+    series below are supplied as recorded ("REAL") prices so trades replay
+    deterministically rather than through the Black-Scholes model - the values
+    match what the old flat-100 / 0.5-point-sensitivity placeholder used to
+    produce, so most expected numbers are unchanged from before real contract
+    pricing replaced it. Exits fill at the exact line crossed (SL / target /
+    locked floor), not the observed premium - update exit_price expectations
+    accordingly where a test's observed premium differs from the line.
+    """
     BASE_CFG = dict(r1=24100, s1=23900, target_points=30, sl_points=30, lot_size=75, squareoff_time="15:20")
+    TRADE_DATE = "2026-01-05"
 
-    @staticmethod
-    def opt(nifty, entry_nifty=24100, entry_price=100, side="PE"):
-        diff = nifty - entry_nifty
-        return entry_price - 0.5 * diff if side == "PE" else entry_price + 0.5 * diff
+    @classmethod
+    def _pe_symbol(cls):
+        strike = get_option_strike("PE", Decimal("24100"))
+        expiry = get_expiry_date(date.fromisoformat(cls.TRADE_DATE))
+        return build_option_symbol("PE", strike, expiry)
+
+    @classmethod
+    def _run(cls, prices, premiums, **cfg_overrides):
+        option_prices = {cls._pe_symbol(): premiums}
+        config = {**cls.BASE_CFG, **cfg_overrides}
+        return run_destiny_single_backtest(cls.TRADE_DATE, prices, config, option_prices)
 
     def test_legacy_behavior_is_byte_identical_when_unset(self):
         """Regression guard: omitting ratchet_step_points must replay exactly as before."""
         prices = [24050, 24100, 24030]  # entry @24100 (opt=100), then opt=135 >= target(130)
-        trades = run_destiny_single_backtest("2026-01-05", prices, self.BASE_CFG)
+        trades = self._run(prices, [100.0, 100.0, 135.0])
         assert len(trades) == 1
         assert trades[0]["exit_reason"] == "TARGET"
         assert trades[0]["exit_price"] == 130.0  # exact flat-target fill, unchanged
@@ -347,61 +369,53 @@ class TestDestinyBacktestRatchet:
     @pytest.mark.parametrize("ratchet_value", [None, 0, "", "0"])
     def test_falsy_ratchet_values_all_mean_off(self, ratchet_value):
         prices = [24050, 24100, 24030]
-        trades = run_destiny_single_backtest(
-            "2026-01-05", prices, {**self.BASE_CFG, "ratchet_step_points": ratchet_value}
-        )
+        trades = self._run(prices, [100.0, 100.0, 135.0], ratchet_step_points=ratchet_value)
         assert trades[0]["exit_reason"] == "TARGET"
         assert trades[0]["exit_price"] == 130.0
 
     def test_arms_and_rides_further_than_flat_target(self):
         # entry @24100 (opt=100) -> 24010 (opt=145, arms at 130 then climbs within the same
         # bar to 140) -> 24036 (opt=132, exits below the climbed floor of 140, not the
-        # original 130)
+        # original 130) - fills at the floor (140), not the observed 132.
         prices = [24050, 24100, 24010, 24036]
-        trades = run_destiny_single_backtest(
-            "2026-01-05", prices, {**self.BASE_CFG, "ratchet_step_points": 10}
-        )
+        trades = self._run(prices, [100.0, 100.0, 145.0, 132.0], ratchet_step_points=10)
         assert len(trades) == 1
         t = trades[0]
         assert t["exit_reason"] == "TARGET"
         assert t["locked_floor"] == 140.0
-        assert t["exit_price"] == 132.0
+        assert t["exit_price"] == 140.0
         assert t["pnl"] > (130.0 - 100.0) * 75  # strictly more than the flat-exit would have banked
 
     def test_climbs_multiple_steps_within_a_single_bar(self):
         # One bar jumps straight from pre-arm to opt=180 (way past several 10pt milestones)
         prices = [24050, 24100, 23940]  # opt = 100 - 0.5*(23940-24100) = 180
-        trades = run_destiny_single_backtest(
-            "2026-01-05", prices, {**self.BASE_CFG, "ratchet_step_points": 10}
-        )
+        trades = self._run(prices, [100.0, 100.0, 180.0], ratchet_step_points=10)
         assert trades == []  # still open, not yet exited - inspect via a longer series instead
 
     def test_multi_step_climb_then_exit_reports_correct_floor(self):
         # opt=180 in one bar climbs the floor all the way to 180 (130 -> 140 -> ... -> 180,
         # the highest 10pt milestone at or below the observed price), then the next bar
-        # drops to opt=73, well below that climbed floor -> exits
+        # drops to opt=73, well below that climbed floor -> exits at the floor (180)
         prices = [24050, 24100, 23940, 24154]
-        trades = run_destiny_single_backtest(
-            "2026-01-05", prices, {**self.BASE_CFG, "ratchet_step_points": 10}
-        )
+        trades = self._run(prices, [100.0, 100.0, 180.0, 73.0], ratchet_step_points=10)
         assert len(trades) == 1
         assert trades[0]["locked_floor"] == 180.0
         assert trades[0]["exit_reason"] == "TARGET"
+        assert trades[0]["exit_price"] == 180.0
 
     def test_sl_wins_over_an_armed_floor_in_backtest_too(self):
-        prices = [24050, 24100, 24030, 24300]  # arm at opt=135, then crash to opt=0 (way below SL=70)
-        trades = run_destiny_single_backtest(
-            "2026-01-05", prices, {**self.BASE_CFG, "ratchet_step_points": 10}
-        )
+        prices = [24050, 24100, 24030, 24300]  # arm at opt=135, then crash to opt=10 (way below SL=70)
+        trades = self._run(prices, [100.0, 100.0, 135.0, 10.0], ratchet_step_points=10)
         assert len(trades) == 1
         assert trades[0]["exit_reason"] == "SL"
+        assert trades[0]["exit_price"] == 70.0  # fills at the SL line, not the observed 10
 
     def test_squareoff_reports_locked_floor_when_armed(self):
         # Entry at 09:16 (24100); 24030 @09:17 arms the floor at 130; the 09:19 bar forces
         # squareoff while still armed and unexited
         prices = [24050, 24100, 24030, 24030, 24030]
-        trades = run_destiny_single_backtest(
-            "2026-01-05", prices, {**self.BASE_CFG, "ratchet_step_points": 10, "squareoff_time": "09:19"}
+        trades = self._run(
+            prices, [100.0, 100.0, 135.0, 135.0, 135.0], ratchet_step_points=10, squareoff_time="09:19"
         )
         assert len(trades) == 1
         assert trades[0]["exit_reason"] == "SQUAREOFF"
