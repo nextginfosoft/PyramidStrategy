@@ -34,6 +34,11 @@ class StrategyConfig(Base):
     paper_trade = Column(Boolean, default=True)
     squareoff_time = Column(String(5), default="11:30")
     no_entry_time = Column(String(5), nullable=True)  # HH:MM; NULL = legacy cutoff rule
+    # Destiny only, opt-in. NULL = today's flat target exit, unchanged. Once set: hitting
+    # target_points no longer exits — it locks that price as a floor and the trade keeps
+    # running, ratcheting the floor up every further ratchet_step_points, closing only when
+    # price drops back below the current floor.
+    ratchet_step_points = Column(Numeric(6, 2), nullable=True)
     is_active = Column(Boolean, default=False)
     strategy_type = Column(String(50), default="PYRAMID", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

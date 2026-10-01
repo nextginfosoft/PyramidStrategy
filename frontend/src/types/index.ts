@@ -85,6 +85,7 @@ export interface StrategyConfig {
   paper_trade: boolean
   squareoff_time?: string
   no_entry_time?: string | null
+  ratchet_step_points?: number | null
   strategy_type?: 'PYRAMID' | 'DESTINY'
   is_active: boolean
   created_at?: string
