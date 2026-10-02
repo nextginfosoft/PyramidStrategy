@@ -42,6 +42,11 @@ class StrategyConfig(Base):
     # running, ratcheting the floor up every further ratchet_step_points, closing only when
     # price drops back below the current floor.
     ratchet_step_points = Column(Numeric(6, 2), nullable=True)
+    # Destiny only, opt-out. NULL/True = level active (today's behavior, unchanged).
+    # Explicit False = this side never triggers an entry, letting the user run with
+    # only Resistance or only Support configured instead of both.
+    r_level_enabled = Column(Boolean, nullable=True)
+    s_level_enabled = Column(Boolean, nullable=True)
     is_active = Column(Boolean, default=False)
     strategy_type = Column(String(50), default="PYRAMID", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
