@@ -36,6 +36,10 @@ class BacktestConfigSchema(BaseModel):
     # Destiny only: implied volatility (%) for the option-price model, used on
     # days with no recorded option prices.
     model_iv_percent: float = Field(14.0, gt=0, le=200)
+    # Destiny only, opt-out. None/True = enabled; only an explicit False disables
+    # that side's entries, same convention as the live config.
+    r_level_enabled: Optional[bool] = None
+    s_level_enabled: Optional[bool] = None
     strategy_type: Optional[str] = "PYRAMID"
     name: Optional[str] = "Primary"
 
