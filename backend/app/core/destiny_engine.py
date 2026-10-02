@@ -695,7 +695,12 @@ class DestinyStrategyEngine:
             f"Target={target_price:.2f}, SL={sl_price:.2f} | NIFTY={nifty_ltp}"
         )
 
-        await self._broadcast("TRADE_ENTRY", trade_info)
+        # type must be "trade_event", not "TRADE_ENTRY" - that's the string the
+        # frontend's WS handler (useWebSocket.ts) matches on to invalidate the
+        # trades/PnL queries instantly. Pyramid's engine already uses "trade_event";
+        # this mismatch meant a Destiny trade only appeared once the dashboard's
+        # own poll caught up.
+        await self._broadcast("trade_event", {**trade_info, "action": "ENTRY"})
 
         # Telegram / WhatsApp Notifications
         try:
@@ -852,12 +857,15 @@ class DestinyStrategyEngine:
         else:
             self.active_ce_trade = None
 
-        await self._broadcast("TRADE_EXIT", {
+        # See the ENTRY broadcast above - "trade_event" is what the frontend
+        # actually listens for, not "TRADE_EXIT".
+        await self._broadcast("trade_event", {
             "side": side,
             "reason": reason,
             "exit_price": float(exit_price),
             "pnl": float(total_pnl),
             "symbol": symbol,
+            "action": "EXIT",
         })
 
         # Telegram / WhatsApp Notifications
