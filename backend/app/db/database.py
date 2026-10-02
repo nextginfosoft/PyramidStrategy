@@ -168,6 +168,19 @@ def init_db():
     except Exception as e:
         logger.debug(f"Database migration (ratchet_step_points check/add): {e}")
 
+    # Self-healing migration for r_level_enabled / s_level_enabled (Destiny per-side
+    # opt-out). No DEFAULT on purpose: NULL for every existing row means "enabled",
+    # same as today's behavior, until a user explicitly disables a side.
+    for col in ("r_level_enabled", "s_level_enabled"):
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE strategy_config ADD COLUMN {col} BOOLEAN"))
+                conn.commit()
+                logger.info(f"Database migration: Added {col} to strategy_config")
+        except Exception as e:
+            logger.debug(f"Database migration ({col} check/add): {e}")
+
     # Self-healing migration for users email and google_id
     for col, col_type in [("email", "VARCHAR(255)"), ("google_id", "VARCHAR(255)")]:
         try:

@@ -567,6 +567,8 @@ def _load_startup_config():
                     "paper_trade": cfg.paper_trade,
                     "no_entry_time": cfg.no_entry_time,
                     "ratchet_step_points": cfg.ratchet_step_points,
+                    "r_level_enabled": cfg.r_level_enabled,
+                    "s_level_enabled": cfg.s_level_enabled,
                 })
                 logger.info(f"User {cfg.user_id}: Strategy config loaded from DB on startup")
     except Exception as e:

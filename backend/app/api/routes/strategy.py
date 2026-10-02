@@ -48,6 +48,8 @@ async def start_strategy(
         "squareoff_time": cfg.squareoff_time or "11:30",
         "no_entry_time": cfg.no_entry_time,
         "ratchet_step_points": cfg.ratchet_step_points,
+        "r_level_enabled": cfg.r_level_enabled,
+        "s_level_enabled": cfg.s_level_enabled,
     }
 
     # Run safety checks before starting (especially important for live mode)
@@ -201,6 +203,8 @@ def safety_check(db: Session = Depends(get_db), user: User = Depends(require_aut
             "squareoff_time": cfg.squareoff_time or "11:30",
             "no_entry_time": cfg.no_entry_time,
             "ratchet_step_points": cfg.ratchet_step_points,
+            "r_level_enabled": cfg.r_level_enabled,
+            "s_level_enabled": cfg.s_level_enabled,
         }
     elif user_engine.config:
         cfg_dict = user_engine.config

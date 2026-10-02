@@ -351,6 +351,10 @@ def run_destiny_single_backtest(
 
     r_level = Decimal(str(config["r1"])) if "r1" in config and config["r1"] else None
     s_level = Decimal(str(config["s1"])) if "s1" in config and config["s1"] else None
+    # Opt-out, same as the live engine: None/True/missing all mean enabled - only an
+    # explicit False disables that side's entries.
+    r_level_enabled = config.get("r_level_enabled") is not False
+    s_level_enabled = config.get("s_level_enabled") is not False
     target_pts = Decimal(str(config.get("target_points", 30.0)))
     sl_pts = Decimal(str(config.get("sl_points", 30.0)))
     lot_size = config.get("lot_size", 75)
@@ -483,10 +487,10 @@ def run_destiny_single_backtest(
             side = None
             level = None
             # PE Entry at Resistance R
-            if r_level and prev_nifty is not None and prev_nifty < r_level and nifty_ltp >= r_level:
+            if r_level and r_level_enabled and prev_nifty is not None and prev_nifty < r_level and nifty_ltp >= r_level:
                 side, level = "PE", "R1"
             # CE Entry at Support S
-            elif s_level and prev_nifty is not None and prev_nifty > s_level and nifty_ltp <= s_level:
+            elif s_level and s_level_enabled and prev_nifty is not None and prev_nifty > s_level and nifty_ltp <= s_level:
                 side, level = "CE", "S1"
 
             if side:

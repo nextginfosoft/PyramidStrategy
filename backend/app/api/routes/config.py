@@ -76,6 +76,8 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
         squareoff_time=payload.squareoff_time,
         no_entry_time=payload.no_entry_time,
         ratchet_step_points=payload.ratchet_step_points,
+        r_level_enabled=payload.r_level_enabled,
+        s_level_enabled=payload.s_level_enabled,
         is_active=True,
     )
     db.add(cfg)
@@ -110,6 +112,8 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
             "squareoff_time": cfg.squareoff_time,
             "no_entry_time": cfg.no_entry_time,
             "ratchet_step_points": cfg.ratchet_step_points,
+            "r_level_enabled": cfg.r_level_enabled,
+            "s_level_enabled": cfg.s_level_enabled,
             "strategy_type": cfg.strategy_type,
         })
     elif hasattr(user_engine, '_load_config'):
