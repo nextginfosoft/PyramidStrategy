@@ -48,6 +48,8 @@ class DestinyStrategyEngine:
         self.squareoff_time_str: str = "15:20"
         self.no_entry_time_str: Optional[str] = None  # None = legacy cutoff rule
         self.ratchet_step_pts: Optional[Decimal] = None  # None = legacy flat target exit
+        self.r_level_enabled: bool = True  # False = Resistance side never triggers an entry
+        self.s_level_enabled: bool = True  # False = Support side never triggers an entry
 
         self.last_nifty_price: Optional[Decimal] = None
         self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
@@ -227,6 +229,10 @@ class DestinyStrategyEngine:
             if "ratchet_step_points" in config_dict:
                 rsp = config_dict["ratchet_step_points"]
                 self.ratchet_step_pts = Decimal(str(rsp)) if rsp else None
+            if "r_level_enabled" in config_dict:
+                self.r_level_enabled = config_dict["r_level_enabled"] is not False
+            if "s_level_enabled" in config_dict:
+                self.s_level_enabled = config_dict["s_level_enabled"] is not False
         else:
             self._load_config()
 
@@ -254,6 +260,8 @@ class DestinyStrategyEngine:
                 self.squareoff_time_str = config.squareoff_time or "15:20"
                 self.no_entry_time_str = config.no_entry_time or None
                 self.ratchet_step_pts = Decimal(str(config.ratchet_step_points)) if config.ratchet_step_points else None
+                self.r_level_enabled = config.r_level_enabled is not False
+                self.s_level_enabled = config.s_level_enabled is not False
             else:
                 logger.warning(f"[DestinyEngine] User {self.user_id}: No StrategyConfig found in DB.")
         finally:
@@ -451,6 +459,8 @@ class DestinyStrategyEngine:
                 "paper_trade": self.paper_trade,
                 "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str, no_entry_time_str=self.no_entry_time_str),
                 "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
+                "r_level_enabled": self.r_level_enabled,
+                "s_level_enabled": self.s_level_enabled,
                 "ce": ce_status,
                 "pe": pe_status,
                 "health": ks.get_status(),
@@ -514,14 +524,14 @@ class DestinyStrategyEngine:
                 return
 
         # Entry Case 1: PE Strategy (Resistance R crossover: prev_nifty < R and nifty_ltp >= R)
-        if self.r_level and not self.r_level_completed and not self.s_level_completed and not self.active_pe_trade and not self.active_ce_trade:
+        if self.r_level and self.r_level_enabled and not self.r_level_completed and not self.s_level_completed and not self.active_pe_trade and not self.active_ce_trade:
             if prev_nifty is not None and prev_nifty < self.r_level and nifty_ltp >= self.r_level:
                 await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
             elif prev_nifty is None and nifty_ltp >= self.r_level:
                 await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
 
         # Entry Case 2: CE Strategy (Support S crossover: prev_nifty > S and nifty_ltp <= S)
-        if self.s_level and not self.s_level_completed and not self.r_level_completed and not self.active_ce_trade and not self.active_pe_trade:
+        if self.s_level and self.s_level_enabled and not self.s_level_completed and not self.r_level_completed and not self.active_ce_trade and not self.active_pe_trade:
             if prev_nifty is not None and prev_nifty > self.s_level and nifty_ltp <= self.s_level:
                 await self._enter_trade(side="CE", nifty_ltp=nifty_ltp, trigger_level=self.s_level)
             elif prev_nifty is None and nifty_ltp <= self.s_level:
@@ -556,6 +566,8 @@ class DestinyStrategyEngine:
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
             "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str, no_entry_time_str=self.no_entry_time_str),
             "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
+            "r_level_enabled": self.r_level_enabled,
+            "s_level_enabled": self.s_level_enabled,
             "ce": ce_status,
             "pe": pe_status,
             "health": ks.get_status(),
