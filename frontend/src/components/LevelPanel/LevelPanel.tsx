@@ -52,21 +52,23 @@ export function LevelPanel({ status, config, isLoading }: Props) {
   const ce = status?.ce
 
   const isDestiny = config.strategy_type === 'DESTINY'
+  const rEnabled = !isDestiny || config.r_level_enabled !== false
+  const sEnabled = !isDestiny || config.s_level_enabled !== false
 
   const levels = isDestiny
     ? [
-        { label: 'R (Resistance)', value: config.r1, side: 'PE', lvl: 'L1', color: 'border-red-900 bg-red-950/20' },
-        { label: '─── NIFTY ───', value: status?.nifty_ltp ?? '─', side: null, lvl: null, color: 'border-blue-700 bg-blue-950/30' },
-        { label: 'S (Support)', value: config.s1, side: 'CE', lvl: 'L1', color: 'border-green-900 bg-green-950/20' },
+        { label: 'R (Resistance)', value: config.r1, side: 'PE', lvl: 'L1', color: 'border-red-900 bg-red-950/20', disabled: !rEnabled },
+        { label: '─── NIFTY ───', value: status?.nifty_ltp ?? '─', side: null, lvl: null, color: 'border-blue-700 bg-blue-950/30', disabled: false },
+        { label: 'S (Support)', value: config.s1, side: 'CE', lvl: 'L1', color: 'border-green-900 bg-green-950/20', disabled: !sEnabled },
       ]
     : [
-        { label: 'R3', value: config.r3, side: 'PE', lvl: 'L3', color: 'border-red-800 bg-red-950/30' },
-        { label: 'R2', value: config.r2, side: 'PE', lvl: 'L2', color: 'border-red-900 bg-red-950/20' },
-        { label: 'R1', value: config.r1, side: 'PE', lvl: 'L1', color: 'border-red-950 bg-red-950/10' },
-        { label: '─── NIFTY ───', value: status?.nifty_ltp ?? '─', side: null, lvl: null, color: 'border-blue-700 bg-blue-950/30' },
-        { label: 'S1', value: config.s1, side: 'CE', lvl: 'L1', color: 'border-green-950 bg-green-950/10' },
-        { label: 'S2', value: config.s2, side: 'CE', lvl: 'L2', color: 'border-green-900 bg-green-950/20' },
-        { label: 'S3', value: config.s3, side: 'CE', lvl: 'L3', color: 'border-green-800 bg-green-950/30' },
+        { label: 'R3', value: config.r3, side: 'PE', lvl: 'L3', color: 'border-red-800 bg-red-950/30', disabled: false },
+        { label: 'R2', value: config.r2, side: 'PE', lvl: 'L2', color: 'border-red-900 bg-red-950/20', disabled: false },
+        { label: 'R1', value: config.r1, side: 'PE', lvl: 'L1', color: 'border-red-950 bg-red-950/10', disabled: false },
+        { label: '─── NIFTY ───', value: status?.nifty_ltp ?? '─', side: null, lvl: null, color: 'border-blue-700 bg-blue-950/30', disabled: false },
+        { label: 'S1', value: config.s1, side: 'CE', lvl: 'L1', color: 'border-green-950 bg-green-950/10', disabled: false },
+        { label: 'S2', value: config.s2, side: 'CE', lvl: 'L2', color: 'border-green-900 bg-green-950/20', disabled: false },
+        { label: 'S3', value: config.s3, side: 'CE', lvl: 'L3', color: 'border-green-800 bg-green-950/30', disabled: false },
       ]
 
   const isActive = (side: string | null, lvl: string | null) => {
@@ -90,16 +92,17 @@ export function LevelPanel({ status, config, isLoading }: Props) {
             'flex items-center justify-between px-3 py-1.5 rounded border text-sm',
             l.color,
             isActive(l.side, l.lvl) && 'ring-1 ring-yellow-400',
-            isBlocked(l.side, l.lvl) && 'opacity-40'
+            (isBlocked(l.side, l.lvl) || l.disabled) && 'opacity-40'
           )}
         >
           <span className="font-bold w-16">{l.label}</span>
-          <span className="text-white font-mono">
-            {typeof l.value === 'number' ? l.value.toLocaleString('en-IN') : l.value}
+          <span className={clsx('font-mono', l.disabled ? 'text-navy-400 italic' : 'text-white')}>
+            {l.disabled ? 'Disabled' : typeof l.value === 'number' ? l.value.toLocaleString('en-IN') : l.value}
           </span>
           <span className="w-6 text-right">
             {isActive(l.side, l.lvl) && <span className="text-yellow-400 animate-pulse">●</span>}
             {isBlocked(l.side, l.lvl) && <span className="text-gray-500">✗</span>}
+            {l.disabled && <span className="text-navy-500">⊘</span>}
           </span>
         </div>
       ))}
@@ -107,14 +110,16 @@ export function LevelPanel({ status, config, isLoading }: Props) {
       {/* CE / PE status badges */}
       <div className="flex gap-2 mt-3">
         <div className={clsx('flex-1 text-center py-1 rounded text-xs font-bold border',
-          'border-green-800 bg-green-950/30', STATE_COLORS[ce?.state ?? 'IDLE'])}>
-          ▲ CE: {formatState(ce?.state, 'CE')}
-          {(ce?.lots ?? 0) > 0 && <span className="ml-1 text-white">{ce!.lots}L</span>}
+          sEnabled ? 'border-green-800 bg-green-950/30' : 'border-navy-800 bg-navy-900/30 opacity-50',
+          sEnabled ? STATE_COLORS[ce?.state ?? 'IDLE'] : 'text-navy-400')}>
+          ▲ CE: {sEnabled ? formatState(ce?.state, 'CE') : 'DISABLED'}
+          {sEnabled && (ce?.lots ?? 0) > 0 && <span className="ml-1 text-white">{ce!.lots}L</span>}
         </div>
         <div className={clsx('flex-1 text-center py-1 rounded text-xs font-bold border',
-          'border-red-800 bg-red-950/30', STATE_COLORS[pe?.state ?? 'IDLE'])}>
-          ▼ PE: {formatState(pe?.state, 'PE')}
-          {(pe?.lots ?? 0) > 0 && <span className="ml-1 text-white">{pe!.lots}L</span>}
+          rEnabled ? 'border-red-800 bg-red-950/30' : 'border-navy-800 bg-navy-900/30 opacity-50',
+          rEnabled ? STATE_COLORS[pe?.state ?? 'IDLE'] : 'text-navy-400')}>
+          ▼ PE: {rEnabled ? formatState(pe?.state, 'PE') : 'DISABLED'}
+          {rEnabled && (pe?.lots ?? 0) > 0 && <span className="ml-1 text-white">{pe!.lots}L</span>}
         </div>
       </div>
     </div>
