@@ -685,6 +685,7 @@ export function BacktestModal({ onClose }: Props) {
                         <th className="py-1">Date</th>
                         <th>Side</th>
                         <th>Lvl</th>
+                        <th>Instrument</th>
                         <th>Lots</th>
                         <th>Entry Time/Price</th>
                         <th>Exit Time/Price</th>
@@ -698,6 +699,7 @@ export function BacktestModal({ onClose }: Props) {
                           <td className="py-1 font-semibold">{t.date}</td>
                           <td className={clsx("font-bold", t.side === 'CE' ? "text-green-400" : "text-red-400")}>{t.side}</td>
                           <td className="text-navy-300 font-mono">{t.level}</td>
+                          <td className="font-mono text-[10px] whitespace-nowrap text-navy-200">{t.symbol ?? '—'}</td>
                           <td>{t.lots}</td>
                           <td>
                             {t.entry_time} @ ₹{t.entry_price.toFixed(1)}
@@ -720,7 +722,7 @@ export function BacktestModal({ onClose }: Props) {
                       ))}
                       {result.primary.trades.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="text-center py-4 text-navy-300">No trades executed in the selected date range.</td>
+                          <td colSpan={9} className="text-center py-4 text-navy-300">No trades executed in the selected date range.</td>
                         </tr>
                       )}
                     </tbody>
