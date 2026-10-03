@@ -46,6 +46,7 @@ type BacktestTrade = {
   exit_price: number
   exit_reason: string
   pnl: number
+  locked_floor?: number | null  // Destiny ratchet: highest floor reached (null = flat exit)
   symbol?: string
   strike?: number
   premium_source?: 'REAL' | 'MODEL'  // recorded Kite price vs Black-Scholes estimate
@@ -714,7 +715,10 @@ export function BacktestModal({ onClose }: Props) {
                             )}
                           </td>
                           <td>{t.exit_time} @ ₹{t.exit_price.toFixed(1)}</td>
-                          <td className="text-[10px] text-navy-300">{t.exit_reason}</td>
+                          <td className="text-[10px] text-navy-300">
+                            {t.exit_reason}
+                            {t.locked_floor != null && <span className="ml-1 font-mono">(floor ₹{t.locked_floor.toFixed(0)})</span>}
+                          </td>
                           <td className={clsx("text-right font-bold font-mono", t.pnl >= 0 ? "text-green-400" : "text-red-400")}>
                             {t.pnl >= 0 ? '+' : ''}₹{t.pnl.toFixed(0)}
                           </td>
