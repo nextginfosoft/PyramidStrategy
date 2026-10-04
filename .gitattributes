@@ -1,2 +1,5 @@
 # PDFs are binary: never normalise line endings
 *.pdf binary
+
+# deploy assets run on Linux: keep LF on any checkout
+deploy/** text eol=lf
