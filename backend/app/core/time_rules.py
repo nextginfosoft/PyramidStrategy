@@ -168,15 +168,56 @@ def get_expiry_date(trade_date: Optional[date] = None) -> date:
     return target_tuesday
 
 
-def format_expiry_for_symbol(expiry: date) -> str:
+# Tuesday NSE holidays: expiry shifts to the previous trading day (Monday)
+TUESDAY_HOLIDAYS = {
+    date(2026, 3, 3),   # Holi
+    date(2026, 3, 31),  # Shri Mahavir Jayanti
+    date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
+    date(2026, 10, 20), # Dussehra
+    date(2026, 11, 10), # Diwali-Balipratipada
+    date(2026, 11, 24), # Prakash Gurpurab Sri Guru Nanak Dev
+}
+
+
+def _monthly_expiry_for(year: int, month: int) -> date:
+    """Last Tuesday of the month, shifted to Monday if that Tuesday is a holiday."""
+    if month == 12:
+        last_day = date(year, 12, 31)
+    else:
+        last_day = date(year, month + 1, 1) - timedelta(days=1)
+    last_tuesday = last_day - timedelta(days=(last_day.weekday() - 1) % 7)
+    if last_tuesday in TUESDAY_HOLIDAYS:
+        return last_tuesday - timedelta(days=1)
+    return last_tuesday
+
+
+def get_monthly_expiry_date(trade_date: Optional[date] = None) -> date:
+    """
+    Monthly-only contracts (e.g. BANKNIFTY): the current month's expiry, or the
+    next month's once the trade date is on/after expiry day (same roll-over idea
+    as the Tuesday rule for weekly contracts).
+    """
+    d = trade_date or today_ist()
+    expiry = _monthly_expiry_for(d.year, d.month)
+    if d >= expiry:
+        year, month = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+        expiry = _monthly_expiry_for(year, month)
+    return expiry
+
+
+def format_expiry_for_symbol(expiry: date, monthly: Optional[bool] = None) -> str:
     """
     Formats expiry date in Kite's instrument symbol format.
     - Monthly expiry (last Tuesday of the month): '24JUN' (YYMMM)
     - Weekly expiry (other Tuesdays): '24606' (YYMDD where M is 1-9, O, N, D)
+    `monthly` forces the style; None infers it from the date (weekly-contract logic).
     """
-    # Check if this Tuesday is the last Tuesday of the month
-    next_tuesday = expiry + timedelta(days=7)
-    is_monthly = next_tuesday.month != expiry.month
+    if monthly is None:
+        # Check if this Tuesday is the last Tuesday of the month
+        next_tuesday = expiry + timedelta(days=7)
+        is_monthly = next_tuesday.month != expiry.month
+    else:
+        is_monthly = monthly
 
     if is_monthly:
         month_map = {

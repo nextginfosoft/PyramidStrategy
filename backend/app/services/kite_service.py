@@ -15,9 +15,10 @@ from loguru import logger
 from app.config import settings
 from app.db.database import get_redis_client
 from app.services.encryption import mask_key
+from app.core.instruments import get_instrument
 
 # Kite instrument token for NSE:NIFTY 50 spot index
-NIFTY_SPOT_TOKEN = 256265
+NIFTY_SPOT_TOKEN = get_instrument("NIFTY").spot_token
 
 
 class KiteService:
@@ -297,24 +298,26 @@ class KiteService:
 
     # ── NFO Instrument Cache ─────────────────────────────────────────────────
 
-    def load_instruments(self):
+    def load_instruments(self, instruments_to_load: tuple[str, ...] = ("NIFTY",)):
         """
-        Fetch all NFO NIFTY option instruments and cache symbol→token.
+        Fetch NFO option instruments for the given index names (default NIFTY)
+        and cache symbol→token.
         Called at 9:00 AM each morning and on startup if authenticated.
         """
         if not self.is_authenticated():
             logger.warning(f"User {self.user_id}: Cannot load instruments — Kite not authenticated")
             return
 
-        logger.info(f"User {self.user_id}: Loading NFO NIFTY instruments from Kite API...")
+        names = {n.upper() for n in instruments_to_load}
+        logger.info(f"User {self.user_id}: Loading NFO {sorted(names)} instruments from Kite API...")
         try:
             instruments = self._kite.instruments("NFO")
             redis = get_redis_client()
             loaded = 0
 
             for inst in instruments:
-                # Only cache NIFTY options (not futures, not BANKNIFTY)
-                if inst.get("name") == "NIFTY" and inst.get("segment") == "NFO-OPT":
+                # Only cache options of the requested indices (not futures)
+                if inst.get("name") in names and inst.get("segment") == "NFO-OPT":
                     symbol = inst["tradingsymbol"]
                     token = int(inst["instrument_token"])
                     self._symbol_to_token[symbol] = token
@@ -326,7 +329,7 @@ class KiteService:
 
             self._instruments_loaded = True
             self._last_api_error = None
-            logger.info(f"User {self.user_id}: Loaded {loaded} NIFTY NFO instruments into cache")
+            logger.info(f"User {self.user_id}: Loaded {loaded} {sorted(names)} NFO instruments into cache")
 
         except Exception as e:
             logger.error(f"User {self.user_id}: Failed to load NFO instruments: {e}")
@@ -565,28 +568,38 @@ class KiteService:
             pass
         return self.get_ltp_rest(symbol)
 
-    def get_nifty_spot_ltp(self) -> Optional[Decimal]:
-        """Fetch NIFTY spot LTP from Zerodha REST API."""
+    def get_spot_ltp(self, instrument: str = "NIFTY") -> Optional[Decimal]:
+        """Fetch the index spot LTP (NIFTY, BANKNIFTY, ...) from Zerodha REST API."""
         if not self.is_authenticated() or not self._kite:
             return None
+        spec = get_instrument(instrument)
         try:
-            resp = self._kite.ltp(["NSE:NIFTY 50"])
-            ltp = resp.get("NSE:NIFTY 50", {}).get("last_price")
+            resp = self._kite.ltp([spec.spot_symbol])
+            ltp = resp.get(spec.spot_symbol, {}).get("last_price")
             if ltp:
                 self._last_api_error = None
                 return Decimal(str(ltp))
         except Exception as e:
-            logger.warning(f"Failed to fetch NIFTY spot LTP (REST API): {e}")
-            self._last_api_error = f"Failed to fetch NIFTY spot LTP: {str(e)}"
+            logger.warning(f"Failed to fetch {spec.name} spot LTP (REST API): {e}")
+            self._last_api_error = f"Failed to fetch {spec.name} spot LTP: {str(e)}"
         return None
+
+    def get_nifty_spot_ltp(self) -> Optional[Decimal]:
+        """Fetch NIFTY spot LTP from Zerodha REST API."""
+        return self.get_spot_ltp("NIFTY")
 
     def get_nifty_prev_close(self) -> Optional[Decimal]:
         """Fetch NIFTY previous close price from Kite REST API."""
+        return self.get_spot_prev_close("NIFTY")
+
+    def get_spot_prev_close(self, instrument: str = "NIFTY") -> Optional[Decimal]:
+        """Fetch the index previous close price from Kite REST API."""
         if not self.is_authenticated() or not self._kite:
             return None
+        spec = get_instrument(instrument)
         try:
-            res = self._kite.quote(["NSE:NIFTY 50"])
-            nifty_quote = res.get("NSE:NIFTY 50")
+            res = self._kite.quote([spec.spot_symbol])
+            nifty_quote = res.get(spec.spot_symbol)
             if nifty_quote:
                 ohlc = nifty_quote.get("ohlc")
                 if ohlc:
@@ -595,7 +608,7 @@ class KiteService:
                         self._last_api_error = None
                         return Decimal(str(close))
         except Exception as e:
-            logger.warning(f"Failed to fetch NIFTY previous close (REST API): {e}")
+            logger.warning(f"Failed to fetch {spec.name} previous close (REST API): {e}")
             self._last_api_error = f"Failed to fetch prev close: {str(e)}"
         return None
 
@@ -614,34 +627,36 @@ class KiteService:
             logger.warning(f"Failed to fetch INDIA VIX (REST API): {e}")
         return 13.5
 
-    def get_option_chain_snapshot(self, current_ltp: float) -> dict:
+    def get_option_chain_snapshot(self, current_ltp: float, instrument: str = "NIFTY") -> dict:
         """
-        Fetch quotes for NIFTY option chain around spot price (ATM ± 300).
+        Fetch quotes for the option chain around spot price (6 strikes either side of ATM).
         Calculate PCR, Max Pain strike, and CE/PE OI Walls.
         """
+        spec = get_instrument(instrument)
+        step = spec.strike_step
         if not self.is_authenticated() or not self._kite:
             return {
                 "pcr": 1.0,
-                "max_pain": int(round(current_ltp / 50) * 50),
-                "ce_wall": int(round((current_ltp + 150) / 50) * 50),
-                "pe_wall": int(round((current_ltp - 150) / 50) * 50),
+                "max_pain": int(round(current_ltp / step) * step),
+                "ce_wall": int(round((current_ltp + 3 * step) / step) * step),
+                "pe_wall": int(round((current_ltp - 3 * step) / step) * step),
                 "spot": current_ltp
             }
         try:
-            from app.core.option_selector import get_expiry_date, build_option_symbol
+            from app.core.option_selector import get_instrument_expiry, build_option_symbol
             from app.core.time_rules import today_ist
             
             trade_date = today_ist()
-            expiry = get_expiry_date(trade_date)
+            expiry = get_instrument_expiry(spec, trade_date)
             
-            atm = int(round(current_ltp / 50) * 50)
-            strikes = [atm + offset for offset in range(-300, 301, 50)]
+            atm = int(round(current_ltp / step) * step)
+            strikes = [atm + offset for offset in range(-6 * step, 6 * step + 1, step)]
             
             symbols = []
             symbol_to_strike_side = {}
             for strike in strikes:
                 for side in ("CE", "PE"):
-                    sym = build_option_symbol(side, strike, expiry)
+                    sym = build_option_symbol(side, strike, expiry, spec)
                     symbols.append(f"NFO:{sym}")
                     symbol_to_strike_side[f"NFO:{sym}"] = (strike, side)
             
