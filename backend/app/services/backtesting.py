@@ -258,7 +258,7 @@ def run_single_backtest(
                 if side == "PE":
                     if sm.state == State.IDLE and sm.can_enter_level1() and prev_nifty is not None and prev_nifty < r1 and nifty_ltp >= r1:
                         l1_entry_nifty[side] = nifty_ltp
-                        sm.enter_level1("NIFTY_MOCK_PE", int(r1), date_str, Decimal("100.0"))
+                        sm.enter_level1(f"{config.get('underlying', 'NIFTY')}_MOCK_PE", int(r1), date_str, Decimal("100.0"))
                         sm._entry_time_str = time_str
                         sm._last_entry_minute = minute_idx
                     elif sm.state == State.L1_ENTERED and sm.can_enter_level2() and cooldown_elapsed and prev_nifty is not None and prev_nifty < r2 and nifty_ltp >= r2:
@@ -272,7 +272,7 @@ def run_single_backtest(
                 else: # CE
                     if sm.state == State.IDLE and sm.can_enter_level1() and prev_nifty is not None and prev_nifty > s1 and nifty_ltp <= s1:
                         l1_entry_nifty[side] = nifty_ltp
-                        sm.enter_level1("NIFTY_MOCK_CE", int(s1), date_str, Decimal("100.0"))
+                        sm.enter_level1(f"{config.get('underlying', 'NIFTY')}_MOCK_CE", int(s1), date_str, Decimal("100.0"))
                         sm._entry_time_str = time_str
                         sm._last_entry_minute = minute_idx
                     elif sm.state == State.L1_ENTERED and sm.can_enter_level2() and cooldown_elapsed and prev_nifty is not None and prev_nifty > s2 and nifty_ltp <= s2:
@@ -495,6 +495,11 @@ async def run_backtest_workflow(
     # 1. Fetch Nifty data once for all configs
     nifty_data = await fetch_historical_nifty(kite_service, start_dt, end_dt, underlying)
     
+    # Tag configs with the instrument so trade labels reflect it
+    config = {**config, "underlying": underlying}
+    if compare_configs:
+        compare_configs = [{**c, "underlying": underlying} for c in compare_configs]
+
     # Select backtest function based on strategy type
     st_type = config.get("strategy_type", "PYRAMID")
     single_backtest_fn = run_destiny_single_backtest if st_type == "DESTINY" else run_single_backtest
