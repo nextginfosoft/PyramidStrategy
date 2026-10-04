@@ -1,0 +1,154 @@
+name: CI/CD — BANKNIFTY (Hostinger)
+
+# Every push to `banknifty` is tested and, if green, deployed automatically to
+# https://banknifty.nextginfosoft.com. Pull requests into `banknifty` are tested only.
+#
+# Images are built here on the GitHub runner and shipped to the VPS (docker save | docker load),
+# so the shared VPS never compiles anything: a deploy costs it a few seconds of CPU and can run at
+# any hour, including NSE market hours. The deploy only touches /opt/banknifty-app, the
+# `banknifty-app` Docker project and one marked block in the shared Caddyfile
+# (see deploy/banknifty/README.md for the one-time secret setup).
+
+on:
+  push:
+    branches: [banknifty]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/banknifty/**'
+      - '.github/workflows/banknifty.yml'
+  pull_request:
+    branches: [banknifty]
+  workflow_dispatch:
+
+# One run at a time: never two deploys racing on the VPS. Queued runs wait; they are not cancelled.
+concurrency:
+  group: banknifty-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test-and-validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- BACKEND (same checks as ci.yml) ---
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt flake8
+
+      - name: Backend lint
+        run: flake8 backend/app/ --max-line-length=120 --ignore=E501,W293,W291,W503,W292,E712,E302,E303,E305,E402,E701,E127,E261,F401,F811,F841,F541
+
+      - name: Backend tests
+        working-directory: backend
+        env:
+          DATABASE_URL: "sqlite:///:memory:"
+          USE_FAKE_REDIS: "true"
+          ENVIRONMENT: test
+          MOCK_TIME: "10:00"
+        run: pytest tests/ -v --tb=short
+
+      # --- FRONTEND ---
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Frontend install + type-check + build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      # --- DEPLOY ASSETS ---
+      - name: Validate deploy package
+        run: |
+          bash -n deploy/banknifty/deploy.sh
+          POSTGRES_PASSWORD=x SECRET_KEY=x ENCRYPTION_KEY=0123456789abcdef SUPER_ADMIN_PASSWORD=x \
+            docker compose -f deploy/banknifty/docker-compose.yml config -q
+          # isolation invariants: no published ports, only the frontend on the shared edge network
+          pip install -q pyyaml
+          python3 - <<'PY'
+          import yaml
+          d = yaml.safe_load(open("deploy/banknifty/docker-compose.yml"))
+          svc = d["services"]
+          assert all("ports" not in s for s in svc.values()), "a service publishes host ports"
+          assert [n for n, s in svc.items() if "edge" in s["networks"]] == ["banknifty-frontend"], "only the frontend may join edge"
+          assert d["name"] == "banknifty-app"
+          print("deploy package OK")
+          PY
+
+  deploy:
+    name: deploy-banknifty
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/banknifty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: banknifty-production
+      url: https://banknifty.nextginfosoft.com
+    env:
+      VPS_HOST: ${{ secrets.BANKNIFTY_VPS_HOST }}
+      VPS_USER: ${{ secrets.BANKNIFTY_VPS_USER }}
+      VPS_KEY: ${{ github.workspace }}/.deploy_key
+      BUILD: local            # build on this runner, ship images to the VPS
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH (dedicated deploy key, pinned host key)
+        env:
+          SSH_KEY: ${{ secrets.BANKNIFTY_VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BANKNIFTY_VPS_KNOWN_HOSTS }}
+        run: |
+          [ -n "$VPS_HOST" ] && [ -n "$VPS_USER" ] && [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] \
+            || { echo "::error::Missing BANKNIFTY_VPS_* secrets (see deploy/banknifty/README.md)"; exit 1; }
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$VPS_KEY"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+
+      # Snapshot every OTHER site behind the shared Caddy before touching anything.
+      - name: Baseline of other apps
+        run: bash deploy/banknifty/deploy.sh sites | tee "$RUNNER_TEMP/sites_before.txt"
+
+      - name: Deploy (pre-flight, sync, build here, ship images, start, Caddy route, smoke test)
+        id: deploy
+        run: bash deploy/banknifty/deploy.sh deploy
+
+      - name: Verify other apps are unaffected
+        id: verify
+        run: |
+          bash deploy/banknifty/deploy.sh sites | tee "$RUNNER_TEMP/sites_after.txt"
+          if ! diff -u "$RUNNER_TEMP/sites_before.txt" "$RUNNER_TEMP/sites_after.txt"; then
+            echo "::error::Another app's HTTP status changed after the deploy"
+            exit 1
+          fi
+          echo "All other sites unchanged."
+
+      # Blast-radius protection only: if another app's status changed after our deploy, remove our
+      # footprint (Caddy block + stack; data volumes kept). A failed *build* does not trigger this -
+      # nothing on the VPS is replaced until the new images are built and loaded, so the running
+      # site keeps serving.
+      - name: Roll back if another app was affected
+        if: always() && steps.verify.outcome == 'failure'
+        run: bash deploy/banknifty/deploy.sh rollback
+
+      - name: Cleanup key
+        if: always()
+        run: rm -f "$VPS_KEY"

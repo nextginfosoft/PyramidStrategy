@@ -3,7 +3,9 @@
 #
 #   ./deploy.sh preflight   read-only checks; changes nothing
 #   ./deploy.sh deploy      sync code, build, start the isolated stack, add the Caddy site, smoke-test
+#                           (BUILD=local builds here and ships images instead of building on the VPS; CI does this)
 #   ./deploy.sh status      container + HTTPS status
+#   ./deploy.sh sites       HTTP status of every OTHER site behind the shared Caddy (read-only; used by CI)
 #   ./deploy.sh rollback    remove the Caddy site and stop the stack (data volumes kept)
 #   ./deploy.sh purge       rollback + delete this app's data volumes and files (asks first)
 #
@@ -94,11 +96,20 @@ umask 077
 chmod 600 "$f"; echo "created $f (mode 600)"
 REMOTE
 
-  say "Build + start isolated stack (project $PROJECT)"
-  ssh_vps bash -s -- "$APP_DIR" <<'REMOTE'
+  local up_flag="--build"
+  if [ "${BUILD:-remote}" = "local" ]; then
+    # Build on THIS machine (CI runner), ship the images: the shared VPS never compiles anything.
+    say "Build images locally, ship to VPS (docker save | docker load)"
+    ( cd deploy/banknifty && POSTGRES_PASSWORD=build SECRET_KEY=build ENCRYPTION_KEY=0123456789abcdef         SUPER_ADMIN_PASSWORD=build docker compose build )
+    docker save banknifty-app-backend:latest banknifty-app-frontend:latest | gzip -1 | ssh_vps "gunzip | docker load"
+    up_flag="--no-build"
+  fi
+
+  say "Start isolated stack (project $PROJECT)"
+  ssh_vps bash -s -- "$APP_DIR" "$up_flag" <<'REMOTE'
 set -e
 cd "$1/src/deploy/banknifty"
-docker compose --env-file "$1/.env.local" up -d --build
+docker compose --env-file "$1/.env.local" up -d "$2"
 echo "waiting for backend health..."
 for i in $(seq 1 40); do
   s=$(docker inspect -f '{{.State.Health.Status}}' banknifty-app-banknifty-backend-1 2>/dev/null || echo none)
@@ -146,6 +157,22 @@ status() {
   curl -s -o /dev/null -w "https://$DOMAIN/api/health -> HTTP %{http_code}\n" --max-time 10 "https://$DOMAIN/api/health" || true
 }
 
+# HTTP status of every other site routed by the shared Caddy (excluding ours). Read-only.
+# Retries a few times so a single network blip is not reported as an outage.
+sites() {
+  local hosts h code try
+  hosts=$(ssh_vps "grep -E '^[A-Za-z0-9.-]+ \{' $CADDYFILE | sed 's/ {//'")
+  for h in $hosts; do
+    [ "$h" = "$DOMAIN" ] && continue
+    for try in 1 2 3; do
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$h/" || true)
+      case "$code" in 2*|3*) break ;; esac
+      sleep 3
+    done
+    echo "$h $code"
+  done | sort
+}
+
 rollback() {
   say "Rollback: remove Caddy site, stop stack (volumes kept)"
   ssh_vps bash -s -- "$CADDYFILE" "$CADDY_CONTAINER" "$APP_DIR" <<'REMOTE'
@@ -170,10 +197,11 @@ purge() {
 }
 
 case "${1:-}" in
+  sites)     sites ;;
   preflight) preflight ;;
   deploy)    deploy ;;
   status)    status ;;
   rollback)  rollback ;;
   purge)     purge ;;
-  *) sed -n '2,11p' "$0"; exit 1 ;;
+  *) sed -n '2,13p' "$0"; exit 1 ;;
 esac
