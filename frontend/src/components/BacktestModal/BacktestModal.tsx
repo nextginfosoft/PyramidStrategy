@@ -4,6 +4,8 @@ import type { StrategyConfig } from '../../types'
 import { configApi, backtestApi } from '../../services/api'
 import clsx from 'clsx'
 import { useToastStore } from '../../store/toastStore'
+import { useStrategyStore } from '../../store/strategyStore'
+import { INSTRUMENTS } from '../../utils/instruments'
 
 interface Props {
   onClose: () => void
@@ -71,6 +73,7 @@ type BacktestResult = {
 
 export function BacktestModal({ onClose }: Props) {
   const addToast = useToastStore(state => state.addToast)
+  const spotLabel = INSTRUMENTS[useStrategyStore(s => s.underlying)].label
   const { data: cfg } = useQuery<StrategyConfig>({
     queryKey: ['strategy-config'],
     queryFn: () => configApi.getStrategy(),
@@ -578,7 +581,7 @@ export function BacktestModal({ onClose }: Props) {
                   {result.primary.data_quality.mock_spot_days > 0 && (
                     <div className="p-2.5 bg-red-950/40 border border-red-800 text-red-300 rounded-lg text-[11px] font-semibold">
                       ⚠️ {result.primary.data_quality.mock_spot_days} of {result.primary.data_quality.days.length} day(s) used
-                      simulated NIFTY prices because Kite history was unavailable — those results are not real market data.
+                      simulated {spotLabel} prices because Kite history was unavailable — those results are not real market data.
                     </div>
                   )}
                   {(result.primary.data_quality.trades_by_premium_source.REAL + result.primary.data_quality.trades_by_premium_source.MODEL) > 0 && (
