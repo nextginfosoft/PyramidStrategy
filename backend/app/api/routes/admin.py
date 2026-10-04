@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
+from app.core.instruments import get_instrument
 from app.db.database import get_db
 from app.models.models import User, StrategyConfig, Trade, ApiConfig, DailyPnL, AuditLog, AISuggestion
 from app.api.routes.session import require_auth
@@ -194,7 +195,7 @@ def admin_create_user(
             user_id=new_user.id,
             r1=23000.0, r2=23100.0, r3=23200.0,
             s1=22900.0, s2=22800.0, s3=22700.0,
-            lot_size=75,
+            lot_size=get_instrument().lot_size,
             target_points=20.0,
             sl_points=10.0,
             paper_trade=True,
@@ -226,7 +227,7 @@ def sync_levels_globally(
             StrategyConfig.is_active == True
         ).order_by(StrategyConfig.id.desc()).first()
 
-        lot_size = current_cfg.lot_size if current_cfg else 75
+        lot_size = current_cfg.lot_size if current_cfg else get_instrument().lot_size
         target_points = current_cfg.target_points if current_cfg else 20
         sl_points = current_cfg.sl_points if current_cfg else 10
         paper_trade = current_cfg.paper_trade if current_cfg else True

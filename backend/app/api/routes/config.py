@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app.core.instruments import get_instrument
 from app.db.database import get_db
 from app.models.models import StrategyConfig, ApiConfig, User
 from app.schemas.schemas import StrategyConfigCreate, StrategyConfigResponse, ApiConfigUpdate, ApiConfigResponse
@@ -29,7 +30,7 @@ def get_strategy_config(strategy_type: str = None, db: Session = Depends(get_db)
             id=0,
             r1=24100 if is_destiny else 23170, r2=24200 if is_destiny else 23220, r3=24300 if is_destiny else 23250,
             s1=23900 if is_destiny else 23070, s2=23800 if is_destiny else 23025, s3=23700 if is_destiny else 22950,
-            lot_size=65,
+            lot_size=get_instrument().lot_size,
             target_points=30,
             sl_points=10,
             paper_trade=True,

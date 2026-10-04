@@ -92,6 +92,61 @@ def get_db():
         db.close()
 
 
+def _migrate_underlying_columns():
+    """
+    Multi-instrument support: add `underlying` (default NIFTY, so every existing
+    row is backfilled as NIFTY) to strategy_config / trades / daily_pnl, and widen
+    daily_pnl's unique key from (user_id, trade_date) to include `underlying`.
+    Idempotent; safe to run on every startup.
+    """
+    from sqlalchemy import text, inspect
+
+    for table in ("strategy_config", "trades", "daily_pnl"):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(
+                    f"ALTER TABLE {table} ADD COLUMN underlying VARCHAR(20) NOT NULL DEFAULT 'NIFTY'"
+                ))
+                conn.commit()
+                logger.info(f"Database migration: Added underlying to {table}")
+        except Exception as e:
+            logger.debug(f"Database migration ({table}.underlying check/add): {e}")
+
+    try:
+        needs_rebuild = any(
+            set(uc["column_names"]) == {"user_id", "trade_date"}
+            for uc in inspect(engine).get_unique_constraints("daily_pnl")
+        )
+        if not needs_rebuild:
+            return
+        if settings.is_sqlite:
+            _rebuild_sqlite_daily_pnl()
+        else:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE daily_pnl DROP CONSTRAINT IF EXISTS uq_user_trade_date"))
+                conn.execute(text(
+                    "ALTER TABLE daily_pnl ADD CONSTRAINT uq_user_trade_date_underlying "
+                    "UNIQUE (user_id, trade_date, underlying)"
+                ))
+        logger.info("Database migration: daily_pnl unique key now includes underlying")
+    except Exception as e:
+        logger.error(f"Database migration (daily_pnl unique key) failed: {e}")
+
+
+def _rebuild_sqlite_daily_pnl():
+    """SQLite cannot alter constraints in place: copy rows out, recreate the table, copy back."""
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS daily_pnl_old"))
+        conn.execute(text("CREATE TABLE daily_pnl_old AS SELECT * FROM daily_pnl"))
+        conn.execute(text("DROP TABLE daily_pnl"))
+        Base.metadata.tables["daily_pnl"].create(conn)
+        cols = ", ".join(c.name for c in Base.metadata.tables["daily_pnl"].columns)
+        conn.execute(text(f"INSERT INTO daily_pnl ({cols}) SELECT {cols} FROM daily_pnl_old"))
+        conn.execute(text("DROP TABLE daily_pnl_old"))
+
+
 def init_db():
     """Create all tables on startup."""
     from app.models import models  # noqa: F401 — import to register models
@@ -155,6 +210,8 @@ def init_db():
             logger.info("Database migration: Added no_entry_time to strategy_config")
     except Exception as e:
         logger.debug(f"Database migration (no_entry_time check/add): {e}")
+
+    _migrate_underlying_columns()
 
     # Self-healing migration for users email and google_id
     for col, col_type in [("email", "VARCHAR(255)"), ("google_id", "VARCHAR(255)")]:

@@ -26,6 +26,7 @@ from datetime import datetime, date, time
 from typing import Optional, Dict, Any, Callable
 from loguru import logger
 
+from app.core.instruments import get_instrument
 from app.db.database import SessionLocal
 from app.models.models import StrategyConfig, Trade, DailyPnL, User
 from app.core.option_selector import get_option_details, estimate_option_price
@@ -41,7 +42,7 @@ class DestinyStrategyEngine:
         # Config parameters
         self.r_level: Optional[Decimal] = None
         self.s_level: Optional[Decimal] = None
-        self.lot_size: int = 75
+        self.lot_size: int = get_instrument().lot_size
         self.target_pts: Decimal = Decimal("30.00")
         self.sl_pts: Decimal = Decimal("30.00")
         self.paper_trade: bool = True
@@ -238,7 +239,7 @@ class DestinyStrategyEngine:
             if config:
                 self.r_level = Decimal(str(config.r1)) if config.r1 else None
                 self.s_level = Decimal(str(config.s1)) if config.s1 else None
-                self.lot_size = config.lot_size or 75
+                self.lot_size = config.lot_size or get_instrument().lot_size
                 self.target_pts = Decimal(str(config.target_points)) if config.target_points else Decimal("30.00")
                 self.sl_pts = Decimal(str(config.sl_points)) if config.sl_points else Decimal("30.00")
                 self.paper_trade = config.paper_trade

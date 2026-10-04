@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
+from app.core.instruments import get_instrument
 from app.api.routes.session import require_auth
 from app.models.models import User
 from app.services.kite_service import get_user_kite_service
@@ -16,7 +17,7 @@ class BacktestConfigSchema(BaseModel):
     s1: float
     s2: Optional[float] = 0.0
     s3: Optional[float] = 0.0
-    lot_size: int = 75
+    lot_size: int = get_instrument().lot_size
     target_points: float = 20.0
     sl_points: float = 10.0
     squareoff_time: Optional[str] = "11:30"

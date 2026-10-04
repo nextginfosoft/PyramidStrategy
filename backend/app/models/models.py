@@ -1,6 +1,9 @@
 from sqlalchemy import Column, Integer, String, Numeric, Boolean, Date, DateTime, Text, JSON, ForeignKey, UniqueConstraint, Float
 from sqlalchemy.sql import func
 from app.db.database import Base
+from app.core.instruments import get_instrument
+
+DEFAULT_LOT_SIZE = get_instrument().lot_size
 
 
 
@@ -31,7 +34,8 @@ class StrategyConfig(Base):
     s1 = Column(Numeric(10, 2), nullable=False)
     s2 = Column(Numeric(10, 2), nullable=False)
     s3 = Column(Numeric(10, 2), nullable=False)
-    lot_size = Column(Integer, default=75)       # NIFTY lot size
+    underlying = Column(String(20), default="NIFTY", server_default="NIFTY", nullable=False)  # NIFTY / BANKNIFTY
+    lot_size = Column(Integer, default=DEFAULT_LOT_SIZE)  # lot size of `underlying`
     target_points = Column(Numeric(6, 2), default=20)
     sl_points = Column(Numeric(6, 2), default=10)
     paper_trade = Column(Boolean, default=True)
@@ -49,6 +53,7 @@ class Trade(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     trade_date = Column(Date, nullable=False, index=True)
+    underlying = Column(String(20), default="NIFTY", server_default="NIFTY", nullable=False)  # NIFTY / BANKNIFTY
     side = Column(String(2), nullable=False)          # CE or PE
     level = Column(String(10), nullable=False)          # R1,R2,R3,S1,S2,S3, EXIT, etc.
     instrument = Column(String(50), nullable=False)    # NIFTY11JUN2524150PE
@@ -85,6 +90,7 @@ class DailyPnL(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     trade_date = Column(Date, nullable=False, index=True)
+    underlying = Column(String(20), default="NIFTY", server_default="NIFTY", nullable=False)  # NIFTY / BANKNIFTY
     gross_pnl = Column(Numeric(12, 2), default=0)
     brokerage = Column(Numeric(12, 2), default=0)
     net_pnl = Column(Numeric(12, 2), default=0)
@@ -95,7 +101,7 @@ class DailyPnL(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("user_id", "trade_date", name="uq_user_trade_date"),
+        UniqueConstraint("user_id", "trade_date", "underlying", name="uq_user_trade_date_underlying"),
     )
 
 

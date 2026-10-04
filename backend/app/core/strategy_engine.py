@@ -11,6 +11,7 @@ from typing import Optional, Callable
 from sqlalchemy.orm import Session
 from loguru import logger
 
+from app.core.instruments import get_instrument
 from app.core.state_machine import StateMachine, State
 from app.core.time_rules import is_entry_allowed, should_squareoff, today_ist
 from app.core.option_selector import get_option_details, estimate_option_price
@@ -68,7 +69,7 @@ class StrategyEngine:
     def load_config(self, config: dict):
         """Load strategy configuration from DB."""
         self.config = config
-        lot_size = config.get("lot_size", 75)
+        lot_size = config.get("lot_size", get_instrument().lot_size)
         target = Decimal(str(config.get("target_points", 20)))
         sl = Decimal(str(config.get("sl_points", 10)))
 
