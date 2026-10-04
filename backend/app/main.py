@@ -190,7 +190,8 @@ def schedule_jobs():
     async def daily_startup():
         from app.services.kite_service import get_user_kite_service
         # Reset all managed user engines
-        for uid, eng in list(engine_manager._engines.items()):
+        for eng in engine_manager.all_engines():
+            uid = eng.user_id
             try:
                 eng.daily_reset()
                 kite_serv = get_user_kite_service(uid)
@@ -616,7 +617,7 @@ def health():
     except Exception:
         pass
 
-    active_engines_count = sum(1 for eng in engine_manager._engines.values() if eng.is_running)
+    active_engines_count = sum(1 for eng in engine_manager.all_engines() if eng.is_running)
 
     return {
         "status": "ok",
@@ -624,7 +625,7 @@ def health():
         "paper_trade": settings.PAPER_TRADE,
         "redis": "ok" if redis_ok else "error",
         "active_engines": active_engines_count,
-        "total_managed_users": len(engine_manager._engines),
+        "total_managed_users": len({e.user_id for e in engine_manager.all_engines()}),
     }
 
 

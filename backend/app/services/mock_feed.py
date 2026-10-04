@@ -62,11 +62,13 @@ class MockDataFeed:
 
     async def _random_walk(self):
         """Random walk from a starting NIFTY price — for interactive paper trading."""
-        price = Decimal("23200.00")  # default starting price
+        spec = getattr(self.engine, "instrument", None)
+        price = spec.est_fallback_spot if spec else Decimal("23200.00")  # default starting price
+        move_scale = (spec.strike_step / 50) if spec else 1  # BANKNIFTY moves in bigger points
 
         while self.is_running:
             # Small random move: ±0–15 points per tick
-            move = Decimal(str(random.uniform(-15, 15)))
+            move = Decimal(str(random.uniform(-15, 15) * move_scale))
             price = max(Decimal("15000"), price + move)  # floor at 15000
 
             await self._update_option_ltps(price)

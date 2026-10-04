@@ -35,14 +35,16 @@ from app.core.time_rules import is_tuesday, is_entry_allowed, is_squareoff_time
 
 
 class DestinyStrategyEngine:
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, underlying: str = "NIFTY"):
         self.user_id = user_id
+        self.instrument = get_instrument(underlying)
+        self.underlying = self.instrument.name
         self.is_running = False
 
         # Config parameters
         self.r_level: Optional[Decimal] = None
         self.s_level: Optional[Decimal] = None
-        self.lot_size: int = get_instrument().lot_size
+        self.lot_size: int = self.instrument.lot_size
         self.target_pts: Decimal = Decimal("30.00")
         self.sl_pts: Decimal = Decimal("30.00")
         self.paper_trade: bool = True
@@ -50,7 +52,9 @@ class DestinyStrategyEngine:
         self.no_entry_time_str: Optional[str] = None  # None = legacy cutoff rule
 
         self.last_nifty_price: Optional[Decimal] = None
-        self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
+        self.nifty_prev_close: Optional[Decimal] = (
+            Decimal("24175.70") if self.underlying == "NIFTY" else None
+        )
         self._option_ltp: Dict[str, Decimal] = {}
 
         # Trade State tracking for the day
@@ -67,7 +71,7 @@ class DestinyStrategyEngine:
         self.post_exit_trades: Dict[str, list] = {}
         self._processing_option_symbols: set = set()
 
-        self.order_manager = OrderManager(user_id=self.user_id)
+        self.order_manager = OrderManager(user_id=self.user_id, underlying=self.underlying)
         self.broadcast_fn: Optional[Callable] = None
 
     def start(self):
@@ -111,6 +115,7 @@ class DestinyStrategyEngine:
 
                 all_trades = db.query(Trade).filter(
                     Trade.user_id == self.user_id,
+                    Trade.underlying == self.underlying,
                     Trade.trade_date == target_date
                 ).all()
 
@@ -228,21 +233,24 @@ class DestinyStrategyEngine:
         try:
             config = db.query(StrategyConfig).filter(
                 StrategyConfig.user_id == self.user_id,
+                StrategyConfig.underlying == self.underlying,
                 StrategyConfig.is_active == True,
                 StrategyConfig.strategy_type == "DESTINY"
             ).order_by(StrategyConfig.id.desc()).first()
             if not config:
                 config = db.query(StrategyConfig).filter(
                     StrategyConfig.user_id == self.user_id,
+                    StrategyConfig.underlying == self.underlying,
                     StrategyConfig.is_active == True
                 ).order_by(StrategyConfig.id.desc()).first()
             if config:
                 self.r_level = Decimal(str(config.r1)) if config.r1 else None
                 self.s_level = Decimal(str(config.s1)) if config.s1 else None
-                self.lot_size = config.lot_size or get_instrument().lot_size
+                self.lot_size = config.lot_size or self.instrument.lot_size
                 self.target_pts = Decimal(str(config.target_points)) if config.target_points else Decimal("30.00")
                 self.sl_pts = Decimal(str(config.sl_points)) if config.sl_points else Decimal("30.00")
-                self.paper_trade = config.paper_trade
+                # Instruments flagged paper_only (BANKNIFTY) can never trade live
+                self.paper_trade = config.paper_trade or self.instrument.paper_only
                 self.order_manager.paper_trade = self.paper_trade
                 self.squareoff_time_str = config.squareoff_time or "15:20"
                 self.no_entry_time_str = config.no_entry_time or None
@@ -346,6 +354,7 @@ class DestinyStrategyEngine:
                 from app.models.models import Trade
                 trades = db.query(Trade).filter(
                     Trade.user_id == self.user_id,
+                    Trade.underlying == self.underlying,
                     Trade.trade_date == target_date,
                     Trade.price_at_320.is_(None)
                 ).all()
@@ -424,7 +433,7 @@ class DestinyStrategyEngine:
 
         if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
             try:
-                live_prev_close = ks.get_nifty_prev_close()
+                live_prev_close = ks.get_spot_prev_close(self.underlying)
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
             except Exception as e:
@@ -522,7 +531,7 @@ class DestinyStrategyEngine:
     def get_full_status(self) -> Dict[str, Any]:
         """Return full current engine status for REST API and UI rendering."""
         from app.db.database import get_redis_client
-        nifty_ltp_str = get_redis_client().get("nifty:ltp")
+        nifty_ltp_str = get_redis_client().get(self.instrument.ltp_cache_key)
         nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else self.last_nifty_price
 
         from app.services.kite_service import get_user_kite_service
@@ -530,7 +539,7 @@ class DestinyStrategyEngine:
 
         if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
             try:
-                live_prev_close = ks.get_nifty_prev_close()
+                live_prev_close = ks.get_spot_prev_close(self.underlying)
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
             except Exception:
@@ -607,7 +616,7 @@ class DestinyStrategyEngine:
         return Decimal("100.00")
 
     async def _enter_trade(self, side: str, nifty_ltp: Decimal, trigger_level: Decimal):
-        opt_details = get_option_details(side, nifty_ltp)
+        opt_details = get_option_details(side, nifty_ltp, instrument=self.instrument)
         symbol = opt_details["symbol"]
         exp_date = opt_details["expiry"]
         mock_ltp = self.get_option_ltp(symbol, nifty_ltp)
@@ -894,6 +903,7 @@ class DestinyStrategyEngine:
                 target_date = today_ist()
                 all_trades = db.query(Trade).filter(
                     Trade.user_id == self.user_id,
+                    Trade.underlying == self.underlying,
                     Trade.trade_date == target_date,
                     Trade.status.in_(["TARGET", "SL", "SQUAREOFF", "CLOSED"]),
                     Trade.action == "BUY"

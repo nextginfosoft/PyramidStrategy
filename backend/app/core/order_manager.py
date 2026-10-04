@@ -34,8 +34,9 @@ class OrderError(Exception):
 
 
 class OrderManager:
-    def __init__(self, user_id: int = 1, kite_service=None):
+    def __init__(self, user_id: int = 1, kite_service=None, underlying: str = "NIFTY"):
         self.user_id = user_id
+        self.underlying = underlying
         self.kite = kite_service  # None in paper trade mode
         self.paper_trade = settings.PAPER_TRADE
 
@@ -91,6 +92,7 @@ class OrderManager:
         trade = Trade(
             user_id=self.user_id,
             trade_date=today_ist(),
+            underlying=self.underlying,
             side=side,
             level=mapped_level,
             instrument=instrument,
@@ -232,6 +234,7 @@ class OrderManager:
         exit_trade = Trade(
             user_id=self.user_id,
             trade_date=today_ist(),
+            underlying=self.underlying,
             side=side,
             level="EXIT",
             instrument=instrument,

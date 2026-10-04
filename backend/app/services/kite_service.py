@@ -15,7 +15,7 @@ from loguru import logger
 from app.config import settings
 from app.db.database import get_redis_client
 from app.services.encryption import mask_key
-from app.core.instruments import get_instrument
+from app.core.instruments import get_instrument, instrument_from_symbol, DEFAULT_INSTRUMENT
 
 # Kite instrument token for NSE:NIFTY 50 spot index
 NIFTY_SPOT_TOKEN = get_instrument("NIFTY").spot_token
@@ -45,6 +45,10 @@ class KiteService:
         # Async callbacks injected by strategy engine
         self._on_nifty_tick: Optional[Callable] = None   # async (ltp: Decimal)
         self._on_option_tick: Optional[Callable] = None  # async (symbol: str, ltp: Decimal)
+
+        # Extra (non-NIFTY) instrument feeds: underlying -> (spot_cb, option_cb).
+        # NIFTY keeps using _on_nifty_tick / _on_option_tick above.
+        self._instrument_feeds: dict[str, tuple[Callable, Callable]] = {}
 
         # Instrument cache (symbol ↔ token)
         self._token_to_symbol: dict[int, str] = {}
@@ -308,7 +312,7 @@ class KiteService:
             logger.warning(f"User {self.user_id}: Cannot load instruments — Kite not authenticated")
             return
 
-        names = {n.upper() for n in instruments_to_load}
+        names = {n.upper() for n in instruments_to_load} | set(self._instrument_feeds)
         logger.info(f"User {self.user_id}: Loading NFO {sorted(names)} instruments from Kite API...")
         try:
             instruments = self._kite.instruments("NFO")
@@ -361,6 +365,31 @@ class KiteService:
         self._on_option_tick = on_option_tick
         logger.info(f"User {self.user_id}: Updated KiteTicker callbacks for active strategy engine.")
 
+    def register_instrument_feed(self, underlying: str, on_spot_tick: Callable, on_option_tick: Callable):
+        """
+        Route another index's spot ticks (and its options' ticks) to its own engine.
+        Subscribes the spot token now if the ticker is live, else on connect.
+        NIFTY is wired through start_ticker/update_callbacks, not here.
+        """
+        spec = get_instrument(underlying)
+        if spec.name == DEFAULT_INSTRUMENT:
+            raise ValueError("NIFTY is wired via start_ticker/update_callbacks")
+        self._instrument_feeds[spec.name] = (on_spot_tick, on_option_tick)
+        if self._ticker and self._is_connected:
+            self._ticker.subscribe([spec.spot_token])
+            self._ticker.set_mode(self._ticker.MODE_LTP, [spec.spot_token])
+        logger.info(f"User {self.user_id}: Registered {spec.name} feed (spot token {spec.spot_token})")
+        if self.is_authenticated():
+            # Blocking REST call: keep it off the caller's (possibly async) thread
+            threading.Thread(target=self.load_instruments, daemon=True).start()
+
+    def _feed_for_spot_token(self, token: int):
+        for name, (spot_cb, _) in self._instrument_feeds.items():
+            spec = get_instrument(name)
+            if spec.spot_token == token:
+                return spec, spot_cb
+        return None
+
     def start_ticker(
         self,
         on_nifty_tick: Callable,
@@ -402,6 +431,13 @@ class KiteService:
                     asyncio.run_coroutine_threadsafe(
                         self._on_nifty_tick(ltp), loop
                     )
+                elif self._feed_for_spot_token(token):
+                    spec, spot_cb = self._feed_for_spot_token(token)
+                    try:
+                        get_redis_client().setex(spec.ltp_cache_key, 5, str(ltp))
+                    except Exception:
+                        pass
+                    asyncio.run_coroutine_threadsafe(spot_cb(ltp), loop)
                 elif token and token in self._token_to_symbol:
                     symbol = self._token_to_symbol[token]
                     # Cache option LTP in Redis (5s TTL for freshness)
@@ -409,16 +445,21 @@ class KiteService:
                         get_redis_client().setex(f"option:ltp:{symbol}", 5, str(ltp))
                     except Exception:
                         pass
-                    asyncio.run_coroutine_threadsafe(
-                        self._on_option_tick(symbol, ltp), loop
-                    )
+                    option_cb = self._on_option_tick
+                    owner = instrument_from_symbol(symbol).name
+                    if owner in self._instrument_feeds:
+                        option_cb = self._instrument_feeds[owner][1]
+                    asyncio.run_coroutine_threadsafe(option_cb(symbol, ltp), loop)
 
         def on_connect(ws, response):
             logger.info(f"✅ User {self.user_id}: KiteTicker connected — subscribing to NIFTY 50 spot")
             self._is_connected = True
             self._last_ticker_error = None
-            ws.subscribe([NIFTY_SPOT_TOKEN])
-            ws.set_mode(ws.MODE_LTP, [NIFTY_SPOT_TOKEN])
+            spot_tokens = [NIFTY_SPOT_TOKEN] + [
+                get_instrument(n).spot_token for n in self._instrument_feeds
+            ]
+            ws.subscribe(spot_tokens)
+            ws.set_mode(ws.MODE_LTP, spot_tokens)
             # Re-subscribe to open option positions (e.g. after reconnect)
             if self._subscribed_option_tokens:
                 tokens = list(self._subscribed_option_tokens)

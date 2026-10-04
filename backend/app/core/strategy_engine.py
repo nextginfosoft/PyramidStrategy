@@ -26,8 +26,10 @@ class StrategyEngine:
     Processes NIFTY ticks for a single user.
     """
 
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, underlying: str = "NIFTY"):
         self.user_id = user_id
+        self.instrument = get_instrument(underlying)
+        self.underlying = self.instrument.name
         self.is_running: bool = False
         self.squareoff_triggered: bool = False
         self.started_at: Optional[str] = None
@@ -49,10 +51,14 @@ class StrategyEngine:
 
         # Option LTP cache (updated by market data feed)
         self._option_ltp: dict[str, Decimal] = {}  # symbol → ltp
-        self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
+        # NIFTY placeholder until the live previous close is fetched; other
+        # instruments have no meaningful placeholder
+        self.nifty_prev_close: Optional[Decimal] = (
+            Decimal("24175.70") if self.underlying == "NIFTY" else None
+        )
 
         # Order manager (initialized with user_id)
-        self.order_manager = OrderManager(user_id=self.user_id, kite_service=None)
+        self.order_manager = OrderManager(user_id=self.user_id, kite_service=None, underlying=self.underlying)
 
         # User-specific mock data feed
         from app.services.mock_feed import MockDataFeed
@@ -64,17 +70,18 @@ class StrategyEngine:
         # Mock feed flag
         self.mock_mode: bool = settings.PAPER_TRADE
 
-        logger.info(f"StrategyEngine initialized for User {user_id}")
+        logger.info(f"StrategyEngine initialized for User {user_id} ({self.underlying})")
 
     def load_config(self, config: dict):
         """Load strategy configuration from DB."""
         self.config = config
-        lot_size = config.get("lot_size", get_instrument().lot_size)
+        lot_size = config.get("lot_size", self.instrument.lot_size)
         target = Decimal(str(config.get("target_points", 20)))
         sl = Decimal(str(config.get("sl_points", 10)))
 
         # Load paper trade mode dynamically from configuration
-        self.mock_mode = config.get("paper_trade", True)
+        # Instruments flagged paper_only (BANKNIFTY) can never trade live
+        self.mock_mode = config.get("paper_trade", True) or self.instrument.paper_only
         self.order_manager.paper_trade = self.mock_mode
 
         # Apply config to both state machines
@@ -144,7 +151,8 @@ class StrategyEngine:
 
                 # Fetch all today's trades for this user
                 all_trades = db.query(Trade).filter(
-                    Trade.user_id == self.user_id
+                    Trade.user_id == self.user_id,
+                    Trade.underlying == self.underlying
                 ).all()
 
                 # 1. Restore post-exit tracking for TARGET trades
@@ -318,6 +326,7 @@ class StrategyEngine:
                 from app.models.models import Trade
                 trades = db.query(Trade).filter(
                     Trade.user_id == self.user_id,
+                    Trade.underlying == self.underlying,
                     Trade.trade_date == target_date,
                     Trade.price_at_320.is_(None)
                 ).all()
@@ -351,7 +360,7 @@ class StrategyEngine:
         Processes CE and PE independently.
         """
         try:
-            get_redis_client().setex("nifty:ltp", 5, str(nifty_ltp))
+            get_redis_client().setex(self.instrument.ltp_cache_key, 5, str(nifty_ltp))
         except Exception:
             pass
 
@@ -507,7 +516,7 @@ class StrategyEngine:
         with SessionLocal() as db:
             # At L1: resolve option symbol
             if level == "L1":
-                opt = get_option_details(side, nifty_ltp)
+                opt = get_option_details(side, nifty_ltp, instrument=self.instrument)
                 instrument = opt["symbol"]
                 strike = opt["strike"]
                 expiry = opt["expiry"]
@@ -745,7 +754,7 @@ class StrategyEngine:
             with SessionLocal() as db:
                 all_trades = (
                     db.query(Trade)
-                    .filter(Trade.user_id == self.user_id)
+                    .filter(Trade.user_id == self.user_id, Trade.underlying == self.underlying)
                     .all()
                 )
                 trades = [
@@ -859,7 +868,7 @@ class StrategyEngine:
 
         if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
             try:
-                live_prev_close = ks.get_nifty_prev_close()
+                live_prev_close = ks.get_spot_prev_close(self.underlying)
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
             except Exception as e:
@@ -923,7 +932,7 @@ class StrategyEngine:
     # ── Public status ─────────────────────────────────────────────────────────
 
     def get_full_status(self) -> dict:
-        nifty_ltp_str = get_redis_client().get("nifty:ltp")
+        nifty_ltp_str = get_redis_client().get(self.instrument.ltp_cache_key)
         nifty_ltp = Decimal(nifty_ltp_str) if nifty_ltp_str else self.last_nifty_price
 
         from app.services.kite_service import get_user_kite_service
@@ -932,7 +941,7 @@ class StrategyEngine:
         # Fallback to Kite REST API for NIFTY spot LTP if no live ticker ticks are available yet
         if nifty_ltp is None and ks.is_authenticated():
             try:
-                spot_price = ks.get_nifty_spot_ltp()
+                spot_price = ks.get_spot_ltp(self.underlying)
                 if spot_price:
                     nifty_ltp = spot_price
                     self.last_nifty_price = spot_price
@@ -941,7 +950,7 @@ class StrategyEngine:
 
         if ks.is_authenticated() and (not self.nifty_prev_close or self.nifty_prev_close == Decimal("24175.70")):
             try:
-                live_prev_close = ks.get_nifty_prev_close()
+                live_prev_close = ks.get_spot_prev_close(self.underlying)
                 if live_prev_close:
                     self.nifty_prev_close = live_prev_close
             except Exception:

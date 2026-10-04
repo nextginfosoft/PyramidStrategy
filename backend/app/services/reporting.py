@@ -32,13 +32,14 @@ def get_user_reporting_config(user_id: int, db: Session) -> dict:
     return {"format": "telegram"}  # Default fallback
 
 
-def generate_daily_report(user_id: int, target_date: date, db: Session) -> str:
+def generate_daily_report(user_id: int, target_date: date, db: Session, underlying: str = "NIFTY") -> str:
     """
     Fetch today's trades, strategy decisions, P&L, AI suggestions, and format the EOD report.
     """
     # Fetch all trades for today
     trades = db.query(Trade).filter(
         Trade.user_id == user_id,
+        Trade.underlying == underlying,
         Trade.trade_date == target_date
     ).order_by(Trade.created_at.asc()).all()
 
@@ -61,12 +62,14 @@ def generate_daily_report(user_id: int, target_date: date, db: Session) -> str:
     # Save or update DailyPnL record
     daily_pnl_record = db.query(DailyPnL).filter(
         DailyPnL.user_id == user_id,
+        DailyPnL.underlying == underlying,
         DailyPnL.trade_date == target_date
     ).first()
 
     if not daily_pnl_record:
         daily_pnl_record = DailyPnL(
             user_id=user_id,
+            underlying=underlying,
             trade_date=target_date,
             gross_pnl=gross_pnl,
             brokerage=brokerage,

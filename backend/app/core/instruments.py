@@ -35,6 +35,11 @@ class InstrumentSpec:
     est_fallback_spot: Decimal     # placeholder spot when no tick received yet
     paper_only: bool = False
 
+    @property
+    def ltp_cache_key(self) -> str:
+        """Redis key holding the latest spot tick ('nifty:ltp' kept for NIFTY)."""
+        return "nifty:ltp" if self.name == DEFAULT_INSTRUMENT else f"{self.name.lower()}:ltp"
+
 
 INSTRUMENTS: dict[str, InstrumentSpec] = {
     "NIFTY": InstrumentSpec(
