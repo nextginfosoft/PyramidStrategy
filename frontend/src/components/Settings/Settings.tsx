@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { StrategyConfig } from '../../types'
 import { configApi, aiApi, notificationApi, kiteApi, adminApi } from '../../services/api'
 import { Notification } from '../Notification/Notification'
+import { useStrategyStore } from '../../store/strategyStore'
+import { INSTRUMENTS } from '../../utils/instruments'
 
 export interface UserSession {
   username: string
@@ -14,6 +16,8 @@ type StatusMsg = { text: string; ok: boolean }
 
 export function Settings({ onClose, user }: { onClose: () => void; user?: UserSession | null }) {
   const qc = useQueryClient()
+  const underlying = useStrategyStore(s => s.underlying)
+  const meta = INSTRUMENTS[underlying]
   const { data: cfg } = useQuery<StrategyConfig>({ queryKey: ['strategy-config'], queryFn: () => configApi.getStrategy() })
   const { data: apiKeys } = useQuery({ queryKey: ['api-keys'], queryFn: configApi.getApiKeys })
 
@@ -32,7 +36,7 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
     strategy_type: cfg?.strategy_type ?? 'PYRAMID',
     r1: cfg?.r1 ?? 23170, r2: cfg?.r2 ?? 23220, r3: cfg?.r3 ?? 23250,
     s1: cfg?.s1 ?? 23070, s2: cfg?.s2 ?? 23025, s3: cfg?.s3 ?? 22950,
-    lot_size: cfg?.lot_size ?? 65,
+    lot_size: cfg?.lot_size ?? meta.lotSize,
     target_points: cfg?.target_points ?? 20,
     sl_points: cfg?.sl_points ?? 10,
     squareoff_time: cfg?.squareoff_time ?? '11:30',
@@ -155,7 +159,8 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
 
   const saveLevels = useMutation({
     mutationFn: (payload: any) => {
-      if (syncGlobally) {
+      // admin level-sync covers the NIFTY strategy only
+      if (syncGlobally && underlying === 'NIFTY') {
         return adminApi.syncLevelsGlobally({
           r1: payload.r1,
           r2: payload.r2,
@@ -466,14 +471,14 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           strategy_type: 'PYRAMID',
                           r1: existing?.r1 ?? 23170, r2: existing?.r2 ?? 23220, r3: existing?.r3 ?? 23250,
                           s1: existing?.s1 ?? 23070, s2: existing?.s2 ?? 23025, s3: existing?.s3 ?? 22950,
-                          lot_size: existing?.lot_size ?? 65,
+                          lot_size: existing?.lot_size ?? meta.lotSize,
                           target_points: existing?.target_points ?? 30,
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
                           no_entry_time: existing?.no_entry_time ?? '',
                         })
                       } catch {
-                        setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                        setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: meta.lotSize, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
                       }
                     }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
@@ -498,14 +503,14 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           strategy_type: 'DESTINY',
                           r1: existing?.r1 ?? 24100, r2: existing?.r2 ?? 24200, r3: existing?.r3 ?? 24300,
                           s1: existing?.s1 ?? 23900, s2: existing?.s2 ?? 23800, s3: existing?.s3 ?? 23700,
-                          lot_size: existing?.lot_size ?? 65,
+                          lot_size: existing?.lot_size ?? meta.lotSize,
                           target_points: existing?.target_points ?? 30,
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
                           no_entry_time: existing?.no_entry_time ?? '',
                         })
                       } catch {
-                        setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                        setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: meta.lotSize, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
                       }
                     }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
@@ -541,6 +546,8 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                   </button>
                   <button
                     type="button"
+                    disabled={meta.paperOnly}
+                    title={meta.paperOnly ? `${meta.label} is paper-trading only` : undefined}
                     onClick={() => {
                       if (window.confirm('⚠️ Switch to LIVE mode? Real orders will be placed!')) {
                         handleTogglePaperTrade(false)
@@ -559,7 +566,9 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                 <p className="text-[10px] text-navy-300 mt-2.5 text-center">
                   {paperTrade === false
                     ? '⚠️ Warning: Orders are executed live on Zerodha Kite exchange!'
-                    : 'System simulates all order executions locally based on market LTP.'}
+                    : meta.paperOnly
+                      ? `${meta.label} runs in paper mode only: orders are simulated locally against live prices.`
+                      : 'System simulates all order executions locally based on market LTP.'}
                 </p>
               </div>
 
@@ -631,15 +640,15 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           step="1"
                           required
                           className="w-full bg-navy-900 border border-navy-700 focus:border-orange-500 rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono"
-                          value={Math.round(levels.lot_size / 65)}
+                          value={Math.round(levels.lot_size / meta.lotSize)}
                           onChange={e => {
                             const lots = +e.target.value;
-                            setLevels(p => ({ ...p, lot_size: lots * 65 }));
+                            setLevels(p => ({ ...p, lot_size: lots * meta.lotSize }));
                           }}
                         />
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-navy-300 text-xs">📦</span>
                       </div>
-                      <span className="text-[9px] text-navy-400 block">1 Lot = 65 shares</span>
+                      <span className="text-[9px] text-navy-400 block">1 Lot = {meta.lotSize} shares</span>
                     </div>
 
                     <div className="block space-y-1">
@@ -738,7 +747,8 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                     <input
                       type="checkbox"
                       id="syncGlobally"
-                      checked={syncGlobally}
+                      checked={syncGlobally && underlying === 'NIFTY'}
+                      disabled={underlying !== 'NIFTY'}
                       onChange={(e) => setSyncGlobally(e.target.checked)}
                       className="w-4 h-4 bg-navy-900 border-navy-700 text-orange-500 rounded focus:ring-orange-500 cursor-pointer"
                     />

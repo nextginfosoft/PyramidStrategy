@@ -16,6 +16,8 @@ import { PDFReportsModal } from '../PDFReportsModal/PDFReportsModal'
 import { AdminPanel } from '../AdminPanel/AdminPanel'
 import { UserSession } from '../../App'
 import { BacktestModal } from '../BacktestModal/BacktestModal'
+import { InstrumentSwitcher } from '../InstrumentSwitcher/InstrumentSwitcher'
+import { INSTRUMENTS } from '../../utils/instruments'
 import { Analytics } from '../Analytics/AnalyticsModal'
 import { Notification } from '../Notification/Notification'
 import type { SideStatus, StrategyStatus, StrategyConfig } from '../../types'
@@ -63,7 +65,8 @@ const getCutoffTimeStr = (squareoffTime: string): string => {
 export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: UserSession | null }) {
   useWebSocket()
   const qc = useQueryClient()
-  const { status, wsConnected, setStatus, clearAISuggestions } = useStrategyStore()
+  const { status, wsConnected, setStatus, clearAISuggestions, underlying } = useStrategyStore()
+  const meta = INSTRUMENTS[underlying]
   const addToast = useToastStore(state => state.addToast)
   const [showSettings, setShowSettings] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
@@ -263,7 +266,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
 
   useEffect(() => {
     if (queryStatus) {
-      setStatus(queryStatus)
+      setStatus(queryStatus, queryStatus.underlying)
     }
   }, [queryStatus, setStatus])
 
@@ -333,6 +336,8 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
   const paperTrade = status?.paper_trade ?? true
   const niftyLtp = status?.nifty_ltp
   const [niftyTicks, setNiftyTicks] = useState<number[]>([])
+  // sparkline history belongs to one instrument — start fresh when switching
+  useEffect(() => { setNiftyTicks([]) }, [underlying])
 
   useEffect(() => {
     if (niftyLtp != null) {
@@ -597,6 +602,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
               </span>
             )}
           </div>
+          <InstrumentSwitcher />
         </div>
 
         {/* Engine Controls Block */}
@@ -666,7 +672,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
 
           <button onClick={() => setShowChart(true)}
             className="w-full flex items-center px-3 py-2 bg-transparent hover:bg-navy-800 hover:text-navy-100 rounded-lg text-xs text-navy-300 transition duration-150 focus:outline-none focus:bg-navy-800">
-            <span aria-hidden="true" className="mr-2 text-sm">🕯️</span> Live Nifty Chart
+            <span aria-hidden="true" className="mr-2 text-sm">🕯️</span> Live {meta.short} Chart
           </button>
 
           <button onClick={() => setShowLevelHistory(true)}
@@ -809,7 +815,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
           {/* NIFTY price */}
           <div className="glass-card rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-navy-300 font-bold uppercase tracking-wider">NIFTY 50</span>
+              <span className="text-xs text-navy-300 font-bold uppercase tracking-wider">{meta.label}</span>
               <span className={clsx(
                 'text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider',
                 wsConnected ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
@@ -1074,7 +1080,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
 
           {/* NIFTY Spot Active Range — underlying index high/low while a leg is open */}
           <div className="glass-card rounded-xl p-3">
-            <div className="text-xs text-navy-300 font-semibold mb-2">NIFTY SPOT ACTIVE RANGE</div>
+            <div className="text-xs text-navy-300 font-semibold mb-2">{meta.short} SPOT ACTIVE RANGE</div>
             {(() => {
               const formatSpotTime = (timeStr: string | null | undefined) => {
                 if (!timeStr) return ''
@@ -1142,7 +1148,7 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
                 <input
                   type="number"
                   className="flex-1 bg-navy-800 border border-navy-700 focus:border-transparent focus:ring-2 focus:ring-orange-500 focus:outline-none rounded px-2 py-1 text-xs text-white"
-                  placeholder="NIFTY price"
+                  placeholder={`${meta.short} price`}
                   value={simPrice}
                   onChange={e => setSimPrice(e.target.value)}
                 />
@@ -1462,11 +1468,13 @@ export function Dashboard({ onLogout, user }: { onLogout?: () => void; user?: Us
           {/* Kite Connection Status */}
           <KiteStatus />
 
-          {/* AI Observer */}
-          <div className="glass-card rounded-xl p-3">
-            <div className="text-xs text-navy-300 mb-2 font-semibold"><span aria-hidden="true">🤖</span> AI OBSERVER</div>
-            <AIObserver />
-          </div>
+          {/* AI Observer (briefs and reviews are NIFTY-based, so only shown for NIFTY) */}
+          {underlying === 'NIFTY' && (
+            <div className="glass-card rounded-xl p-3">
+              <div className="text-xs text-navy-300 mb-2 font-semibold"><span aria-hidden="true">🤖</span> AI OBSERVER</div>
+              <AIObserver />
+            </div>
+          )}
         </div>
       </div>
 

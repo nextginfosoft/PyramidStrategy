@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react'
+import { useStrategyStore } from '../../store/strategyStore'
+import { INSTRUMENTS } from '../../utils/instruments'
 
 export function EmbeddedChart() {
   const container = useRef<HTMLDivElement>(null)
+  const underlying = useStrategyStore(s => s.underlying)
 
   useEffect(() => {
     if (!container.current) return
@@ -13,7 +16,7 @@ export function EmbeddedChart() {
     script.async = true
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "NSE:NIFTY",
+      symbol: INSTRUMENTS[underlying].tvSymbol,
       interval: "5",
       timezone: "Asia/Kolkata",
       theme: "dark",
@@ -25,12 +28,12 @@ export function EmbeddedChart() {
       container_id: "tradingview_embedded_nifty"
     })
     container.current.appendChild(script)
-  }, [])
+  }, [underlying])
 
   return (
     <div className="glass-card rounded-xl p-3 flex flex-col h-[400px] border border-navy-800/40 shadow-lg relative overflow-hidden">
       <div className="text-xs text-navy-300 mb-2 font-semibold flex items-center gap-1.5 select-none">
-        <span>📈</span> LIVE NIFTY CHART (5M)
+        <span>📈</span> LIVE {INSTRUMENTS[underlying].short} CHART (5M)
       </div>
       <div className="flex-1 w-full bg-navy-950 rounded-lg overflow-hidden relative">
         <div className="tradingview-widget-container w-full h-full">

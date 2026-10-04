@@ -52,7 +52,8 @@ export function useWebSocket() {
       try {
         const msg: WSMessage = JSON.parse(ev.data)
         handleWSMessage(msg)
-        if (msg.type === 'trade_event') {
+        const msgUnderlying = (msg as { underlying?: string }).underlying ?? 'NIFTY'
+        if (msg.type === 'trade_event' && msgUnderlying === useStrategyStore.getState().underlying) {
           qc.invalidateQueries({ queryKey: ['trades-today'] })
           qc.invalidateQueries({ queryKey: ['pnl-today'] })
           qc.invalidateQueries({ queryKey: ['trades-log-data'] })

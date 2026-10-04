@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { StrategyConfig, Trade, DailyPnL } from '../types'
+import { useStrategyStore } from '../store/strategyStore'
 
 const getApiBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_BASE_URL
@@ -11,6 +12,23 @@ const getApiBaseUrl = () => {
 
 const api = axios.create({
   baseURL: getApiBaseUrl(),
+})
+
+// Endpoints that are scoped to one instrument (backend `?underlying=`, default NIFTY).
+// Logs, reports, API keys, AI, admin, auth etc. are account-wide and left alone.
+const UNDERLYING_SCOPED = [
+  /^\/strategy\/(status|start|stop|reset-daily|emergency-exit|simulate-tick|safety-check)/,
+  /^\/config\/strategy/,
+  /^\/trades\/(today|history|pnl|export$)/,
+  /^\/analytics\//,
+]
+
+api.interceptors.request.use((req) => {
+  const url = req.url ?? ''
+  if (UNDERLYING_SCOPED.some(re => re.test(url)) && req.params?.underlying === undefined) {
+    req.params = { ...req.params, underlying: useStrategyStore.getState().underlying }
+  }
+  return req
 })
 
 export const strategyApi = {
@@ -31,7 +49,7 @@ export const configApi = {
   getStrategyHistory: (params?: { from_date?: string; to_date?: string; limit?: number }): Promise<StrategyConfig[]> =>
     api.get('/config/strategy/history', { params }).then(r => r.data),
   saveStrategy: (cfg: Omit<StrategyConfig, 'id' | 'is_active'>) =>
-    api.post('/config/strategy', cfg).then(r => r.data),
+    api.post('/config/strategy', { ...cfg, underlying: cfg.underlying ?? useStrategyStore.getState().underlying }).then(r => r.data),
   getApiKeys: () => api.get('/config/api-keys').then(r => r.data),
   saveApiKey: (payload: {
     provider: string
@@ -116,7 +134,7 @@ export const backtestApi = {
       sl_points: number
       name?: string
     }>
-  }) => api.post('/backtest', payload).then(r => r.data),
+  }) => api.post('/backtest', { ...payload, underlying: useStrategyStore.getState().underlying }).then(r => r.data),
 }
 
 export const sessionApi = {

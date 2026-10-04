@@ -1,11 +1,13 @@
 import { useMemo } from 'react'
 import { useStrategyStore } from '../../store/strategyStore'
+import { INSTRUMENTS } from '../../utils/instruments'
 import { NSE_HOLIDAYS } from '../../utils/nseHolidays'
 import { isMarketOpenNow } from '../../utils/marketHours'
 import clsx from 'clsx'
 
 export function StatusBar() {
-  const { status, wsConnected } = useStrategyStore()
+  const { status, wsConnected, underlying } = useStrategyStore()
+  const spotLabel = INSTRUMENTS[underlying].label
 
   // 1. Determine states and health details
   const health = status?.health
@@ -93,7 +95,7 @@ export function StatusBar() {
       } else if (!tickerConnected) {
         errStr = '❌ DISCONNECTED: Live Zerodha market feed WebSocket down. Attempting auto-recovery...';
       } else if (lastNiftyTickSec !== null && lastNiftyTickSec > 15) {
-        errStr = `❌ DATA HEARTBEAT FAILURE: Live Nifty feed hasn't pushed ticks in ${lastNiftyTickSec} seconds. Connection check recommended.`;
+        errStr = `❌ DATA HEARTBEAT FAILURE: Live ${spotLabel} feed hasn't pushed ticks in ${lastNiftyTickSec} seconds. Connection check recommended.`;
       }
       return [{ text: errStr, colorClass: 'text-red-400 font-bold' }];
     }
@@ -131,12 +133,12 @@ export function StatusBar() {
       const ltpStr = status.nifty_ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 });
       const isUp = (status.nifty_ltp >= (status.nifty_prev_close ?? 0));
       parts.push({
-        text: `NIFTY 50: ₹${ltpStr}${lastNiftyTickSec !== null ? ` (${lastNiftyTickSec}s ago)` : ''}`,
+        text: `${spotLabel}: ₹${ltpStr}${lastNiftyTickSec !== null ? ` (${lastNiftyTickSec}s ago)` : ''}`,
         colorClass: isUp ? 'text-green-400' : 'text-red-400'
       });
     } else {
       parts.push({
-        text: `NIFTY 50: Awaiting tick...`,
+        text: `${spotLabel}: Awaiting tick...`,
         colorClass: 'text-navy-300'
       });
     }

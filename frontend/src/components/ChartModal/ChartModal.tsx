@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react'
+import { useStrategyStore } from '../../store/strategyStore'
+import { INSTRUMENTS } from '../../utils/instruments'
 
 interface ChartModalProps {
   onClose: () => void
@@ -6,6 +8,7 @@ interface ChartModalProps {
 
 export function ChartModal({ onClose }: ChartModalProps) {
   const container = useRef<HTMLDivElement>(null)
+  const underlying = useStrategyStore(s => s.underlying)
 
   useEffect(() => {
     if (!container.current) return
@@ -17,7 +20,7 @@ export function ChartModal({ onClose }: ChartModalProps) {
     script.async = true
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: "NSE:NIFTY",
+      symbol: INSTRUMENTS[underlying].tvSymbol,
       interval: "5",
       timezone: "Asia/Kolkata",
       theme: "dark",
@@ -29,7 +32,7 @@ export function ChartModal({ onClose }: ChartModalProps) {
       container_id: "tradingview_nifty_chart"
     })
     container.current.appendChild(script)
-  }, [])
+  }, [underlying])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/80 backdrop-blur-sm p-4 animate-fade-in select-none">
@@ -39,7 +42,7 @@ export function ChartModal({ onClose }: ChartModalProps) {
         <div className="px-6 py-4 border-b border-navy-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-orange-500 text-lg">📈</span>
-            <h3 className="text-sm font-bold tracking-wider text-white uppercase">NIFTY 50 Live Chart</h3>
+            <h3 className="text-sm font-bold tracking-wider text-white uppercase">{INSTRUMENTS[underlying].label} Live Chart</h3>
           </div>
           <button 
             onClick={onClose}

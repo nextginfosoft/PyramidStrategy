@@ -31,6 +31,7 @@ export interface HealthStatus {
 }
 
 export interface StrategyStatus {
+  underlying?: 'NIFTY' | 'BANKNIFTY'
   is_running: boolean
   paper_trade: boolean
   started_at?: string | null
@@ -46,6 +47,7 @@ export interface StrategyStatus {
 
 export interface Trade {
   id: number
+  underlying?: 'NIFTY' | 'BANKNIFTY'
   trade_date: string
   side: 'CE' | 'PE'
   level: string
@@ -77,6 +79,7 @@ export interface Trade {
 
 export interface StrategyConfig {
   id: number
+  underlying?: 'NIFTY' | 'BANKNIFTY'
   r1: number; r2: number; r3: number
   s1: number; s2: number; s3: number
   lot_size: number
@@ -92,8 +95,8 @@ export interface StrategyConfig {
 }
 
 export type WSMessage =
-  | { type: 'strategy_status'; data: StrategyStatus }
-  | { type: 'trade_event'; data: Record<string, unknown> }
+  | { type: 'strategy_status'; underlying?: 'NIFTY' | 'BANKNIFTY'; data: StrategyStatus }
+  | { type: 'trade_event'; underlying?: 'NIFTY' | 'BANKNIFTY'; data: Record<string, unknown> }
   | { type: 'ai_suggestion'; data: { suggestion: string; event: string; side: string } }
   | { type: 'error'; data: { message: string } }
   | { type: 'gamification_event'; data: { event_type: string; quote: string; author: string; emoji: string; label: string; side: string; level: string; duration: number; extra: Record<string, unknown> } }
@@ -101,6 +104,7 @@ export type WSMessage =
 
 export interface DailyPnL {
   id: number
+  underlying?: 'NIFTY' | 'BANKNIFTY'
   user_id: number
   trade_date: string
   gross_pnl: number
