@@ -120,6 +120,8 @@ export const backtestApi = {
       lot_size: number
       target_points: number
       sl_points: number
+      ratchet_step_points?: number | null
+      model_iv_percent?: number
       name?: string
     }
     compare_configs?: Array<{
@@ -132,9 +134,19 @@ export const backtestApi = {
       lot_size: number
       target_points: number
       sl_points: number
+      ratchet_step_points?: number | null
+      model_iv_percent?: number
       name?: string
     }>
   }) => api.post('/backtest', { ...payload, underlying: useStrategyStore.getState().underlying }).then(r => r.data),
+  // Real option prices Kite has recorded, per weekday in the range
+  optionHistory: (start_date: string, end_date: string) =>
+    api.get('/backtest/option-history', { params: { start_date, end_date } }).then(r => r.data),
+  // Fetch real option prices from Kite for recent past days and store them
+  backfillOptionPrices: (payload: { start_date: string; end_date: string }) =>
+    api.post('/backtest/option-history/backfill', payload).then(r => r.data as {
+      days: Array<{ date: string; status: string; saved: number; skipped: number; missing: string[] }>
+    }),
 }
 
 export const sessionApi = {

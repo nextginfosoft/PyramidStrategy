@@ -202,3 +202,27 @@ class TestEngineMessages:
             asyncio.run(e._broadcast_status(Decimal("55000")))
         assert sent and sent[0]["underlying"] == "BANKNIFTY"
         assert e.get_full_status()["underlying"] == "BANKNIFTY"
+
+
+class TestDestinyBacktestInstrument:
+    """dev's Destiny backtest (model-priced options) must follow the instrument."""
+
+    def test_banknifty_destiny_backtest_uses_banknifty_contract(self):
+        from app.services.backtesting import run_destiny_single_backtest
+        from app.core.time_rules import TUESDAY_HOLIDAYS  # noqa: F401 - ensures module import
+        prices = [55000.0] * 5 + [55110.0, 55090.0] + [54850.0] * 10  # crosses resistance 55100, then falls (PE gains)
+        cfg = {"r1": 55100, "s1": 54000, "lot_size": 30, "target_points": 30, "sl_points": 30,
+               "squareoff_time": "15:20", "strategy_type": "DESTINY", "underlying": "BANKNIFTY"}
+        trades = run_destiny_single_backtest("2026-10-05", prices, cfg)
+        assert trades, "expected a PE entry on the resistance cross"
+        t = trades[0]
+        assert t["symbol"].startswith("BANKNIFTY26OCT") and t["symbol"].endswith("PE")
+        assert t["strike"] % 100 == 0 and t["qty"] == 30
+
+    def test_nifty_destiny_backtest_unchanged(self):
+        from app.services.backtesting import run_destiny_single_backtest
+        prices = [23000.0] * 5 + [23110.0, 23090.0] + [23050.0] * 10
+        cfg = {"r1": 23100, "s1": 22000, "lot_size": 65, "target_points": 30, "sl_points": 30,
+               "squareoff_time": "15:20", "strategy_type": "DESTINY"}
+        trades = run_destiny_single_backtest("2026-10-05", prices, cfg)
+        assert trades and trades[0]["symbol"].startswith("NIFTY") and not trades[0]["symbol"].startswith("BANK")

@@ -199,6 +199,9 @@ async def approve_pre_market_brief(
         "sl_points": float(cfg.sl_points),
         "paper_trade": cfg.paper_trade,
         "no_entry_time": cfg.no_entry_time,
+        "ratchet_step_points": cfg.ratchet_step_points,
+        "r_level_enabled": cfg.r_level_enabled,
+        "s_level_enabled": cfg.s_level_enabled,
     }
     
     user_kite = get_user_kite_service(user.id)

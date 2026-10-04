@@ -19,7 +19,32 @@ class StrategyConfigBase(BaseModel):
     paper_trade: bool = True
     squareoff_time: str = "15:20"
     no_entry_time: Optional[str] = None
+    ratchet_step_points: Optional[float] = None
+    # Destiny only, opt-out. None/True = enabled (today's behavior); only an
+    # explicit False stops that side from ever triggering an entry.
+    r_level_enabled: Optional[bool] = None
+    s_level_enabled: Optional[bool] = None
     strategy_type: str = "PYRAMID"
+
+    @field_validator("ratchet_step_points", mode="before")
+    @classmethod
+    def validate_ratchet_step_points(cls, v):
+        # Blank / zero / null means "off" — today's flat target exit, unchanged
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            raise ValueError("Ratchet step must be a number")
+        if v == 0:
+            return None
+        if v <= 0:
+            raise ValueError("Ratchet step must be greater than 0")
+        return v
 
     @field_validator("underlying", mode="before")
     @classmethod
@@ -83,6 +108,9 @@ class StrategyConfigBase(BaseModel):
             # CE levels must be descending
             if not (self.s1 > self.s2 > self.s3):
                 raise ValueError("Support levels must be descending: S1 > S2 > S3")
+        elif self.strategy_type == "DESTINY":
+            if self.r_level_enabled is False and self.s_level_enabled is False:
+                raise ValueError("At least one of Resistance or Support must stay enabled")
         return self
 
 
