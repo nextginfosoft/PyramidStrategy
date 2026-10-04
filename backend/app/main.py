@@ -472,18 +472,26 @@ def _bootstrap_master_admin():
     from app.api.routes.session import get_password_hash
     try:
         with SessionLocal() as db:
-            user = db.query(User).filter(User.username == "santosh").first()
+            admin_name = settings.SUPER_ADMIN_USERNAME
+            user = db.query(User).filter(User.username == admin_name).first()
             if not user:
-                hashed = get_password_hash("santosh123")
+                password = settings.SUPER_ADMIN_PASSWORD
+                if not password and not settings.is_development:
+                    logger.warning(
+                        "SUPER_ADMIN_PASSWORD is not set — no default admin created. "
+                        "Set it in the environment, or register the admin username yourself."
+                    )
+                    return
+                hashed = get_password_hash(password or "santosh123")  # built-in default: development only
                 master_user = User(
-                    username="santosh",
+                    username=admin_name,
                     hashed_password=hashed,
                     is_approved=True,
                     is_admin=True,
                 )
                 db.add(master_user)
                 db.commit()
-                logger.info("⚡ Default master user 'santosh' created and approved on startup.")
+                logger.info(f"⚡ Master admin '{admin_name}' created and approved on startup.")
             else:
                 updated = False
                 if not user.is_approved:
@@ -494,7 +502,7 @@ def _bootstrap_master_admin():
                     updated = True
                 if updated:
                     db.commit()
-                    logger.info("⚡ Master user 'santosh' permissions updated to approved admin.")
+                    logger.info(f"⚡ Master admin '{admin_name}' permissions updated to approved admin.")
     except Exception as e:
         logger.warning(f"Master admin bootstrap check failed (non-critical): {e}")
 

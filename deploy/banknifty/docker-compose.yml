@@ -1,0 +1,104 @@
+# Isolated production stack for banknifty.nextginfosoft.com on the shared Hostinger VPS.
+#
+# Isolation rules (this VPS runs several unrelated apps behind one Caddy):
+#   - own compose project name + uniquely named services/containers/volumes
+#   - own private network; NO host ports published
+#   - only the frontend container joins the shared `edge` network (so edge-caddy can reach it)
+#   - hard memory/CPU caps so a runaway process here cannot starve the other apps
+#
+# Run from this directory (see deploy.sh):
+#   docker compose --env-file /opt/banknifty-app/.env.local up -d --build
+
+name: banknifty-app
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  banknifty-db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: banknifty
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.local}
+      POSTGRES_DB: banknifty
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banknifty -d banknifty"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [internal]
+    mem_limit: 512m
+    logging: *logging
+
+  banknifty-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    networks: [internal]
+    mem_limit: 192m
+    logging: *logging
+
+  banknifty-backend:
+    build:
+      context: ../../backend
+    image: banknifty-app-backend:latest
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql://banknifty:${POSTGRES_PASSWORD}@banknifty-db:5432/banknifty
+      REDIS_URL: redis://banknifty-redis:6379/0
+      USE_FAKE_REDIS: "false"
+      PAPER_TRADE: "true"
+      SECRET_KEY: ${SECRET_KEY:?set in .env.local}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set in .env.local}
+      SUPER_ADMIN_USERNAME: ${SUPER_ADMIN_USERNAME:-santosh}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?set in .env.local}
+    depends_on:
+      banknifty-db:
+        condition: service_healthy
+      banknifty-redis:
+        condition: service_started
+    volumes:
+      - applogs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    networks: [internal]          # deliberately NOT on `edge`
+    mem_limit: 1g
+    cpus: 1.5
+    logging: *logging
+
+  banknifty-frontend:
+    build:
+      context: ../../frontend
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_WS_URL: ""
+    image: banknifty-app-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - banknifty-backend
+    volumes:
+      # deployment-specific nginx config (upstream = banknifty-backend); repo's frontend/nginx.conf is untouched
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [internal, edge]
+    mem_limit: 128m
+    logging: *logging
+
+networks:
+  internal: {}
+  edge:
+    external: true
+
+volumes:
+  pgdata:
+  applogs:

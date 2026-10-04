@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Administration
     SUPER_ADMIN_USERNAME: str = "santosh"
     SUPER_ADMIN_EMAIL: str = "nextginfosoft@gmail.com"
+    # Password for the bootstrapped master admin. In production it MUST be set via the
+    # environment; without it no default admin is created (there is no built-in password).
+    SUPER_ADMIN_PASSWORD: Optional[str] = None
 
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None
