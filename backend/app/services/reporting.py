@@ -220,7 +220,7 @@ def generate_weekly_report(user_id: int, monday_date: date, db: Session) -> str:
     return msg
 
 
-async def send_daily_report(user_id: int, target_date: date):
+async def send_daily_report(user_id: int, target_date: date, underlying: str = "NIFTY"):
     """Generate, save, and deliver the daily report for target_date."""
     logger.info(f"Generating Daily EOD Report for User {user_id} on {target_date}")
     try:
@@ -236,13 +236,14 @@ async def send_daily_report(user_id: int, target_date: date):
             ws.load_from_db()
 
             # Always ensure the DailyPnL record is generated/updated in DB first
-            msg = generate_daily_report(user_id, target_date, db)
+            msg = generate_daily_report(user_id, target_date, db, underlying)
 
             if fmt == "pdf":
                 reports_dir = os.path.join("logs", "reports")
                 os.makedirs(reports_dir, exist_ok=True)
-                pdf_path = os.path.join(reports_dir, f"daily_report_{user_id}_{target_date}.pdf")
-                build_daily_report_pdf(user_id, target_date, db, pdf_path)
+                suffix = "" if underlying == "NIFTY" else f"_{underlying}"
+                pdf_path = os.path.join(reports_dir, f"daily_report_{user_id}_{target_date}{suffix}.pdf")
+                build_daily_report_pdf(user_id, target_date, db, pdf_path, underlying)
                 
                 sent = False
                 if ns.is_enabled():

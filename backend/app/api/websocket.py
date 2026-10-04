@@ -82,6 +82,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
     user_engine = engine_manager.get_engine(user_id)
     user_engine.broadcast_fn = manager.broadcast
+    # Other-instrument engines (e.g. BANKNIFTY) may have been created before any client connected
+    for other in engine_manager.engines_for_user(user_id):
+        other.broadcast_fn = manager.broadcast
 
     # Wire gamification listener to use the same broadcast function
     try:
@@ -92,11 +95,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Send current status immediately on connect
     try:
-        status = user_engine.get_full_status()
-        await websocket.send_text(json.dumps({
-            "type": "strategy_status",
-            "data": status,
-        }, default=str))
+        for eng in engine_manager.engines_for_user(user_id):
+            await websocket.send_text(json.dumps({
+                "type": "strategy_status",
+                "underlying": eng.underlying,
+                "data": eng.get_full_status(),
+            }, default=str))
     except Exception as e:
         logger.warning(f"Failed to send initial status to User {user_id} WS: {e}")
 
@@ -119,9 +123,12 @@ async def _handle_client_message(ws: WebSocket, user_id: int, raw: str):
             await ws.send_text(json.dumps({"type": "pong"}))
         elif cmd == "get_status":
             from app.core.engine_manager import engine_manager
-            user_engine = engine_manager.get_engine(user_id)
+            from app.core.instruments import get_instrument
+            underlying = get_instrument(msg.get("underlying")).name
+            user_engine = engine_manager.get_engine(user_id, underlying)
             status = user_engine.get_full_status()
-            await ws.send_text(json.dumps({"type": "strategy_status", "data": status}, default=str))
+            await ws.send_text(json.dumps(
+                {"type": "strategy_status", "underlying": underlying, "data": status}, default=str))
 
     except Exception as e:
         logger.error(f"WS message handling error for User {user_id}: {e}")

@@ -12,6 +12,7 @@ class StrategyConfigBase(BaseModel):
     s1: float
     s2: Optional[float] = 0.0
     s3: Optional[float] = 0.0
+    underlying: str = "NIFTY"
     lot_size: int = 65
     target_points: float = 30.0
     sl_points: float = 10.0
@@ -19,6 +20,12 @@ class StrategyConfigBase(BaseModel):
     squareoff_time: str = "15:20"
     no_entry_time: Optional[str] = None
     strategy_type: str = "PYRAMID"
+
+    @field_validator("underlying", mode="before")
+    @classmethod
+    def validate_underlying(cls, v):
+        from app.core.instruments import get_instrument
+        return get_instrument(v or "NIFTY").name
 
     @field_validator("no_entry_time", mode="before")
     @classmethod
@@ -96,6 +103,7 @@ class StrategyConfigResponse(StrategyConfigBase):
 class TradeResponse(BaseModel):
     id: int
     trade_date: date
+    underlying: str = "NIFTY"
     side: str
     level: str
     instrument: str
@@ -149,6 +157,7 @@ class TradeResponse(BaseModel):
 # ── Daily P&L ─────────────────────────────────────────────────────────────────
 class DailyPnLResponse(BaseModel):
     trade_date: date
+    underlying: str = "NIFTY"
     gross_pnl: float
     net_pnl: float
     total_trades: int

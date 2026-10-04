@@ -30,12 +30,17 @@ class BacktestRequest(BaseModel):
     end_date: str    # YYYY-MM-DD
     config: BacktestConfigSchema
     compare_configs: Optional[List[BacktestConfigSchema]] = None
+    underlying: str = "NIFTY"
 
 @router.post("")
 async def run_backtest(
     req: BacktestRequest,
     user: User = Depends(require_auth)
 ):
+    try:
+        underlying = get_instrument(req.underlying).name
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     kite_service = get_user_kite_service(user.id)
     try:
         results = await run_backtest_workflow(
@@ -43,7 +48,8 @@ async def run_backtest(
             start_date_str=req.start_date,
             end_date_str=req.end_date,
             config=req.config.model_dump(),
-            compare_configs=[c.model_dump() for c in req.compare_configs] if req.compare_configs else None
+            compare_configs=[c.model_dump() for c in req.compare_configs] if req.compare_configs else None,
+            underlying=underlying,
         )
         return results
     except Exception as e:

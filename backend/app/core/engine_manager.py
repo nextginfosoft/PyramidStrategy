@@ -36,10 +36,22 @@ class EngineManager:
         """Every engine across all users and instruments."""
         return list(self._engines.values()) + list(self._instrument_engines.values())
 
-    def _lookup(self, user_id: int, underlying: str) -> Optional[Any]:
+    def find_engine(self, user_id: int, underlying: str = DEFAULT_INSTRUMENT) -> Optional[Any]:
+        """Existing engine for user + instrument, or None (never creates one)."""
         if underlying == DEFAULT_INSTRUMENT:
             return self._engines.get(user_id)
         return self._instrument_engines.get((user_id, underlying))
+
+    _lookup = find_engine
+
+    def remove_engine(self, user_id: int, underlying: str = DEFAULT_INSTRUMENT) -> Optional[Any]:
+        """Drop and return the engine for user + instrument (caller stops it if needed)."""
+        if underlying == DEFAULT_INSTRUMENT:
+            return self._engines.pop(user_id, None)
+        return self._instrument_engines.pop((user_id, underlying), None)
+
+    def engines_for_user(self, user_id: int) -> list[Any]:
+        return [e for e in self.all_engines() if e.user_id == user_id]
 
     def get_engine(self, user_id: int, underlying: str = DEFAULT_INSTRUMENT) -> Any:
         """Retrieve or instantiate the Strategy Engine for a user + instrument based on DB strategy_type."""

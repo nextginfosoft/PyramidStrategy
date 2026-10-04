@@ -24,34 +24,41 @@ def _no_entry_minutes(no_entry_time: Optional[str], sq_minutes: int) -> Optional
     return min(h * 60 + m, sq_minutes)
 
 
-def get_nifty_data_for_day(date_str: str) -> List[float]:
+def get_nifty_data_for_day(date_str: str, underlying: str = "NIFTY") -> List[float]:
     """
-    Generate realistic, deterministic NIFTY spot prices for a given date.
+    Generate realistic, deterministic spot prices for a given date (NIFTY by default).
     Seed is based on the date, so running it multiple times produces identical results.
     """
-    seed_str = f"nifty_seed_{date_str}"
+    from app.core.instruments import get_instrument
+    spec = get_instrument(underlying)
+    seed_str = f"nifty_seed_{date_str}" if spec.name == "NIFTY" else f"{spec.name.lower()}_seed_{date_str}"
     seed_val = int(hashlib.md5(seed_str.encode('utf-8')).hexdigest(), 16) % 10000000
     random.seed(seed_val)
 
     # Base price of NIFTY around 23500-24500
-    base_price = 24000.0 + random.uniform(-300, 300)
+    # (other instruments: reference spot, with ticks/ranges scaled by strike step)
+    scale = spec.strike_step / 50
+    base_price = (24000.0 if spec.name == "NIFTY" else float(spec.est_fallback_spot)) + random.uniform(-300, 300) * scale
     prices = []
     current_price = base_price
     
     # 375 minutes (9:15 AM to 3:30 PM)
     for _ in range(375):
         # random walk with slight mean reversion to keep it bounded
-        change = random.uniform(-4.0, 4.0)
+        change = random.uniform(-4.0, 4.0) * scale
         current_price += change
         prices.append(round(current_price, 2))
         
     return prices
 
-async def fetch_historical_nifty(kite_service, start_date: date, end_date: date) -> Dict[str, List[float]]:
+async def fetch_historical_nifty(kite_service, start_date: date, end_date: date,
+                                 underlying: str = "NIFTY") -> Dict[str, List[float]]:
     """
-    Fetch historical Nifty spot index prices per day.
+    Fetch historical spot index prices per day (NIFTY by default).
     Falls back to mock data if Kite is not authenticated or fails.
     """
+    from app.core.instruments import get_instrument
+    spot_token = get_instrument(underlying).spot_token
     data = {}
     current_date = start_date
     delta = timedelta(days=1)
@@ -82,7 +89,7 @@ async def fetch_historical_nifty(kite_service, start_date: date, end_date: date)
                 to_dt = datetime.combine(current_date, datetime.max.time())
                 
                 records = kite_service._kite.historical_data(
-                    instrument_token=NIFTY_SPOT_TOKEN,
+                    instrument_token=spot_token,
                     from_date=from_dt,
                     to_date=to_dt,
                     interval="minute"
@@ -112,7 +119,7 @@ async def fetch_historical_nifty(kite_service, start_date: date, end_date: date)
                 
         # Fallback to mock data if Kite failed or returned empty
         if not day_prices:
-            day_prices = get_nifty_data_for_day(date_str)
+            day_prices = get_nifty_data_for_day(date_str, underlying)
             
         data[date_str] = day_prices
         current_date += delta
@@ -478,14 +485,15 @@ async def run_backtest_workflow(
     start_date_str: str,
     end_date_str: str,
     config: Dict[str, Any],
-    compare_configs: Optional[List[Dict[str, Any]]] = None
+    compare_configs: Optional[List[Dict[str, Any]]] = None,
+    underlying: str = "NIFTY",
 ) -> Dict[str, Any]:
     """Run full backtest workflow, optionally with comparisons."""
     start_dt = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_dt = datetime.strptime(end_date_str, "%Y-%m-%d").date()
     
     # 1. Fetch Nifty data once for all configs
-    nifty_data = await fetch_historical_nifty(kite_service, start_dt, end_dt)
+    nifty_data = await fetch_historical_nifty(kite_service, start_dt, end_dt, underlying)
     
     # Select backtest function based on strategy type
     st_type = config.get("strategy_type", "PYRAMID")

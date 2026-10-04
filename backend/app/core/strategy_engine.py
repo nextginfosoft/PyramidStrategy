@@ -877,6 +877,7 @@ class StrategyEngine:
         status = {
             "type": "strategy_status",
             "user_id": self.user_id,
+            "underlying": self.underlying,
             "data": {
                 "nifty_ltp": float(nifty_ltp),
                 "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
@@ -902,6 +903,7 @@ class StrategyEngine:
         await self.broadcast_fn(self.user_id, {
             "type": "trade_event",
             "user_id": self.user_id,
+            "underlying": self.underlying,
             "data": {"side": side, "level": mapped_level, "action": action, **details},
         })
 
@@ -911,6 +913,7 @@ class StrategyEngine:
         await self.broadcast_fn(self.user_id, {
             "type": "error",
             "user_id": self.user_id,
+            "underlying": self.underlying,
             "data": {"side": side, "message": message}
         })
 
@@ -924,6 +927,7 @@ class StrategyEngine:
                     await self.broadcast_fn(self.user_id, {
                         "type": "ai_suggestion",
                         "user_id": self.user_id,
+                        "underlying": self.underlying,
                         "data": {"suggestion": suggestion, "event": event, "side": side},
                     })
         except Exception as e:
@@ -957,6 +961,7 @@ class StrategyEngine:
                 pass
 
         return {
+            "underlying": self.underlying,
             "is_running": self.is_running,
             "paper_trade": self.mock_mode,
             "started_at": self.started_at,

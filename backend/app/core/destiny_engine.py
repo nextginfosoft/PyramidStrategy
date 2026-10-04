@@ -445,6 +445,7 @@ class DestinyStrategyEngine:
         status = {
             "type": "strategy_status",
             "user_id": self.user_id,
+            "underlying": self.underlying,
             "data": {
                 "nifty_ltp": float(nifty_ltp),
                 "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
@@ -549,6 +550,7 @@ class DestinyStrategyEngine:
         pe_status = self._get_side_status("PE", nifty_ltp)
 
         return {
+            "underlying": self.underlying,
             "is_running": self.is_running,
             "paper_trade": self.paper_trade,
             "started_at": self.started_at,

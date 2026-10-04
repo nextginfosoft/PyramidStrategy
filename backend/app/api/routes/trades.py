@@ -7,15 +7,16 @@ from app.models.models import Trade, DailyPnL, User
 from app.schemas.schemas import TradeResponse, DailyPnLResponse
 from app.core.time_rules import today_ist
 from app.api.routes.session import require_auth
+from app.api.instrument_param import underlying_query
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
 
 @router.get("/today", response_model=list[TradeResponse])
-def get_today_trades(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+def get_today_trades(db: Session = Depends(get_db), user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
     trades = (
         db.query(Trade)
-        .filter(Trade.user_id == user.id, Trade.trade_date == today_ist())
+        .filter(Trade.user_id == user.id, Trade.underlying == underlying, Trade.trade_date == today_ist())
         .order_by(desc(Trade.created_at))
         .all()
     )
@@ -30,8 +31,9 @@ def get_trade_history(
     limit: int = Query(default=50, le=200),
     db: Session = Depends(get_db),
     user: User = Depends(require_auth),
+    underlying: str = Depends(underlying_query),
 ):
-    q = db.query(Trade).filter(Trade.user_id == user.id)
+    q = db.query(Trade).filter(Trade.user_id == user.id, Trade.underlying == underlying)
     if from_date:
         q = q.filter(Trade.trade_date >= from_date)
     if to_date:
@@ -42,11 +44,12 @@ def get_trade_history(
 
 
 @router.get("/pnl/today")
-def get_today_pnl(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+def get_today_pnl(db: Session = Depends(get_db), user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
     trades = (
         db.query(Trade)
         .filter(
             Trade.user_id == user.id,
+            Trade.underlying == underlying,
             Trade.trade_date == today_ist(),
             Trade.action == "EXIT"
         )
@@ -68,10 +71,11 @@ def get_pnl_history(
     limit: int = Query(default=30, le=90),
     db: Session = Depends(get_db),
     user: User = Depends(require_auth),
+    underlying: str = Depends(underlying_query),
 ):
     return (
         db.query(DailyPnL)
-        .filter(DailyPnL.user_id == user.id)
+        .filter(DailyPnL.user_id == user.id, DailyPnL.underlying == underlying)
         .order_by(desc(DailyPnL.trade_date))
         .limit(limit)
         .all()
@@ -79,7 +83,7 @@ def get_pnl_history(
 
 
 @router.get("/export")
-def export_trades(period: str = "all", db: Session = Depends(get_db), user: User = Depends(require_auth)):
+def export_trades(period: str = "all", db: Session = Depends(get_db), user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
     import csv
     from io import StringIO
     from fastapi.responses import StreamingResponse
@@ -95,7 +99,7 @@ def export_trades(period: str = "all", db: Session = Depends(get_db), user: User
             dt_ist = pytz.utc.localize(dt).astimezone(pytz.timezone("Asia/Kolkata"))
         return dt_ist.strftime("%Y-%m-%d %H:%M:%S")
 
-    query = db.query(Trade).filter(Trade.user_id == user.id)
+    query = db.query(Trade).filter(Trade.user_id == user.id, Trade.underlying == underlying)
 
     if period != "all":
         ist = pytz.timezone("Asia/Kolkata")

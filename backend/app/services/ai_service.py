@@ -477,6 +477,7 @@ async def run_pre_market_brief_for_user(db, user_id: int, today) -> dict:
     
     cfg = db.query(StrategyConfig).filter(
         StrategyConfig.user_id == user_id,
+        StrategyConfig.underlying == "NIFTY",
         StrategyConfig.is_active == True
     ).first()
     if not cfg:
@@ -658,7 +659,7 @@ async def run_post_session_review_for_user(db, user_id: int, today) -> dict:
     
     # 2. Fetch P&L
     user = db.query(User).filter(User.id == user_id).first()
-    pnl = get_today_pnl(db, user) if user else {}
+    pnl = get_today_pnl(db, user, underlying="NIFTY") if user else {}
     
     # 3. Format trades
     trades_list = []

@@ -161,6 +161,7 @@ async def approve_pre_market_brief(
     # Load and update active StrategyConfig
     cfg = db.query(StrategyConfig).filter(
         StrategyConfig.user_id == user.id,
+        StrategyConfig.underlying == "NIFTY",
         StrategyConfig.is_active == True
     ).first()
     
@@ -249,8 +250,8 @@ async def get_post_session_review(
     
     # Fetch today's trades and P&L
     from app.api.routes.trades import get_today_trades, get_today_pnl
-    trades = get_today_trades(db, user)
-    pnl = get_today_pnl(db, user)
+    trades = get_today_trades(db, user, underlying="NIFTY")
+    pnl = get_today_pnl(db, user, underlying="NIFTY")
     
     # Format trades for AI
     trades_list = []

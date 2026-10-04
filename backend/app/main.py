@@ -217,7 +217,9 @@ def schedule_jobs():
         logger.info(f"⏳ Running Pre-market AI Brief job at 9:30 AM for date: {today}")
         try:
             with SessionLocal() as db:
-                configs = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).all()
+                configs = db.query(StrategyConfig).filter(
+                    StrategyConfig.is_active == True, StrategyConfig.underlying == "NIFTY"
+                ).all()
                 for cfg in configs:
                     await run_pre_market_brief_for_user(db, cfg.user_id, today)
         except Exception as e:
@@ -244,6 +246,7 @@ def schedule_jobs():
                     # Get active strategy config
                     cfg = db.query(StrategyConfig).filter(
                         StrategyConfig.user_id == u.id, 
+                        StrategyConfig.underlying == "NIFTY",
                         StrategyConfig.is_active == True
                     ).first()
                     
@@ -285,6 +288,28 @@ def schedule_jobs():
                                 logger.error(f"Failed to trigger automated EOD AI post-session review: {ai_ex}")
                     except Exception as ex:
                         logger.error(f"Error parsing/triggering scheduler times for User {u.id}: {ex}")
+
+                    # Other instruments (BANKNIFTY): same square-off / EOD-report schedule from their own config
+                    for ocfg in db.query(StrategyConfig).filter(
+                        StrategyConfig.user_id == u.id,
+                        StrategyConfig.underlying != "NIFTY",
+                        StrategyConfig.is_active == True,
+                    ).all():
+                        try:
+                            o_sq = ocfg.squareoff_time or "11:30"
+                            oh, om = map(int, o_sq.split(":"))
+                            o_report = (
+                                now.replace(hour=oh, minute=om, second=0, microsecond=0) + timedelta(minutes=15)
+                            ).strftime("%H:%M")
+                            if current_time_str == o_sq:
+                                oeng = engine_manager.find_engine(u.id, ocfg.underlying)
+                                if oeng and oeng.is_running:
+                                    logger.warning(f"🔔 {o_sq} scheduler — force squareoff {ocfg.underlying} for User {u.id}")
+                                    await oeng._force_squareoff()
+                            if current_time_str == o_report:
+                                await send_daily_report(u.id, today, ocfg.underlying)
+                        except Exception as ex:
+                            logger.error(f"Error in {ocfg.underlying} time triggers for User {u.id}: {ex}")
         except Exception as e:
             logger.error(f"Error in unified time triggers check job: {e}")
 
@@ -499,7 +524,7 @@ def _load_startup_config():
         with SessionLocal() as db:
             configs = db.query(StrategyConfig).filter(StrategyConfig.is_active == True).all()
             for cfg in configs:
-                user_engine = engine_manager.get_engine(cfg.user_id)
+                user_engine = engine_manager.get_engine(cfg.user_id, cfg.underlying)
                 user_engine.load_config({
                     "r1": float(cfg.r1), "r2": float(cfg.r2), "r3": float(cfg.r3),
                     "s1": float(cfg.s1), "s2": float(cfg.s2), "s3": float(cfg.s3),

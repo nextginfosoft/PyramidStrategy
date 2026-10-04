@@ -8,6 +8,8 @@ from app.models.models import StrategyConfig, User
 from app.core.engine_manager import engine_manager
 from app.services.kite_service import get_user_kite_service
 from app.api.routes.session import require_auth
+from app.api.instrument_param import underlying_query
+from app.core.instruments import get_instrument
 from app.config import settings
 from loguru import logger
 
@@ -15,8 +17,8 @@ router = APIRouter(prefix="/strategy", tags=["strategy"])
 
 
 @router.get("/status")
-def get_status(user: User = Depends(require_auth)):
-    user_engine = engine_manager.get_engine(user.id)
+def get_status(user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
+    user_engine = engine_manager.get_engine(user.id, underlying)
     return user_engine.get_full_status()
 
 
@@ -24,22 +26,27 @@ def get_status(user: User = Depends(require_auth)):
 async def start_strategy(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_auth)
+    user: User = Depends(require_auth),
+    underlying: str = Depends(underlying_query)
 ):
-    user_engine = engine_manager.get_engine(user.id)
+    spec = get_instrument(underlying)
+    user_engine = engine_manager.get_engine(user.id, underlying)
     if user_engine.is_running:
         raise HTTPException(status_code=400, detail="Strategy is already running")
 
     # Load config from DB for this user
     cfg = db.query(StrategyConfig).filter(
         StrategyConfig.user_id == user.id,
+        StrategyConfig.underlying == underlying,
         StrategyConfig.is_active == True
     ).first()
     if not cfg:
-        raise HTTPException(status_code=400, detail="No active strategy config found. Set levels first.")
+        raise HTTPException(status_code=400, detail=f"No active {underlying} strategy config found. Set levels first.")
+    # paper_only instruments (BANKNIFTY) can never run live, whatever the saved config says
+    paper_trade = cfg.paper_trade or spec.paper_only
 
     # ── Subscription Gatekeeper Check ───────────────────────────────────────
-    if not cfg.paper_trade:
+    if not paper_trade:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         is_pro = user.subscription_tier == "PRO" and user.subscription_status == "ACTIVE"
@@ -56,7 +63,7 @@ async def start_strategy(
         "lot_size": cfg.lot_size,
         "target_points": float(cfg.target_points),
         "sl_points": float(cfg.sl_points),
-        "paper_trade": cfg.paper_trade,
+        "paper_trade": paper_trade,
         "squareoff_time": cfg.squareoff_time or "11:30",
         "no_entry_time": cfg.no_entry_time,
     }
@@ -66,7 +73,7 @@ async def start_strategy(
     user_kite = get_user_kite_service(user.id)
 
     passed, errors, warnings = run_safety_checks(
-        paper_trade=cfg.paper_trade,
+        paper_trade=paper_trade,
         kite_service=user_kite,
         strategy_config=config_dict,
     )
@@ -78,52 +85,54 @@ async def start_strategy(
         )
 
     # Wire KiteService into OrderManager for live trading
-    user_engine.order_manager.paper_trade = cfg.paper_trade
-    if not cfg.paper_trade:
+    user_engine.order_manager.paper_trade = paper_trade
+    if not paper_trade:
         user_engine.order_manager.kite = user_kite
     else:
         user_engine.order_manager.kite = None
 
-    user_engine.mock_mode = cfg.paper_trade
+    user_engine.mock_mode = paper_trade
     user_engine.load_config(config_dict)
     user_engine.start()
 
     # Seed initial NIFTY price from REST API if not yet received via WebSocket ticks
     if not user_engine.last_nifty_price and user_kite.is_authenticated():
         try:
-            spot_price = user_kite.get_nifty_spot_ltp()
+            spot_price = user_kite.get_spot_ltp(underlying)
             if spot_price:
                 await user_engine.on_nifty_tick(spot_price)
         except Exception as seed_err:
-            logger.warning(f"Failed to seed initial NIFTY price on start: {seed_err}")
+            logger.warning(f"Failed to seed initial {underlying} price on start: {seed_err}")
 
     # Broadcast status immediately so frontend updates state to running
-    nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
+    nifty_price = user_engine.last_nifty_price or spec.est_fallback_spot
     await user_engine._broadcast_status(nifty_price)
 
     # Start mock feed in background (paper trade mode only if live feed is not active)
-    mock_feed_active = cfg.paper_trade and not user_kite._ticker_running
+    mock_feed_active = paper_trade and not user_kite._ticker_running
     if mock_feed_active:
-        background_tasks.add_task(_run_mock_feed, user.id)
+        background_tasks.add_task(_run_mock_feed, user.id, underlying)
         logger.warning(
             f"User {user.id}: Live Kite feed not connected — falling back to SIMULATED "
-            f"(fake) NIFTY prices for paper trading, not real market data."
+            f"(fake) {underlying} prices for paper trading, not real market data."
         )
         warnings.append(
-            "⚠️ Live Kite feed not connected — using SIMULATED (fake) NIFTY prices, not real market data."
+            f"⚠️ Live Kite feed not connected — using SIMULATED (fake) {underlying} prices, not real market data."
         )
 
     return {
         "status": "started",
-        "paper_trade": cfg.paper_trade,
+        "underlying": underlying,
+        "paper_trade": paper_trade,
         "mock_feed_active": mock_feed_active,
         "warnings": warnings,
     }
 
 
 @router.post("/stop")
-async def stop_strategy(user: User = Depends(require_auth)):
-    user_engine = engine_manager.get_engine(user.id)
+async def stop_strategy(user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
+    spec = get_instrument(underlying)
+    user_engine = engine_manager.get_engine(user.id, underlying)
     try:
         user_engine.stop()
         user_engine.mock_feed.stop()
@@ -131,14 +140,15 @@ async def stop_strategy(user: User = Depends(require_auth)):
         logger.error(f"Error stopping strategy engine for user {user.id}: {e}")
 
     # Broadcast status immediately so frontend knows it is stopped
-    nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
+    nifty_price = user_engine.last_nifty_price or spec.est_fallback_spot
     await user_engine._broadcast_status(nifty_price)
     return {"status": "stopped"}
 
 
 @router.post("/emergency-exit")
-async def emergency_exit(user: User = Depends(require_auth)):
-    user_engine = engine_manager.get_engine(user.id)
+async def emergency_exit(user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
+    spec = get_instrument(underlying)
+    user_engine = engine_manager.get_engine(user.id, underlying)
     try:
         res = await user_engine.emergency_exit()
     except Exception as e:
@@ -148,67 +158,75 @@ async def emergency_exit(user: User = Depends(require_auth)):
         res = {"status": "emergency_exited_with_warnings", "detail": str(e)}
 
     # Broadcast status immediately so frontend knows it is stopped
-    nifty_price = user_engine.last_nifty_price or Decimal("23200.00")
+    nifty_price = user_engine.last_nifty_price or spec.est_fallback_spot
     await user_engine._broadcast_status(nifty_price)
     return res
 
 
 
 @router.post("/reset-daily")
-def daily_reset(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+def daily_reset(db: Session = Depends(get_db), user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
     """Manual daily reset."""
     from app.models.models import Trade, DailyPnL, AISuggestion, AuditLog
     from app.core.time_rules import today_ist
     from sqlalchemy import func
 
     # 1. Reset strategy engine in-memory state
-    user_engine = engine_manager.get_engine(user.id)
+    user_engine = engine_manager.get_engine(user.id, underlying)
     user_engine.daily_reset()
 
     # 2. Clear database records for today (to clear dashboard views)
     today = today_ist()
     try:
-        db.query(Trade).filter(Trade.user_id == user.id, Trade.trade_date == today).delete()
-        db.query(DailyPnL).filter(DailyPnL.user_id == user.id, DailyPnL.trade_date == today).delete()
-        db.query(AISuggestion).filter(AISuggestion.user_id == user.id, AISuggestion.trade_date == today).delete()
-        
-        # Clear audit logs created today for this user
-        db.query(AuditLog).filter(
-            AuditLog.user_id == user.id,
-            func.date(AuditLog.created_at) == today
+        db.query(Trade).filter(
+            Trade.user_id == user.id, Trade.underlying == underlying, Trade.trade_date == today
         ).delete()
+        db.query(DailyPnL).filter(
+            DailyPnL.user_id == user.id, DailyPnL.underlying == underlying, DailyPnL.trade_date == today
+        ).delete()
+        if underlying == "NIFTY":
+            # AI suggestions / audit logs carry no instrument; they belong to the NIFTY session
+            db.query(AISuggestion).filter(AISuggestion.user_id == user.id, AISuggestion.trade_date == today).delete()
+
+            # Clear audit logs created today for this user
+            db.query(AuditLog).filter(
+                AuditLog.user_id == user.id,
+                func.date(AuditLog.created_at) == today
+            ).delete()
         
         db.commit()
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database clear failed on reset: {str(e)}")
 
-    return {"status": "reset", "message": "Both CE and PE state machines reset and database records cleared for today"}
+    return {"status": "reset", "underlying": underlying, "message": "Both CE and PE state machines reset and database records cleared for today"}
 
 
 @router.post("/simulate-tick")
-async def simulate_tick(nifty_price: float, user: User = Depends(require_auth)):
+async def simulate_tick(nifty_price: float, user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
     """
     Manually push a NIFTY price tick through the user's strategy engine.
     """
-    user_engine = engine_manager.get_engine(user.id)
+    user_engine = engine_manager.get_engine(user.id, underlying)
     await user_engine.on_nifty_tick(Decimal(str(nifty_price)))
     return {"status": "tick_processed", "nifty_price": nifty_price, **user_engine.get_full_status()}
 
 
 @router.get("/safety-check")
-def safety_check(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+def safety_check(db: Session = Depends(get_db), user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
     """Run safety checks without starting. Returns errors and warnings."""
     from app.core.safety_checks import run_safety_checks
-    user_engine = engine_manager.get_engine(user.id)
+    spec = get_instrument(underlying)
+    user_engine = engine_manager.get_engine(user.id, underlying)
     user_kite = get_user_kite_service(user.id)
 
     cfg = db.query(StrategyConfig).filter(
         StrategyConfig.user_id == user.id,
+        StrategyConfig.underlying == underlying,
         StrategyConfig.is_active == True
     ).first()
 
-    paper_trade = cfg.paper_trade if cfg else settings.PAPER_TRADE
+    paper_trade = (cfg.paper_trade if cfg else settings.PAPER_TRADE) or spec.paper_only
     cfg_dict = None
     if cfg:
         cfg_dict = {
@@ -237,6 +255,6 @@ def safety_check(db: Session = Depends(get_db), user: User = Depends(require_aut
     }
 
 
-async def _run_mock_feed(user_id: int):
-    user_engine = engine_manager.get_engine(user_id)
+async def _run_mock_feed(user_id: int, underlying: str = "NIFTY"):
+    user_engine = engine_manager.get_engine(user_id, underlying)
     await user_engine.mock_feed.start()

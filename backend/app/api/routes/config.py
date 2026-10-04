@@ -7,6 +7,7 @@ from app.schemas.schemas import StrategyConfigCreate, StrategyConfigResponse, Ap
 from app.services.encryption import encrypt, decrypt, mask_key
 from app.core.engine_manager import engine_manager
 from app.api.routes.session import require_auth
+from app.api.instrument_param import underlying_query
 from loguru import logger
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -17,8 +18,11 @@ router = APIRouter(prefix="/config", tags=["config"])
 from datetime import datetime
 
 @router.get("/strategy", response_model=StrategyConfigResponse)
-def get_strategy_config(strategy_type: str = None, db: Session = Depends(get_db), user: User = Depends(require_auth)):
-    query = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id)
+def get_strategy_config(strategy_type: str = None, db: Session = Depends(get_db), user: User = Depends(require_auth), underlying: str = Depends(underlying_query)):
+    spec = get_instrument(underlying)
+    query = db.query(StrategyConfig).filter(
+        StrategyConfig.user_id == user.id, StrategyConfig.underlying == underlying
+    )
     if strategy_type:
         query = query.filter(StrategyConfig.strategy_type == strategy_type)
     cfg = query.order_by(StrategyConfig.id.desc()).first()
@@ -26,11 +30,21 @@ def get_strategy_config(strategy_type: str = None, db: Session = Depends(get_db)
         # Return a default initial config if none exists for this user
         now = datetime.utcnow()
         is_destiny = strategy_type == "DESTINY"
+        if underlying == "NIFTY":
+            r = (24100, 24200, 24300) if is_destiny else (23170, 23220, 23250)
+            s = (23900, 23800, 23700) if is_destiny else (23070, 23025, 22950)
+        else:
+            # Placeholder levels around the instrument's reference spot (user is expected to set their own)
+            ref = int(spec.est_fallback_spot)
+            step = spec.strike_step
+            r = (ref + 2 * step, ref + 4 * step, ref + 6 * step)
+            s = (ref - 2 * step, ref - 4 * step, ref - 6 * step)
         return StrategyConfigResponse(
             id=0,
-            r1=24100 if is_destiny else 23170, r2=24200 if is_destiny else 23220, r3=24300 if is_destiny else 23250,
-            s1=23900 if is_destiny else 23070, s2=23800 if is_destiny else 23025, s3=23700 if is_destiny else 22950,
-            lot_size=get_instrument().lot_size,
+            underlying=underlying,
+            r1=r[0], r2=r[1], r3=r[2],
+            s1=s[0], s2=s[1], s3=s[2],
+            lot_size=spec.lot_size,
             target_points=30,
             sl_points=10,
             paper_trade=True,
@@ -49,9 +63,12 @@ def get_strategy_config_history(
     to_date: str = None,
     limit: int = 100,
     db: Session = Depends(get_db),
-    user: User = Depends(require_auth)
+    user: User = Depends(require_auth),
+    underlying: str = Depends(underlying_query)
 ):
-    query = db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id)
+    query = db.query(StrategyConfig).filter(
+        StrategyConfig.user_id == user.id, StrategyConfig.underlying == underlying
+    )
     if from_date:
         query = query.filter(StrategyConfig.created_at >= f"{from_date} 00:00:00")
     if to_date:
@@ -62,18 +79,26 @@ def get_strategy_config_history(
 
 @router.post("/strategy", response_model=StrategyConfigResponse)
 def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(get_db), user: User = Depends(require_auth)):
-    # Deactivate existing configs for this user
-    db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).update({"is_active": False})
+    underlying = payload.underlying
+    spec = get_instrument(underlying)
+    # Instruments flagged paper_only (BANKNIFTY) are always saved as paper trading
+    paper_trade = True if spec.paper_only else payload.paper_trade
+
+    # Deactivate this user's existing configs for this instrument only
+    db.query(StrategyConfig).filter(
+        StrategyConfig.user_id == user.id, StrategyConfig.underlying == underlying
+    ).update({"is_active": False})
 
     cfg = StrategyConfig(
         user_id=user.id,
+        underlying=underlying,
         strategy_type=payload.strategy_type or "PYRAMID",
         r1=payload.r1, r2=payload.r2, r3=payload.r3,
         s1=payload.s1, s2=payload.s2, s3=payload.s3,
         lot_size=payload.lot_size,
         target_points=payload.target_points,
         sl_points=payload.sl_points,
-        paper_trade=payload.paper_trade,
+        paper_trade=paper_trade,
         squareoff_time=payload.squareoff_time,
         no_entry_time=payload.no_entry_time,
         is_active=True,
@@ -85,15 +110,14 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
     # Force re-instantiate / update user engine instance in EngineManager based on strategy_type
     was_running = False
     last_nifty = None
-    if user.id in engine_manager._engines:
-        old_engine = engine_manager._engines[user.id]
+    old_engine = engine_manager.remove_engine(user.id, underlying)
+    if old_engine is not None:
         was_running = getattr(old_engine, "is_running", False)
         last_nifty = getattr(old_engine, "last_nifty_price", None)
         if old_engine.is_running:
             old_engine.stop()
-        del engine_manager._engines[user.id]
 
-    user_engine = engine_manager.get_engine(user.id)
+    user_engine = engine_manager.get_engine(user.id, underlying)
     if was_running:
         user_engine.is_running = True
     if last_nifty is not None:
@@ -122,7 +146,8 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
     try:
         from app.services.kite_service import get_user_kite_service
         ks = get_user_kite_service(user.id)
-        if ks._ticker_running:
+        # (non-NIFTY engines register their own feed in EngineManager.get_engine)
+        if underlying == "NIFTY" and ks._ticker_running:
             ks.update_callbacks(user_engine.on_nifty_tick, user_engine.on_option_tick)
     except Exception as e:
         logger.warning(f"Failed to update KiteTicker callbacks for user {user.id}: {e}")
@@ -134,7 +159,7 @@ def create_strategy_config(payload: StrategyConfigCreate, db: Session = Depends(
     except Exception as ex:
         logger.error(f"Error updating logging window on config change: {ex}")
 
-    logger.info(f"User {user.username} strategy config saved: R1={cfg.r1} R2={cfg.r2} R3={cfg.r3} | S1={cfg.s1} S2={cfg.s2} S3={cfg.s3} | paper_trade={cfg.paper_trade}")
+    logger.info(f"User {user.username} {underlying} strategy config saved: R1={cfg.r1} R2={cfg.r2} R3={cfg.r3} | S1={cfg.s1} S2={cfg.s2} S3={cfg.s3} | paper_trade={cfg.paper_trade}")
     return cfg
 
 

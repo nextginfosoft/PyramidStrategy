@@ -224,6 +224,7 @@ def sync_levels_globally(
     for user in active_users:
         current_cfg = db.query(StrategyConfig).filter(
             StrategyConfig.user_id == user.id,
+            StrategyConfig.underlying == "NIFTY",
             StrategyConfig.is_active == True
         ).order_by(StrategyConfig.id.desc()).first()
 
@@ -235,7 +236,9 @@ def sync_levels_globally(
         no_entry_time = current_cfg.no_entry_time if current_cfg else None
         strategy_type = payload.strategy_type or (current_cfg.strategy_type if current_cfg else "PYRAMID")
 
-        db.query(StrategyConfig).filter(StrategyConfig.user_id == user.id).update({"is_active": False})
+        db.query(StrategyConfig).filter(
+            StrategyConfig.user_id == user.id, StrategyConfig.underlying == "NIFTY"
+        ).update({"is_active": False})
 
         new_cfg = StrategyConfig(
             user_id=user.id,

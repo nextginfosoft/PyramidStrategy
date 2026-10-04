@@ -10,6 +10,7 @@ from loguru import logger
 from app.db.database import get_db
 from app.models.models import DailyPnL, User
 from app.api.routes.session import require_auth
+from app.api.instrument_param import underlying_query
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -20,12 +21,14 @@ def get_pnl_summary(
     end_date: date = Query(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_auth),
+    underlying: str = Depends(underlying_query),
 ):
     # 1. Query all daily records inside the selected range
     records = (
         db.query(DailyPnL)
         .filter(
             DailyPnL.user_id == user.id,
+            DailyPnL.underlying == underlying,
             DailyPnL.trade_date >= start_date,
             DailyPnL.trade_date <= end_date,
         )
@@ -110,11 +113,13 @@ def export_pnl_csv(
     end_date: date = Query(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_auth),
+    underlying: str = Depends(underlying_query),
 ):
     records = (
         db.query(DailyPnL)
         .filter(
             DailyPnL.user_id == user.id,
+            DailyPnL.underlying == underlying,
             DailyPnL.trade_date >= start_date,
             DailyPnL.trade_date <= end_date,
         )
