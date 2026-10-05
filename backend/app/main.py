@@ -305,6 +305,33 @@ def schedule_jobs():
 
     scheduler.add_job(weekly_reporting, "cron", day_of_week="mon", hour=9, minute=0, id="weekly_report")
 
+    # After the close: record today's option prices from Kite for the backtest.
+    # Kite only serves history for contracts that are still listed, so this has
+    # to happen while today's contract is alive - it can't be done later. Any
+    # authenticated user's Kite session will do (option prices are global).
+    async def capture_option_history_job():
+        from app.core.time_rules import today_ist
+        from app.services.kite_service import _user_instances
+        from app.services.option_history import capture_day
+
+        today = today_ist()
+        if today.weekday() >= 5:
+            return
+        kite_serv = next((k for k in list(_user_instances.values()) if k.is_authenticated()), None)
+        if kite_serv is None:
+            logger.warning("Option history capture skipped: no authenticated Kite session")
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, capture_day, kite_serv, today)
+        except Exception as e:
+            logger.error(f"Option history capture job failed: {e}")
+
+    scheduler.add_job(
+        capture_option_history_job, "cron", day_of_week="mon-fri", hour=15, minute=45,
+        id="option_history_capture",
+    )
+
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -507,6 +534,9 @@ def _load_startup_config():
                     "sl_points": float(cfg.sl_points),
                     "paper_trade": cfg.paper_trade,
                     "no_entry_time": cfg.no_entry_time,
+                    "ratchet_step_points": cfg.ratchet_step_points,
+                    "r_level_enabled": cfg.r_level_enabled,
+                    "s_level_enabled": cfg.s_level_enabled,
                 })
                 logger.info(f"User {cfg.user_id}: Strategy config loaded from DB on startup")
     except Exception as e:
