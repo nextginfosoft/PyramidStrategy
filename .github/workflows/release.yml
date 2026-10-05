@@ -55,7 +55,7 @@ jobs:
 
       # --- 4. CREATE GITHUB RELEASE & UPLOAD ---
       - name: Create Release and Upload Asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/PyramidStrategy_Windows.zip
           draft: false
