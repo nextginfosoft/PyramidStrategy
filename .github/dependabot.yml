@@ -1,0 +1,52 @@
+# Dependabot version updates. PRs target `dev` (the integration branch), never `main`.
+# Note: GitHub only reads this file from the default branch, so it takes effect
+# once it has been promoted to `main`.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: saturday
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, backend]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: saturday
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, frontend]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: saturday
+    labels: [dependencies, ci]
+
+  - package-ecosystem: docker
+    directory: /backend
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: saturday
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /frontend
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: saturday
+    labels: [dependencies, docker]
