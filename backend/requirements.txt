@@ -1,7 +1,7 @@
 # Web framework
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
-python-multipart>=0.0.9
+python-multipart>=0.0.32
 
 # Database
 # Capped below 2.1: SQLAlchemy 2.1 makes psycopg (v3) the default driver for plain
