@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Describe what you would like to happen, with an example if possible.
+    validations:
+      required: true
+  - type: dropdown
+    id: live-impact
+    attributes:
+      label: Does it change live trading behaviour?
+      description: Changes to entries, exits, order placement or config loading need a live-market test on staging first.
+      options: ["No - UI, reporting or backtest only", "Yes - changes live trading", "Not sure"]
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
