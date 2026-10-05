@@ -52,6 +52,7 @@ class DestinyStrategyEngine:
         self.s_level_enabled: bool = True  # False = Support side never triggers an entry
 
         self.last_nifty_price: Optional[Decimal] = None
+        self._squareoff_in_progress: bool = False  # guards tick-path vs scheduler square-off overlap
         self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
         self._option_ltp: Dict[str, Decimal] = {}
 
@@ -502,7 +503,7 @@ class DestinyStrategyEngine:
         # Rule 3: 3:20 PM Square Off
         sq_h, sq_m = map(int, self.squareoff_time_str.split(":"))
         if current_time >= time(sq_h, sq_m) and getattr(settings, "APP_ENV", "") != "testing":
-            await self._squareoff_all("3:20 PM Cutoff Time Reached", nifty_ltp)
+            await self._run_squareoff("3:20 PM Cutoff Time Reached", nifty_ltp)
             return
 
         # Check Active Trades SL & Target
@@ -946,6 +947,28 @@ class DestinyStrategyEngine:
             )
         except Exception as e:
             logger.debug(f"[DestinyEngine] AI notification task (non-critical): {e}")
+
+    async def _run_squareoff(self, reason: str, nifty_ltp: Decimal):
+        """Single entry point for square-off, shared by the tick path and the scheduler
+        backstop, so an overlap in the same minute can never close or notify twice."""
+        if self._squareoff_in_progress:
+            return
+        self._squareoff_in_progress = True
+        try:
+            await self._squareoff_all(reason, nifty_ltp)
+        finally:
+            self._squareoff_in_progress = False
+
+    async def _force_squareoff(self):
+        """Scheduler backstop (main.py check_time_triggers calls this at the square-off
+        minute). The tick path only squares off while NIFTY ticks are arriving; if the
+        feed has dropped, this still closes anything open at the configured time."""
+        if not self.is_running:
+            return
+        # Price is only recorded on the exit order and the AI note; the exit price itself
+        # comes from get_option_ltp (live option LTP, cached tick, or estimate).
+        nifty = self.last_nifty_price or self.r_level or self.s_level or Decimal("0")
+        await self._run_squareoff("Scheduler square-off", nifty)
 
     async def _squareoff_all(self, reason: str, nifty_ltp: Decimal):
         for side in ["PE", "CE"]:
