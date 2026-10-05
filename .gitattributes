@@ -1,2 +1,16 @@
-# PDFs are binary: never normalise line endings
+# Normalise line endings: LF in the repository and on checkout, so Windows
+# contributors (core.autocrlf) never produce whitespace-only diffs.
+* text=auto eol=lf
+
+# Windows scripts must keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files: never normalise or diff as text
 *.pdf binary
+*.docx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
