@@ -22,6 +22,7 @@ Promoted to `dev`, `main` and `destiny` on 2026-10-05 after a live market sessio
 - The Destiny engine on `dev` was brought to parity with the `destiny` branch (post-exit tracking, daily reset, active-range tracking). (#36)
 
 ### Fixed
+- The scheduler's square-off backstop now works for Destiny. It called `_force_squareoff()`, which only the Pyramid engine had, so at square-off time it logged an error and did nothing; a Destiny position could stay open if NIFTY ticks had stopped arriving. Both the tick path and the scheduler now go through one guarded entry point, so an overlap cannot square off or notify twice.
 - The dashboard now updates instantly on a Destiny trade: the engine broadcasts `trade_event`, the type the frontend listens for. (#45)
 - Admin "sync levels" no longer drops its writes when engines are re-created inside the same transaction. (#43)
 - `sqlalchemy` is capped below 2.1, which defaulted plain `postgresql://` URLs to a driver the app does not ship and crash-looped the backend. (#41)
