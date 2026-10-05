@@ -1,115 +1,123 @@
-# PyramidStrategy 📈
+# PyramidStrategy / DestinyAI
 
-Automated NIFTY options trading system implementing the intraday multi-level pyramid averaging strategy. Designed with real-time state tracking, interactive web dashboard, automated Kite brokerage API integration, and dynamic multi-channel reporting.
+Automated **NIFTY options** trading platform with two level-based intraday strategies, a real-time dashboard,
+Zerodha Kite integration, historical backtesting and Telegram / WhatsApp reporting.
 
-## 🌟 Key Features
+> **Trading involves risk of loss.** Run in **Paper** mode first. Nothing here is investment advice.
 
-- **Multi-Level Averaging Strategy (L1 ➔ L2 ➔ L3)**: Intraday CE and PE legs are managed independently. Strike prices are locked at first entry, and positions are averaged down at custom configured price intervals.
-- **Dynamic Risk Management (Target & SL)**:
-  - **Dynamic Targets**: Calculated off the cumulative position average entry price (e.g., `+20 points`).
-  - **Dynamic Stop Loss**: Automatically activated at Level 3 entries (calculated as L3 entry price `-10 points`) to protect capital.
-- **Automated Kite Login & Token Management**: Auto-handles Zerodha Kite Connect logins and session token storage.
-- **Instant Telegram & WhatsApp Notifications**:
-  - **Engine Starts**: Alerts dispatched immediately when the trading engine is launched from the UI.
-  - **Daily EOD PDF Reports**: Automatically compiles a professional PDF digest containing performance charts, executive trade logs, and rule-trigger audits, sent to Telegram/WhatsApp daily.
-- **Real-Time Web Dashboard**: Clean modern UI with live states, P&L trackers, status logs, configuration settings, and manual controls.
+## Strategies
 
-## 📸 Snapshots
+| | **Destiny** | **Pyramid** |
+|---|---|---|
+| Idea | Two levels you choose: buy a **Put** when NIFTY reaches Resistance, a **Call** when it reaches Support | Three resistance and three support levels; positions scale in and average at each level |
+| Trades per day | **One** | Up to three levels per side |
+| Risk | Fixed stop-loss from the fill price; target flat or with an optional **ratchet** that lets winners run | Target off the average entry price; stop-loss activates at level 3 |
+| Default square-off | 15:20 IST | 11:30 IST |
+| Optional | Run Resistance-only or Support-only, no-entry time, ratchet step | No-entry time |
 
-### Frontend Dashboard
-![Frontend dashboard](docs/screenshots/frontend-dashboard.png)
+All risk and reward is measured in **option premium points**. Strikes are slightly out of the money (Put = ATM + 50, Call = ATM − 50) on the nearest weekly expiry, which rolls to the next week on expiry day. Exits are market orders.
 
-### Settings Modal
-![Settings modal](docs/screenshots/settings-modal.png)
+Full walkthrough with worked examples: [`docs/Destiny_Strategy_Guide.pdf`](docs/Destiny_Strategy_Guide.pdf).
 
----
+## Features
 
-## 🛠️ Tech Stack
-- **Backend**: FastAPI, SQLAlchemy, SQLite, APScheduler, Uvicorn, FPDF2 (PDF generation), Loguru.
-- **Frontend**: React 18, Vite, TypeScript, TailwindCSS / Custom CSS, Axios, Lucide React.
-- **Notification Services**: Twilio API (WhatsApp), Telegram Bot API.
+- **Live dashboard**: levels, positions, P&L, trade log, health of the Kite feed, instant updates over WebSocket.
+- **Zerodha Kite**: automated login and token handling, live ticks, order placement (paper or live).
+- **Backtesting**: replay historical days against a configuration, compare up to two alternates, price options from recorded Kite data or a Black-Scholes estimate.
+- **Notifications**: Telegram and WhatsApp alerts for engine start/stop, entries, exits and a daily end-of-day PDF report.
+- **AI observer** (optional): OpenAI, Anthropic or Gemini commentary and pre-market briefs.
+- **Multi-user**: per-user strategy configuration and engines, admin panel, subscriptions.
 
----
+## Architecture
 
-## 🚀 Getting Started
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-
-### Setup
-
-#### 1. Clone & Configuration
-Clone the repository and set up backend configuration:
-```powershell
-# Copy environment configuration
-cd backend
-copy .env.example .env
-# Edit .env with your credentials (Kite API, Telegram, WhatsApp/Twilio, etc.)
+```
+React (Vite) ──REST + WebSocket──▶ FastAPI ──▶ PostgreSQL (SQLite for local/tests)
+                                      │   ├──▶ Redis (fakeredis for local/tests)
+                                      │   └──▶ APScheduler (daily jobs)
+                                      └──▶ Zerodha Kite Connect (REST + KiteTicker)
 ```
 
-#### 2. Backend Setup
-```powershell
-python -m venv venv
-venv\Scripts\activate
+- **Backend**: FastAPI, SQLAlchemy, APScheduler, Loguru, KiteConnect, FPDF2.
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand.
+- **Deployment**: Docker Compose (`db`, `redis`, `backend`, `frontend`) behind a reverse proxy.
+
+Source layout: `backend/app/core` (strategy engines, state machine, time rules), `backend/app/api` (routes),
+`backend/app/services` (Kite, notifications, backtesting), `frontend/src/components`, `docs/`.
+
+## Getting started
+
+### Run with Docker
+
+1. Create a `.env` file next to `docker-compose.yml` with **strong, unique values** (never reuse examples or defaults):
+
+   ```bash
+   POSTGRES_PASSWORD=<random>
+   SECRET_KEY=<random, 48+ chars>
+   ENCRYPTION_KEY=<random, 32 chars>
+   ```
+
+   Generate them with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+   Keep this file out of version control, and see [SECURITY.md](SECURITY.md).
+
+2. Start everything:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   The compose file does not publish any ports. Put a reverse proxy in front of the `frontend` service, or add a
+   `docker-compose.override.yml` that publishes it, and never publish the database or Redis to the internet.
+
+### Local development
+
+Prerequisites: Python 3.11+ and Node.js 20+.
+
+```bash
+# Backend (uses a local SQLite file by default)
+cd backend
+python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-```
+cp .env.example .env                                  # Windows: copy .env.example .env
+uvicorn app.main:app --reload --port 8000             # API docs at http://localhost:8000/docs
 
-#### 3. Frontend Setup
-```powershell
-cd ../frontend
-npm install
-```
-
----
-
-## 💻 Running the App
-
-### Start Backend
-```powershell
-cd backend
-venv\Scripts\activate
-python -m uvicorn app.main:app --reload --port 8000
-```
-- **API Base URL**: `http://localhost:8000`
-- **Interactive OpenAPI Documentation**: `http://localhost:8000/docs`
-
-### Start Frontend
-```powershell
+# Frontend (in a second terminal)
 cd frontend
-npm run dev
+npm ci
+npm run dev                                           # http://localhost:5173
 ```
-- **Web App URL**: `http://localhost:5173`
 
----
+On Windows, `start.bat` launches both. Variable names for `.env` are listed in [`backend/.env.example`](backend/.env.example).
+Kite, Telegram, WhatsApp and AI keys are optional for local work; `PAPER_TRADE=true` simulates every order.
 
-## 🧪 Testing
+## Testing
 
-### Running all backend tests
-```powershell
+```bash
 cd backend
-venv\Scripts\activate
-pytest tests/ -v
+DATABASE_URL="sqlite:///:memory:" USE_FAKE_REDIS=true MOCK_TIME=10:00 pytest tests/ -v
+
+cd ../frontend
+npm run build      # TypeScript check + production build
+npm run lint
 ```
 
-### Running specific tests
-```powershell
-# Time rules validation
-pytest tests/test_time_rules.py -v
+## CI/CD
 
-# SL trigger validations
-pytest tests/test_state_machine.py -k "test_sl_active_at_l3" -v
-```
+GitHub Actions runs flake8, the backend tests, the frontend build and Docker image builds on every pull request.
 
----
+| Event | Result |
+|---|---|
+| PR into `dev` or `main` | CI only |
+| Push to `dev` | CI, then deploy to staging |
+| Push to `main` | Deploy to production |
+| Push to `destiny` | CI, then deploy the Destiny server |
+| Tag `v*` | Build the Windows executable and publish a release |
 
-## 📝 Key Trading Rules
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch and promotion flow.
 
-- **Independent Leg Tracking**: CE and PE legs track separate, isolated status machines.
-- **Strict Time Rules**:
-  - **Start Time**: No positions opened before **09:15 AM IST**.
-  - **Entry Cutoff**: No new entries allowed after **11:15 AM IST**.
-  - **Auto-Squareoff**: Force exits all active options positions by **11:30 AM IST**.
-- **Broker Details**: All exit orders are executed as **Market Orders** to ensure instant execution.
-- **Expiry Rules**: Trades on Tuesdays automatically roll over to the next week's expiry contracts to avoid liquidity issues on expiry day.
+## Documentation
 
+See the [documentation index](docs/README.md). Notable changes are in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+Proprietary. All rights reserved. See [LICENSE](LICENSE).

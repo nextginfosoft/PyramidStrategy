@@ -34,6 +34,16 @@ class StrategyConfig(Base):
     paper_trade = Column(Boolean, default=True)
     squareoff_time = Column(String(5), default="11:30")
     no_entry_time = Column(String(5), nullable=True)  # HH:MM; NULL = legacy cutoff rule
+    # Destiny only, opt-in. NULL = today's flat target exit, unchanged. Once set: hitting
+    # target_points no longer exits — it locks that price as a floor and the trade keeps
+    # running, ratcheting the floor up every further ratchet_step_points, closing only when
+    # price drops back below the current floor.
+    ratchet_step_points = Column(Numeric(6, 2), nullable=True)
+    # Destiny only, opt-out. NULL/True = level active (today's behavior, unchanged).
+    # Explicit False = this side never triggers an entry, letting the user run with
+    # only Resistance or only Support configured instead of both.
+    r_level_enabled = Column(Boolean, nullable=True)
+    s_level_enabled = Column(Boolean, nullable=True)
     is_active = Column(Boolean, default=False)
     strategy_type = Column(String(50), default="PYRAMID", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -139,6 +149,27 @@ class AuditLog(Base):
     nifty_price = Column(Numeric(10, 2))
     details = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class OptionMinutePrices(Base):
+    """One day of 1-minute closes for one NIFTY option contract, recorded from
+    Kite so the backtest can replay real premiums. `closes` is a 375-slot list
+    (slot 0 = the 9:15 bar); a slot is null where the contract had not traded
+    yet. Global, not per-user - option prices are the same for everyone."""
+    __tablename__ = "option_minute_prices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trade_date = Column(Date, nullable=False, index=True)
+    symbol = Column(String(40), nullable=False)
+    side = Column(String(2), nullable=False)
+    strike = Column(Integer, nullable=False)
+    expiry = Column(Date, nullable=False)
+    closes = Column(JSON, nullable=False)
+    captured_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("trade_date", "symbol", name="uq_option_prices_date_symbol"),
+    )
 
 
 class MarketNewsAnalysis(Base):

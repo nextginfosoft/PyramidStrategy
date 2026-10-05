@@ -37,10 +37,15 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
     sl_points: cfg?.sl_points ?? 10,
     squareoff_time: cfg?.squareoff_time ?? '11:30',
     no_entry_time: cfg?.no_entry_time ?? '',
+    ratchet_step_points: cfg?.ratchet_step_points != null ? String(cfg.ratchet_step_points) : '',
+    r_level_enabled: cfg?.r_level_enabled !== false,
+    s_level_enabled: cfg?.s_level_enabled !== false,
   })
   const isFullTime = (t: string) => /^\d{2}:\d{2}$/.test(t)
   const noEntryAfterSquareoff =
     isFullTime(levels.no_entry_time) && isFullTime(levels.squareoff_time) && levels.no_entry_time > levels.squareoff_time
+  const ratchetStepInvalid = levels.ratchet_step_points.trim() !== '' && !(Number(levels.ratchet_step_points) > 0)
+  const bothLevelsDisabled = levels.strategy_type === 'DESTINY' && !levels.r_level_enabled && !levels.s_level_enabled
 
   const [zerodha, setZerodha] = useState({ api_key: '', api_secret: '', username: '', password: '', totp_secret: '' })
   const [ai, setAi] = useState({ provider: 'openai', api_key: '' })
@@ -132,6 +137,9 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
         sl_points: cfg.sl_points,
         squareoff_time: cfg.squareoff_time ?? '11:30',
         no_entry_time: cfg.no_entry_time ?? '',
+        ratchet_step_points: cfg.ratchet_step_points != null ? String(cfg.ratchet_step_points) : '',
+        r_level_enabled: cfg.r_level_enabled !== false,
+        s_level_enabled: cfg.s_level_enabled !== false,
       })
       if (cfg.paper_trade !== undefined) {
         setPaperTrade(cfg.paper_trade)
@@ -231,6 +239,16 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
         showStatus('✗ Resistance levels must be ascending (R1 < R2 < R3)', false)
         return
       }
+    }
+
+    if (strategy_type === 'DESTINY' && ratchetStepInvalid) {
+      showStatus('✗ Ratchet step must be greater than 0 (or left blank)', false)
+      return
+    }
+
+    if (bothLevelsDisabled) {
+      showStatus('✗ At least one of Resistance or Support must stay enabled', false)
+      return
     }
 
     saveLevels.mutate({
@@ -471,9 +489,12 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
                           no_entry_time: existing?.no_entry_time ?? '',
+                          ratchet_step_points: existing?.ratchet_step_points != null ? String(existing.ratchet_step_points) : '',
+                          r_level_enabled: existing?.r_level_enabled !== false,
+                          s_level_enabled: existing?.s_level_enabled !== false,
                         })
                       } catch {
-                        setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                        setLevels(p => ({ ...p, strategy_type: 'PYRAMID', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20', ratchet_step_points: '', r_level_enabled: true, s_level_enabled: true }))
                       }
                     }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
@@ -503,9 +524,12 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                           sl_points: existing?.sl_points ?? 10,
                           squareoff_time: existing?.squareoff_time ?? '15:20',
                           no_entry_time: existing?.no_entry_time ?? '',
+                          ratchet_step_points: existing?.ratchet_step_points != null ? String(existing.ratchet_step_points) : '',
+                          r_level_enabled: existing?.r_level_enabled !== false,
+                          s_level_enabled: existing?.s_level_enabled !== false,
                         })
                       } catch {
-                        setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20' }))
+                        setLevels(p => ({ ...p, strategy_type: 'DESTINY', lot_size: 65, target_points: 30, sl_points: 10, squareoff_time: '15:20', ratchet_step_points: '', r_level_enabled: true, s_level_enabled: true }))
                       }
                     }}
                     className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border flex flex-col items-start ${
@@ -568,11 +592,24 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   
                   {/* Bearish Levels card */}
-                  <div className="bg-red-950/5 border border-red-900/20 rounded-xl p-4 space-y-3">
-                    <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 border-b border-red-900/20 pb-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                      {levels.strategy_type === 'DESTINY' ? 'Resistance Level (R)' : 'Bearish Levels (Resistance / PE)'}
-                    </span>
+                  <div className={`bg-red-950/5 border border-red-900/20 rounded-xl p-4 space-y-3 transition-opacity ${levels.strategy_type === 'DESTINY' && !levels.r_level_enabled ? 'opacity-50' : ''}`}>
+                    <div className="flex items-center justify-between border-b border-red-900/20 pb-2">
+                      <span className="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                        {levels.strategy_type === 'DESTINY' ? 'Resistance Level (R)' : 'Bearish Levels (Resistance / PE)'}
+                      </span>
+                      {levels.strategy_type === 'DESTINY' && (
+                        <label className="flex items-center gap-1.5 text-[9px] text-navy-300 font-bold uppercase cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={levels.r_level_enabled}
+                            onChange={e => setLevels(p => ({ ...p, r_level_enabled: e.target.checked }))}
+                            className="accent-red-500"
+                          />
+                          Enabled
+                        </label>
+                      )}
+                    </div>
                     <div className={`grid ${levels.strategy_type === 'DESTINY' ? 'grid-cols-1' : 'grid-cols-3'} gap-2`}>
                       {(levels.strategy_type === 'DESTINY' ? (['r1'] as const) : (['r1', 'r2', 'r3'] as const)).map(k => (
                         <label key={k} className="block space-y-1">
@@ -583,7 +620,8 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                             type="number"
                             required
                             step="any"
-                            className="w-full bg-navy-900 border border-navy-700 focus:border-red-500/70 focus:ring-1 focus:ring-red-500/30 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all"
+                            disabled={levels.strategy_type === 'DESTINY' && !levels.r_level_enabled}
+                            className="w-full bg-navy-900 border border-navy-700 focus:border-red-500/70 focus:ring-1 focus:ring-red-500/30 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all disabled:cursor-not-allowed"
                             value={levels[k]}
                             onChange={e => setLevels(p => ({ ...p, [k]: +e.target.value }))}
                           />
@@ -593,11 +631,24 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                   </div>
 
                   {/* Bullish Levels card */}
-                  <div className="bg-green-950/5 border border-green-900/20 rounded-xl p-4 space-y-3">
-                    <span className="text-xs font-bold text-green-400 flex items-center gap-1.5 border-b border-green-900/20 pb-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                      {levels.strategy_type === 'DESTINY' ? 'Support Level (S)' : 'Bullish Levels (Support / CE)'}
-                    </span>
+                  <div className={`bg-green-950/5 border border-green-900/20 rounded-xl p-4 space-y-3 transition-opacity ${levels.strategy_type === 'DESTINY' && !levels.s_level_enabled ? 'opacity-50' : ''}`}>
+                    <div className="flex items-center justify-between border-b border-green-900/20 pb-2">
+                      <span className="text-xs font-bold text-green-400 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                        {levels.strategy_type === 'DESTINY' ? 'Support Level (S)' : 'Bullish Levels (Support / CE)'}
+                      </span>
+                      {levels.strategy_type === 'DESTINY' && (
+                        <label className="flex items-center gap-1.5 text-[9px] text-navy-300 font-bold uppercase cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={levels.s_level_enabled}
+                            onChange={e => setLevels(p => ({ ...p, s_level_enabled: e.target.checked }))}
+                            className="accent-green-500"
+                          />
+                          Enabled
+                        </label>
+                      )}
+                    </div>
                     <div className={`grid ${levels.strategy_type === 'DESTINY' ? 'grid-cols-1' : 'grid-cols-3'} gap-2`}>
                       {(levels.strategy_type === 'DESTINY' ? (['s1'] as const) : (['s1', 's2', 's3'] as const)).map(k => (
                         <label key={k} className="block space-y-1">
@@ -608,7 +659,8 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                             type="number"
                             required
                             step="any"
-                            className="w-full bg-navy-900 border border-navy-700 focus:border-green-500/70 focus:ring-1 focus:ring-green-500/30 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all"
+                            disabled={levels.strategy_type === 'DESTINY' && !levels.s_level_enabled}
+                            className="w-full bg-navy-900 border border-navy-700 focus:border-green-500/70 focus:ring-1 focus:ring-green-500/30 rounded px-2.5 py-1.5 text-xs text-white font-mono transition-all disabled:cursor-not-allowed"
                             value={levels[k]}
                             onChange={e => setLevels(p => ({ ...p, [k]: +e.target.value }))}
                           />
@@ -696,6 +748,39 @@ export function Settings({ onClose, user }: { onClose: () => void; user?: UserSe
                         {levels.no_entry_time ? 'All positions closed at this time' : 'Cutoff = 15m prior'}
                       </span>
                     </div>
+
+                    {levels.strategy_type === 'DESTINY' && (
+                      <div className="block space-y-1">
+                        <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                          <span>Ratchet Step</span>
+                          <span className="text-[9px] text-navy-400 font-normal">(optional)</span>
+                        </span>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="10"
+                            title="Points beyond target to lock-and-extend by. Leave blank to keep the flat target exit."
+                            className={`w-full bg-navy-900 border rounded pl-8 pr-3 py-1.5 text-xs text-white font-mono ${
+                              ratchetStepInvalid
+                                ? 'border-red-500 focus:border-red-400'
+                                : 'border-emerald-500/50 focus:border-emerald-400'
+                            }`}
+                            value={levels.ratchet_step_points}
+                            onChange={e => setLevels(p => ({ ...p, ratchet_step_points: e.target.value }))}
+                          />
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-400 text-xs">🪜</span>
+                        </div>
+                        <span className={`text-[9px] block ${ratchetStepInvalid ? 'text-red-400' : 'text-emerald-400/80'}`}>
+                          {ratchetStepInvalid
+                            ? 'Must be greater than 0'
+                            : levels.ratchet_step_points
+                              ? 'Lock & extend after target'
+                              : 'Blank = flat exit at target'}
+                        </span>
+                      </div>
+                    )}
 
                     <div className="block space-y-1 col-start-4">
                       <span className="text-[10px] text-navy-300 font-medium">No Entry Time (optional)</span>

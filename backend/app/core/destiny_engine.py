@@ -47,6 +47,9 @@ class DestinyStrategyEngine:
         self.paper_trade: bool = True
         self.squareoff_time_str: str = "15:20"
         self.no_entry_time_str: Optional[str] = None  # None = legacy cutoff rule
+        self.ratchet_step_pts: Optional[Decimal] = None  # None = legacy flat target exit
+        self.r_level_enabled: bool = True  # False = Resistance side never triggers an entry
+        self.s_level_enabled: bool = True  # False = Support side never triggers an entry
 
         self.last_nifty_price: Optional[Decimal] = None
         self.nifty_prev_close: Optional[Decimal] = Decimal("24175.70")
@@ -125,6 +128,10 @@ class DestinyStrategyEngine:
                             "entry_price": Decimal(str(t.avg_price)) if t.avg_price else Decimal("100.00"),
                             "target_price": Decimal(str(t.avg_price or 100)) + self.target_pts,
                             "sl_price": Decimal(str(t.avg_price or 100)) - self.sl_pts,
+                            # Not persisted pre-restart, so a trade already ratcheting when
+                            # the process restarts comes back unarmed (resets to the base
+                            # target) — a narrow mid-day-restart tradeoff; SL is unaffected.
+                            "locked_floor": None,
                             "qty": t.qty or self.lot_size,
                             "expiry": str(t.expiry) if t.expiry else "",
                             "entry_time": t.created_at.isoformat() if t.created_at else datetime.now().isoformat(),
@@ -219,6 +226,13 @@ class DestinyStrategyEngine:
                 self.squareoff_time_str = str(config_dict["squareoff_time"])
             if "no_entry_time" in config_dict:
                 self.no_entry_time_str = str(config_dict["no_entry_time"]) if config_dict["no_entry_time"] else None
+            if "ratchet_step_points" in config_dict:
+                rsp = config_dict["ratchet_step_points"]
+                self.ratchet_step_pts = Decimal(str(rsp)) if rsp else None
+            if "r_level_enabled" in config_dict:
+                self.r_level_enabled = config_dict["r_level_enabled"] is not False
+            if "s_level_enabled" in config_dict:
+                self.s_level_enabled = config_dict["s_level_enabled"] is not False
         else:
             self._load_config()
 
@@ -245,6 +259,9 @@ class DestinyStrategyEngine:
                 self.order_manager.paper_trade = self.paper_trade
                 self.squareoff_time_str = config.squareoff_time or "15:20"
                 self.no_entry_time_str = config.no_entry_time or None
+                self.ratchet_step_pts = Decimal(str(config.ratchet_step_points)) if config.ratchet_step_points else None
+                self.r_level_enabled = config.r_level_enabled is not False
+                self.s_level_enabled = config.s_level_enabled is not False
             else:
                 logger.warning(f"[DestinyEngine] User {self.user_id}: No StrategyConfig found in DB.")
         finally:
@@ -442,6 +459,8 @@ class DestinyStrategyEngine:
                 "paper_trade": self.paper_trade,
                 "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str, no_entry_time_str=self.no_entry_time_str),
                 "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
+                "r_level_enabled": self.r_level_enabled,
+                "s_level_enabled": self.s_level_enabled,
                 "ce": ce_status,
                 "pe": pe_status,
                 "health": ks.get_status(),
@@ -505,14 +524,14 @@ class DestinyStrategyEngine:
                 return
 
         # Entry Case 1: PE Strategy (Resistance R crossover: prev_nifty < R and nifty_ltp >= R)
-        if self.r_level and not self.r_level_completed and not self.s_level_completed and not self.active_pe_trade and not self.active_ce_trade:
+        if self.r_level and self.r_level_enabled and not self.r_level_completed and not self.s_level_completed and not self.active_pe_trade and not self.active_ce_trade:
             if prev_nifty is not None and prev_nifty < self.r_level and nifty_ltp >= self.r_level:
                 await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
             elif prev_nifty is None and nifty_ltp >= self.r_level:
                 await self._enter_trade(side="PE", nifty_ltp=nifty_ltp, trigger_level=self.r_level)
 
         # Entry Case 2: CE Strategy (Support S crossover: prev_nifty > S and nifty_ltp <= S)
-        if self.s_level and not self.s_level_completed and not self.r_level_completed and not self.active_ce_trade and not self.active_pe_trade:
+        if self.s_level and self.s_level_enabled and not self.s_level_completed and not self.r_level_completed and not self.active_ce_trade and not self.active_pe_trade:
             if prev_nifty is not None and prev_nifty > self.s_level and nifty_ltp <= self.s_level:
                 await self._enter_trade(side="CE", nifty_ltp=nifty_ltp, trigger_level=self.s_level)
             elif prev_nifty is None and nifty_ltp <= self.s_level:
@@ -547,6 +566,8 @@ class DestinyStrategyEngine:
             "nifty_prev_close": float(self.nifty_prev_close) if self.nifty_prev_close else None,
             "entries_allowed": is_entry_allowed(squareoff_time_str=self.squareoff_time_str, no_entry_time_str=self.no_entry_time_str),
             "squareoff_triggered": is_squareoff_time(squareoff_time_str=self.squareoff_time_str),
+            "r_level_enabled": self.r_level_enabled,
+            "s_level_enabled": self.s_level_enabled,
             "ce": ce_status,
             "pe": pe_status,
             "health": ks.get_status(),
@@ -651,6 +672,10 @@ class DestinyStrategyEngine:
             "entry_price": fill_price,
             "target_price": target_price,
             "sl_price": sl_price,
+            # Set once premium first reaches target_price — see _check_active_trade_exits
+            # for the repeating-ratchet logic this drives (only while ratchet_step_pts is
+            # configured; otherwise this stays None and the exit is the legacy flat target).
+            "locked_floor": None,
             "qty": total_qty,
             "expiry": str(exp_date),
             "entry_time": datetime.now().isoformat(),
@@ -682,7 +707,12 @@ class DestinyStrategyEngine:
             f"Target={target_price:.2f}, SL={sl_price:.2f} | NIFTY={nifty_ltp}"
         )
 
-        await self._broadcast("TRADE_ENTRY", trade_info)
+        # type must be "trade_event", not "TRADE_ENTRY" - that's the string the
+        # frontend's WS handler (useWebSocket.ts) matches on to invalidate the
+        # trades/PnL queries instantly. Pyramid's engine already uses "trade_event";
+        # this mismatch meant a Destiny trade only appeared once the dashboard's
+        # own poll caught up.
+        await self._broadcast("trade_event", {**trade_info, "action": "ENTRY"})
 
         # Telegram / WhatsApp Notifications
         try:
@@ -726,12 +756,50 @@ class DestinyStrategyEngine:
             symbol = active_trade["symbol"]
             current_opt_price = self.get_option_ltp(symbol, nifty_ltp)
 
-            # Target Check
-            if current_opt_price >= active_trade["target_price"]:
-                await self._exit_trade(side, "TARGET", current_opt_price, nifty_ltp)
-            # Stop Loss Check
-            elif current_opt_price <= active_trade["sl_price"]:
+            if self.ratchet_step_pts is None:
+                # Legacy behavior, unchanged: flat exit the instant target is reached.
+                if current_opt_price >= active_trade["target_price"]:
+                    await self._exit_trade(side, "TARGET", current_opt_price, nifty_ltp)
+                elif current_opt_price <= active_trade["sl_price"]:
+                    await self._exit_trade(side, "SL", current_opt_price, nifty_ltp)
+                continue
+
+            # Ratchet opted in. SL is checked first, unconditionally, every tick — it's a
+            # fixed floor set at entry and wins a same-tick race with the ratchet regardless
+            # of how far the floor has climbed.
+            if current_opt_price <= active_trade["sl_price"]:
                 await self._exit_trade(side, "SL", current_opt_price, nifty_ltp)
+                continue
+
+            # TARGET Check — repeating ratchet, not a flat exit:
+            #   1. Premium first reaches target_price -> lock it as a floor instead of
+            #      exiting (arms the ratchet).
+            #   2. From then on, every further move of ratchet_step_pts moves the floor up
+            #      by that much and the trade keeps running.
+            #   3. The trade only closes once premium drops BELOW whatever floor is
+            #      currently locked — so the worst case after arming is always "at least
+            #      the last locked floor," never less.
+            # Reason stays "TARGET" either way (still fundamentally a target hit) — the
+            # locked_floor value in the log line shows how far it actually ran.
+            locked_floor = active_trade.get("locked_floor")
+            if locked_floor is None:
+                if current_opt_price >= active_trade["target_price"]:
+                    active_trade["locked_floor"] = active_trade["target_price"]
+                    logger.info(
+                        f"[DestinyEngine] {side} target reached @ {current_opt_price:.2f} - "
+                        f"locking floor at {active_trade['target_price']:.2f}, "
+                        f"riding for {active_trade['target_price'] + self.ratchet_step_pts:.2f}"
+                    )
+            else:
+                next_milestone = locked_floor + self.ratchet_step_pts
+                if current_opt_price < locked_floor:
+                    await self._exit_trade(side, "TARGET", current_opt_price, nifty_ltp)
+                elif current_opt_price >= next_milestone:
+                    active_trade["locked_floor"] = next_milestone
+                    logger.info(
+                        f"[DestinyEngine] {side} ratcheted floor to {next_milestone:.2f} @ "
+                        f"{current_opt_price:.2f} - riding for {next_milestone + self.ratchet_step_pts:.2f}"
+                    )
 
     async def _exit_trade(self, side: str, reason: str, exit_price: Decimal, nifty_ltp: Decimal):
         trade = self.active_pe_trade if side == "PE" else self.active_ce_trade
@@ -801,12 +869,15 @@ class DestinyStrategyEngine:
         else:
             self.active_ce_trade = None
 
-        await self._broadcast("TRADE_EXIT", {
+        # See the ENTRY broadcast above - "trade_event" is what the frontend
+        # actually listens for, not "TRADE_EXIT".
+        await self._broadcast("trade_event", {
             "side": side,
             "reason": reason,
             "exit_price": float(exit_price),
             "pnl": float(total_pnl),
             "symbol": symbol,
+            "action": "EXIT",
         })
 
         # Telegram / WhatsApp Notifications

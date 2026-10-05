@@ -1,0 +1,49 @@
+name: Bug report
+description: Something behaves differently from what you expect
+labels: [bug]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Destiny strategy
+        - Pyramid strategy
+        - Backtesting
+        - Dashboard / UI
+        - Kite integration
+        - Notifications (Telegram / WhatsApp)
+        - Admin / subscriptions
+        - Deployment / CI
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options: [Production (main), Staging (dev), Destiny deployment, Local]
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Trading mode
+      options: [Paper, Live, Not applicable]
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include times in IST and the strategy settings in use (levels, target, SL, ratchet step).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Remove API keys, tokens, account IDs and other secrets before pasting.
