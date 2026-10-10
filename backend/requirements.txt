@@ -27,7 +27,7 @@ pyotp>=2.10.0
 # Config
 pydantic>=2.7.1
 pydantic-settings>=2.2.1
-python-dotenv>=1.0.1
+python-dotenv>=1.2.4
 
 # Logging
 loguru>=0.7.2
