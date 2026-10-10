@@ -12,7 +12,7 @@ alembic>=1.13.1
 
 # Redis (use fakeredis for local dev without Redis server)
 redis>=5.0.4
-fakeredis>=2.23.1
+fakeredis>=2.39.0
 
 # Scheduling
 apscheduler>=3.10.4
