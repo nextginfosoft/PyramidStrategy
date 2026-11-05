@@ -123,60 +123,59 @@ def get_next_tuesday(from_date: Optional[date] = None) -> date:
     return d + timedelta(days=days_until_tuesday)
 
 
+# NSE trading holidays that fall on a Tuesday. NIFTY weekly options normally expire on
+# Tuesday; when NSE is closed that day, the expiry moves to the previous trading day.
+TUESDAY_HOLIDAYS = {
+    date(2026, 3, 3),   # Holi
+    date(2026, 3, 31),  # Shri Mahavir Jayanti
+    date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
+    date(2026, 10, 20), # Dussehra
+    date(2026, 11, 10), # Diwali-Balipratipada
+    date(2026, 11, 24), # Prakash Gurpurab Sri Guru Nanak Dev
+}
+
+
+def _weekly_expiry_for(tuesday: date) -> date:
+    """The actual expiry date of the weekly contract whose normal expiry is `tuesday`:
+    the Tuesday itself, or the previous trading day when NSE is closed that Tuesday."""
+    expiry = tuesday
+    while expiry in TUESDAY_HOLIDAYS or expiry.weekday() >= 5:
+        expiry -= timedelta(days=1)
+    return expiry
+
+
 def get_expiry_date(trade_date: Optional[date] = None) -> date:
     """
     Returns the correct expiry date for options:
-    - Weekly Expiry Day (Tuesday, or pre-poned to Monday if Tuesday is an NSE holiday)
-      → roll over to NEXT weekly expiry contract.
-    - All other non-expiry trading days → nearest upcoming weekly expiry contract.
+    - On a weekly expiry day (Tuesday, or the previous trading day when that
+      Tuesday is an NSE holiday) -> roll over to the NEXT weekly expiry contract.
+    - On every other day -> the nearest upcoming weekly expiry contract, which is the
+      pre-poned date when the coming Tuesday is an NSE holiday (so a contract that
+      Kite does not list is never selected in the days leading up to that holiday).
 
     This is a hard rule — NEVER make it configurable.
     """
     d = trade_date or today_ist()
 
-    # Known NSE holidays on Tuesday where weekly expiry is shifted to Monday
-    # (or next trading day prior)
-    tuesday_holidays = {
-        date(2026, 3, 3),   # Holi
-        date(2026, 3, 31),  # Shri Mahavir Jayanti
-        date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
-        date(2026, 10, 20), # Dussehra
-        date(2026, 11, 10), # Diwali-Balipratipada
-        date(2026, 11, 24), # Prakash Gurpurab Sri Guru Nanak Dev
-    }
-
-    # Calculate days to standard Tuesday expiry
-    days_to_tuesday = (1 - d.weekday()) % 7  # Tuesday = weekday 1
-
-    if d.weekday() == 1:
-        # Standard Tuesday Expiry Day → Roll over to next week's expiry (+7 days)
-        return d + timedelta(days=7)
-
-    # Check if tomorrow is a Tuesday holiday (meaning today is Monday and is the pre-poned Expiry Day)
-    tomorrow = d + timedelta(days=1)
-    if d.weekday() == 0 and tomorrow in tuesday_holidays:
-        # Today (Monday) is the shifted Weekly Expiry Day because Tuesday is a holiday.
-        # Take entries in the NEXT available weekly contract (+8 days to next week's Tuesday)
-        return d + timedelta(days=8)
-
-    if days_to_tuesday == 0:
-        days_to_tuesday = 7
-
-    target_tuesday = d + timedelta(days=days_to_tuesday)
-
-    # If the upcoming target Tuesday happens to be an NSE holiday, check if next week's contract is target or pre-poned date
-    return target_tuesday
+    tuesday = d + timedelta(days=(1 - d.weekday()) % 7)  # this week's Tuesday (today if Tuesday)
+    expiry = _weekly_expiry_for(tuesday)
+    if d >= expiry:
+        # Today is (or is past) this week's expiry day: trade next week's contract
+        expiry = _weekly_expiry_for(tuesday + timedelta(days=7))
+    return expiry
 
 
 def format_expiry_for_symbol(expiry: date) -> str:
     """
     Formats expiry date in Kite's instrument symbol format.
-    - Monthly expiry (last Tuesday of the month): '24JUN' (YYMMM)
-    - Weekly expiry (other Tuesdays): '24606' (YYMDD where M is 1-9, O, N, D)
+    - Monthly expiry (the last weekly expiry of the month, even when pre-poned
+      for a holiday): '24JUN' (YYMMM)
+    - Weekly expiry (all others): '24606' (YYMDD where M is 1-9, O, N, D)
     """
-    # Check if this Tuesday is the last Tuesday of the month
-    next_tuesday = expiry + timedelta(days=7)
-    is_monthly = next_tuesday.month != expiry.month
+    # The contract is monthly when the following week's expiry falls in the next month
+    tuesday = expiry + timedelta(days=(1 - expiry.weekday()) % 7)
+    following_expiry = _weekly_expiry_for(tuesday + timedelta(days=7))
+    is_monthly = following_expiry.month != expiry.month
 
     if is_monthly:
         month_map = {
